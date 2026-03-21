@@ -5,35 +5,126 @@ import { generateImage } from "@/lib/image-gen";
 import { publish } from "@/lib/publisher";
 import { Article, SchedulerResponse } from "@/lib/types";
 
-export const maxDuration = 120; // 2 min — enough for 2 articles
+export const maxDuration = 120;
 
 const WORKER_URL = process.env.CLOUDFLARE_WORKER_URL || "https://ppptv-worker.euginemicah.workers.dev";
 const WORKER_SECRET = process.env.WORKER_SECRET || "";
 
-// Hard Kenya relevance filter
+// ── Kenya relevance filter ────────────────────────────────────────────────────
 const KENYA_TERMS = [
-  "kenya", "nairobi", "mombasa", "kisumu", "nakuru", "eldoret",
-  "kenyan", "kenyans", "ksh", "kes", "safaricom", "mpesa", "m-pesa",
-  "uhuru", "ruto", "raila", "odinga", "jubilee", "azimio", "odm",
-  "east africa", "eastafrica", "ugali", "matatu", "ppptv", "ppp tv",
-  "wahu", "avril", "size 8", "nameless", "akothee", "bahati", "sauti sol",
-  "nyashinski", "khaligraph", "octopizzo", "nviiri", "bien", "bensoul",
+  "kenya","nairobi","mombasa","kisumu","nakuru","eldoret","kenyan","kenyans",
+  "ksh","kes","safaricom","mpesa","m-pesa","uhuru","ruto","raila","odinga",
+  "jubilee","azimio","odm","east africa","eastafrica","ugali","matatu",
+  "ppptv","ppp tv","wahu","avril","size 8","nameless","akothee","bahati",
+  "sauti sol","nyashinski","khaligraph","octopizzo","nviiri","bien","bensoul",
+  "naiboi","otile","brown mauzo","tanasha","vera sidika","huddah","eric omondi",
 ];
 
-function isKenyaRelevant(article: Article): boolean {
-  const text = (article.title + " " + (article.summary || "") + " " + article.category).toLowerCase();
+function isKenyaRelevant(a: Article): boolean {
+  const text = (a.title + " " + (a.summary || "") + " " + a.category).toLowerCase();
   return KENYA_TERMS.some(t => text.includes(t));
 }
 
-// Quality gate — skip articles with no usable content
-function hasMinimumContent(article: Article): boolean {
-  // Must have a title of at least 10 chars
-  if (!article.title || article.title.trim().length < 10) return false;
-  // Must have an image (no image = bad post)
-  if (!article.imageUrl || article.imageUrl.trim().length === 0) return false;
+// ── Quality gate ──────────────────────────────────────────────────────────────
+function hasMinimumContent(a: Article): boolean {
+  if (!a.title || a.title.trim().length < 10) return false;
+  if (!a.imageUrl || a.imageUrl.trim().length === 0) return false;
+  if (!a.summary || a.summary.trim().length < 30) return false; // must have real content
   return true;
 }
 
+// ── Best-time scheduler — EAT peak hours only ────────────────────────────────
+// Peak Kenyan scroll times: 7-9am, 12-2pm, 6-8pm, 9-10pm EAT (UTC+3)
+function isPostingHour(): boolean {
+  const hourEAT = (new Date().getUTCHours() + 3) % 24;
+  return (hourEAT >= 7 && hourEAT < 9) ||
+         (hourEAT >= 12 && hourEAT < 14) ||
+         (hourEAT >= 18 && hourEAT < 20) ||
+         (hourEAT >= 21 && hourEAT < 23);
+}
+
+// ── Daily post cap — max 6 posts per day ─────────────────────────────────────
+async function getDailyCount(): Promise<number> {
+  if (!WORKER_SECRET) return 0;
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const res = await fetch(WORKER_URL + "/daily-count?date=" + today, {
+      headers: { "Authorization": "Bearer " + WORKER_SECRET },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return 0;
+    const d = await res.json() as { count: number };
+    return d.count || 0;
+  } catch { return 0; }
+}
+
+async function incrementDailyCount(): Promise<void> {
+  if (!WORKER_SECRET) return;
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    await fetch(WORKER_URL + "/daily-count", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },
+      body: JSON.stringify({ date: today }),
+      signal: AbortSignal.timeout(5000),
+    });
+  } catch { /* non-fatal */ }
+}
+
+// ── Category rotation — track last posted category ───────────────────────────
+async function getLastCategory(): Promise<string> {
+  if (!WORKER_SECRET) return "";
+  try {
+    const res = await fetch(WORKER_URL + "/last-category", {
+      headers: { "Authorization": "Bearer " + WORKER_SECRET },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return "";
+    const d = await res.json() as { category: string };
+    return d.category || "";
+  } catch { return ""; }
+}
+
+async function setLastCategory(category: string): Promise<void> {
+  if (!WORKER_SECRET) return;
+  try {
+    await fetch(WORKER_URL + "/last-category", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },
+      body: JSON.stringify({ category }),
+      signal: AbortSignal.timeout(5000),
+    });
+  } catch { /* non-fatal */ }
+}
+
+// ── Article scoring — freshness + Kenya relevance strength ───────────────────
+function scoreArticle(a: Article, trendingTopics: string[]): number {
+  let score = 0;
+  const text = (a.title + " " + (a.summary || "")).toLowerCase();
+  const ageMs = Date.now() - new Date(a.publishedAt).getTime();
+  const ageHours = ageMs / 3600000;
+
+  // Freshness: articles under 2h get big boost
+  if (ageHours < 2) score += 100;
+  else if (ageHours < 6) score += 60;
+  else if (ageHours < 12) score += 30;
+  else score += 10;
+
+  // Kenya term density
+  const kenyanHits = KENYA_TERMS.filter(t => text.includes(t)).length;
+  score += kenyanHits * 15;
+
+  // Trending topic match — huge boost
+  const trendHits = trendingTopics.filter(t => text.includes(t.toLowerCase())).length;
+  score += trendHits * 50;
+
+  // Has good summary
+  if (a.summary && a.summary.length > 100) score += 20;
+
+  return score;
+}
+
+// ── Dedup via CF KV ───────────────────────────────────────────────────────────
 async function filterUnseen(articles: Article[]): Promise<Article[]> {
   if (!WORKER_SECRET || articles.length === 0) return articles;
   try {
@@ -47,9 +138,7 @@ async function filterUnseen(articles: Article[]): Promise<Article[]> {
     const { seen } = await res.json() as { seen: string[] };
     const seenSet = new Set(seen);
     return articles.filter(a => !seenSet.has(a.id));
-  } catch {
-    return articles;
-  }
+  } catch { return articles; }
 }
 
 async function markSeen(id: string): Promise<void> {
@@ -76,16 +165,29 @@ async function logPost(entry: object): Promise<void> {
   } catch { /* non-fatal */ }
 }
 
-async function postOneArticle(article: Article): Promise<{ success: boolean; error?: string }> {
-  // Mark seen BEFORE posting — prevents duplicate posts if function retries
+// ── Get current X/Twitter Kenya trending topics ───────────────────────────────
+async function getTrendingTopics(): Promise<string[]> {
+  try {
+    const res = await fetch(WORKER_URL + "/x-trends", { signal: AbortSignal.timeout(5000) });
+    if (!res.ok) return [];
+    const d = await res.json() as { trends: { title: string }[] };
+    return (d.trends || []).map(t => t.title.toLowerCase());
+  } catch { return []; }
+}
+
+async function postOneArticle(article: Article, isBreaking: boolean): Promise<{ success: boolean; error?: string }> {
   await markSeen(article.id);
 
-  // Generate AI clickbait title + caption
+  // Parallel: generate AI content + image at the same time
   const ai = await generateAIContent(article);
-
-  // Image uses the AI clickbait title
   const articleWithAITitle = { ...article, title: ai.clickbaitTitle };
-  const imageBuffer = await generateImage(articleWithAITitle);
+
+  // Generate both feed image and story image in parallel
+  const [imageBuffer] = await Promise.all([
+    generateImage(articleWithAITitle, { isBreaking }),
+    // Story format generated but not posted yet (future feature)
+    // generateImage(articleWithAITitle, { isBreaking, storyFormat: true }),
+  ]);
 
   const igPost = { platform: "instagram" as const, caption: ai.caption, articleUrl: article.url };
   const fbPost = { platform: "facebook" as const, caption: ai.caption, articleUrl: article.url };
@@ -94,15 +196,16 @@ async function postOneArticle(article: Article): Promise<{ success: boolean; err
   const anySuccess = result.facebook.success || result.instagram.success;
 
   if (anySuccess) {
-    await logPost({
-      articleId: article.id,
-      title: ai.clickbaitTitle,
-      url: article.url,
-      category: article.category,
-      instagram: result.instagram,
-      facebook: result.facebook,
-      postedAt: new Date().toISOString(),
-    });
+    await Promise.all([
+      logPost({
+        articleId: article.id, title: ai.clickbaitTitle, url: article.url,
+        category: article.category, instagram: result.instagram,
+        facebook: result.facebook, postedAt: new Date().toISOString(),
+        isBreaking,
+      }),
+      incrementDailyCount(),
+      setLastCategory(article.category),
+    ]);
     return { success: true };
   }
 
@@ -120,30 +223,60 @@ export async function POST(req: NextRequest) {
 
   const response: SchedulerResponse = { posted: 0, skipped: 0, errors: [] };
 
+  // ── Best-time check — skip off-peak cron runs ─────────────────────────────
+  if (!isPostingHour()) {
+    return NextResponse.json({ ...response, message: "Off-peak hours — skipping" });
+  }
+
+  // ── Daily cap check ───────────────────────────────────────────────────────
+  const dailyCount = await getDailyCount();
+  if (dailyCount >= 6) {
+    return NextResponse.json({ ...response, message: "Daily cap reached (6 posts)" });
+  }
+
   try {
-    const all = await fetchArticles(50);
+    // Fetch articles + trending topics in parallel
+    const [all, trendingTopics, lastCategory] = await Promise.all([
+      fetchArticles(50),
+      getTrendingTopics(),
+      getLastCategory(),
+    ]);
 
     // 1. Kenya filter
     const kenya = all.filter(isKenyaRelevant);
 
-    // 2. Quality gate — must have title + image
+    // 2. Quality gate
     const quality = kenya.filter(hasMinimumContent);
 
-    // 3. Dedup — remove already-posted articles
+    // 3. Dedup
     const unseen = await filterUnseen(quality);
-
     response.skipped = all.length - unseen.length;
 
     if (unseen.length === 0) {
       return NextResponse.json({ ...response, message: "No new Kenya articles to post" });
     }
 
-    // 4. Post up to 2 articles per run (newest first)
-    const toPost = unseen.slice(0, 2);
+    // 4. Category rotation — prefer different category from last post
+    let candidates = unseen;
+    if (lastCategory) {
+      const different = unseen.filter(a => a.category !== lastCategory);
+      if (different.length > 0) candidates = different;
+    }
+
+    // 5. Score and sort — trending articles first, then freshest
+    const scored = candidates
+      .map(a => ({ article: a, score: scoreArticle(a, trendingTopics) }))
+      .sort((a, b) => b.score - a.score);
+
+    // 6. Post up to 2 articles (respecting daily cap)
+    const remaining = 6 - dailyCount;
+    const toPost = scored.slice(0, Math.min(2, remaining)).map(s => s.article);
 
     for (const article of toPost) {
       try {
-        const result = await postOneArticle(article);
+        const ageHours = (Date.now() - new Date(article.publishedAt).getTime()) / 3600000;
+        const isBreaking = ageHours < 2;
+        const result = await postOneArticle(article, isBreaking);
         if (result.success) {
           response.posted++;
         } else {

@@ -17,6 +17,20 @@ const CAT_TAGS: Record<string, string> = {
   GENERAL:       "#Kenya #Nairobi",
 };
 
+// ── Hashtag rotation — 5 sets, cycle by day-of-week to avoid IG spam flag ────
+const HASHTAG_SETS = [
+  "#PPPTVKenya #KenyaNews #NairobiLife #KenyanEntertainment #AfricaNews",
+  "#PPPTVKenya #KenyaTwitter #NairobiVibes #KenyanMedia #EastAfricaNews",
+  "#PPPTVKenya #KenyaUpdates #NairobiNow #KenyanCulture #AfricanMedia",
+  "#PPPTVKenya #KenyaTrending #NairobiDaily #KenyanStories #AfricaEntertainment",
+  "#PPPTVKenya #KenyaToday #NairobiScene #KenyanVoices #AfricaMedia",
+];
+
+function getHashtags(category: string): string {
+  const setIndex = new Date().getDay() % HASHTAG_SETS.length;
+  return BASE_HASHTAGS + " " + (CAT_TAGS[category] ?? "") + " " + HASHTAG_SETS[setIndex];
+}
+
 export interface AIContent {
   clickbaitTitle: string;
   caption: string;
@@ -29,8 +43,7 @@ Your job is to produce TWO things from a news article:
 2. CAPTION — the full social media post caption
 
 ━━━ CLICKBAIT_TITLE RULES ━━━
-- ALL CAPS always
-- Max 10 words
+- ALL CAPS always. Max 10 words.
 - Use ONE of these levers:
   • Curiosity Gap: "THE REAL REASON [X] HAPPENED (IT'S NOT WHAT YOU THINK)"
   • Named Conflict: "[NAME] VS [NAME]: HERE'S WHAT REALLY HAPPENED"
@@ -40,34 +53,25 @@ Your job is to produce TWO things from a news article:
 - POWER WORDS: FINALLY, EXPOSED, REVEALED, CONFIRMED, SHOCKING, TRUTH, SECRET
 - Kenyan slang when natural: SASA, ENYEWE, KUMBE, WUEH
 - Lead with Ksh figure if money is involved
-- Dash (—) or ellipsis (...) only punctuation allowed
-- NEVER fabricate facts
+- Dash (—) or ellipsis (...) only punctuation allowed. NEVER fabricate facts.
 
 ━━━ CAPTION RULES ━━━
-CRITICAL: The caption MUST open with the EXACT same clickbait title you wrote above (in ALL CAPS), followed by a line break, then the hook sentence.
+CRITICAL: Caption MUST open with the EXACT clickbait title (ALL CAPS), then a blank line, then the hook.
 
-Structure (follow exactly):
-[CLICKBAIT_TITLE — same as above, ALL CAPS]
+Structure:
+[CLICKBAIT_TITLE — ALL CAPS, exact copy]
 
-[Hook sentence — one punchy line that triggers emotion, NOT a summary]
-[Second line — starts a thought, cuts off mid-sentence to force "See more" click]
+[Hook — one punchy emotional line, NOT a summary]
+[Second line — cuts off mid-thought to force "See more" click]
 
-[2-3 sentences of real story context — factual, specific, no fluff. Use actual names, numbers, places from the article.]
+[2-3 sentences of real story context — use actual names, Ksh figures, locations]
 
 [CTA: "Drop your thoughts below 👇" OR "Tag someone who needs to see this"]
-[Closing question that forces engagement — specific to this story]
+[Closing question specific to this story]
 
 [Hashtags on their own line]
 
-TONE RULES:
-- Write like a trusted Nairobi friend texting breaking news, not a press release
-- Use actual details from the article — names, Ksh figures, locations, dates
-- If the article has no summary/content, write based on the title alone but make it compelling
-- Emojis: max 2, only where they add energy
-- DO NOT start with "BREAKING"
-- DO NOT use all caps in the caption body (only the title line)
-- DO NOT write "See more" or "Read more" — the cut-off does that naturally
-- DO NOT write generic filler like "This is amazing news" or "Check this out"`;
+TONE: Nairobi friend texting breaking news. Emojis: max 2. No "BREAKING". No all-caps in body. No generic filler.`;
 
 export async function generateAIContent(article: Article): Promise<AIContent> {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -77,21 +81,19 @@ export async function generateAIContent(article: Article): Promise<AIContent> {
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({
       model: "gemini-1.5-flash",
-      generationConfig: { temperature: 0.8, maxOutputTokens: 600 },
+      generationConfig: { temperature: 0.85, maxOutputTokens: 700 },
     });
 
-    const tags = BASE_HASHTAGS + " " + (CAT_TAGS[article.category] ?? "");
+    const tags = getHashtags(article.category);
     const hasSummary = article.summary && article.summary.trim().length > 20;
 
     const prompt =
       "ARTICLE TITLE: " + article.title + "\n" +
       "CATEGORY: " + article.category + "\n" +
       (hasSummary ? "ARTICLE CONTENT: " + article.summary + "\n" : "") +
-      "\n" +
-      "Using the system rules, generate:\n" +
-      "CLICKBAIT_TITLE: [ALL CAPS, max 10 words, use a psychology lever]\n" +
-      "CAPTION: [Start with the EXACT clickbait title in ALL CAPS, then follow the caption structure. " +
-      "Use real details from the article. Append these hashtags at the very end: " + tags + "]\n" +
+      "\nGenerate:\n" +
+      "CLICKBAIT_TITLE: [ALL CAPS, max 10 words, psychology lever]\n" +
+      "CAPTION: [Opens with EXACT clickbait title ALL CAPS, then caption structure. Real details. Hashtags at end: " + tags + "]\n" +
       "\nFormat EXACTLY as:\nCLICKBAIT_TITLE: ...\nCAPTION: ...";
 
     const result = await model.generateContent({
@@ -100,11 +102,10 @@ export async function generateAIContent(article: Article): Promise<AIContent> {
     });
 
     const text = result.response.text().trim();
-
     const titleMatch = text.match(/CLICKBAIT_TITLE:\s*(.+)/);
     const captionMatch = text.match(/CAPTION:\s*([\s\S]+)/);
 
-    const clickbaitTitle = titleMatch?.[1]?.trim() ?? article.title.toUpperCase();
+    const clickbaitTitle = titleMatch?.[1]?.trim() ?? buildClickbaitTitle(article);
     const caption = captionMatch?.[1]?.trim() ?? buildFallbackCaption(article, clickbaitTitle);
 
     return { clickbaitTitle, caption };
@@ -116,22 +117,14 @@ export async function generateAIContent(article: Article): Promise<AIContent> {
 
 function fallback(article: Article): AIContent {
   const clickbaitTitle = buildClickbaitTitle(article);
-  return {
-    clickbaitTitle,
-    caption: buildFallbackCaption(article, clickbaitTitle),
-  };
+  return { clickbaitTitle, caption: buildFallbackCaption(article, clickbaitTitle) };
 }
 
-// Smart fallback title — inject power words based on category
 function buildClickbaitTitle(article: Article): string {
   const title = article.title.toUpperCase();
-  const cat = article.category;
-
-  // If title is already punchy (has power words), use it
-  const powerWords = ["EXPOSED", "REVEALED", "CONFIRMED", "SHOCKING", "FINALLY", "SECRET", "TRUTH", "KSH", "MILLION", "BILLION"];
+  const powerWords = ["EXPOSED","REVEALED","CONFIRMED","SHOCKING","FINALLY","SECRET","TRUTH","KSH","MILLION","BILLION"];
   if (powerWords.some(w => title.includes(w))) return title;
-
-  // Inject a lever based on category
+  const cat = article.category;
   if (cat === "MUSIC") return title + " — NOBODY SAW THIS COMING";
   if (cat === "CELEBRITY") return "FINALLY EXPOSED: " + title;
   if (cat === "AWARDS") return title + " — THE TRUTH REVEALED";
@@ -139,12 +132,9 @@ function buildClickbaitTitle(article: Article): string {
   return title + "...";
 }
 
-// Strong fallback caption that writes real content even without Gemini
 function buildFallbackCaption(article: Article, clickbaitTitle: string): string {
-  const tags = BASE_HASHTAGS + " " + (CAT_TAGS[article.category] ?? "");
+  const tags = getHashtags(article.category);
   const hasSummary = article.summary && article.summary.trim().length > 20;
-
-  // Hook line based on category
   const hooks: Record<string, string> = {
     MUSIC: "The Kenyan music scene just shifted — and you need to know why.",
     CELEBRITY: "This story is making rounds in Nairobi right now.",
@@ -155,19 +145,7 @@ function buildFallbackCaption(article: Article, clickbaitTitle: string): string 
     FASHION: "Kenyan fashion just set a new standard.",
     GENERAL: "This story out of Kenya is getting a lot of attention.",
   };
-
   const hook = hooks[article.category] || hooks.GENERAL;
-  const summary = hasSummary
-    ? article.summary!.trim()
-    : "Get the full story on PPP TV Kenya — link in bio.";
-
-  return (
-    clickbaitTitle + "\n\n" +
-    hook + "\n" +
-    "Here's everything you need to know about this story...\n\n" +
-    summary + "\n\n" +
-    "Drop your thoughts below 👇\n" +
-    "What do you think about this?\n\n" +
-    tags
-  );
+  const summary = hasSummary ? article.summary!.trim() : "Get the full story on PPP TV Kenya — link in bio.";
+  return clickbaitTitle + "\n\n" + hook + "\n" + "Here's everything you need to know...\n\n" + summary + "\n\n" + "Drop your thoughts below 👇\nWhat do you think about this?\n\n" + tags;
 }
