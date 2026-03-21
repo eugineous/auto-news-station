@@ -1,7 +1,12 @@
 import Parser from "rss-parser";
-import * as cheerio from "cheerio";
 import { createHash } from "crypto";
 import { Article } from "./types";
+
+// Use dynamic import for cheerio to avoid ESM/undici bundling issues
+async function loadCheerio() {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  return require("cheerio") as typeof import("cheerio");
+}
 
 const RSS_URL = "https://ppptv-v2.vercel.app/api/rss";
 const BASE_URL = "https://ppptv-v2.vercel.app";
@@ -24,6 +29,7 @@ async function fetchFullBody(articlePageUrl: string): Promise<string> {
     const res = await fetch(articlePageUrl, { signal: AbortSignal.timeout(10000) });
     if (!res.ok) return "";
     const data = await res.text();
+    const cheerio = await loadCheerio();
     const $ = cheerio.load(data);
     const paragraphs: string[] = [];
     $("article p, main p, .prose p, .content p").each((_, el) => {
