@@ -6,12 +6,11 @@ async function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
+async function withRetry<T>(fn: () => Promise<T>, maxRetries = 2): Promise<T> {
   let lastErr: unknown;
   for (let attempt = 0; attempt < maxRetries; attempt++) {
-    try {
-      return await fn();
-    } catch (err: any) {
+    try { return await fn(); }
+    catch (err: any) {
       const status = err?.status ?? err?.response?.status;
       if (status && status >= 400 && status < 500) throw err;
       lastErr = err;
@@ -21,54 +20,23 @@ async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
   throw lastErr;
 }
 
-async function graphPost(path: string, params: Record<string, string>): Promise<any> {
-  const url = new URL(`${GRAPH_API}/${path}`);
-  const res = await fetch(url.toString(), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(params),
-  });
-  const data = await res.json() as any;
-  if (!res.ok || data.error) {
-    const msg = data?.error?.message ?? `HTTP ${res.status}`;
-    const err: any = new Error(msg);
-    err.status = res.status;
-    throw err;
-  }
-  return data;
-}
-
-async function graphGet(path: string, params: Record<string, string>): Promise<any> {
-  const url = new URL(`${GRAPH_API}/${path}`);
-  Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
-  const res = await fetch(url.toString());
-  const data = await res.json() as any;
-  if (!res.ok || data.error) {
-    const msg = data?.error?.message ?? `HTTP ${res.status}`;
-    const err: any = new Error(msg);
-    err.status = res.status;
-    throw err;
-  }
-  return data;
-}
-
-// Upload image buffer as multipart form to FB photos endpoint
-async function uploadImageBuffer(
+// Upload image buffer as multipart to FB photos endpoint
+async function uploadImageToFB(
   imageBuffer: Buffer,
   pageId: string,
   accessToken: string,
   published = false
 ): Promise<string> {
-  const FormData = (await import("form-data")).default;
+  // Use native FormData (Node 18+) instead of form-data package
+  const blob = new Blob([imageBuffer], { type: "image/jpeg" });
   const form = new FormData();
-  form.append("source", imageBuffer, { filename: "image.jpg", contentType: "image/jpeg" });
+  form.append("source", blob, "image.jpg");
   form.append("published", String(published));
   form.append("access_token", accessToken);
 
   const res = await fetch(`${GRAPH_API}/${pageId}/photos`, {
     method: "POST",
-    body: form as any,
-    headers: form.getHeaders(),
+    body: form,
   });
   const data = await res.json() as any;
   if (!res.ok || data.error) {
@@ -86,42 +54,55 @@ async function publishToInstagram(
   const fbToken = process.env.FACEBOOK_ACCESS_TOKEN;
   const fbPageId = process.env.FACEBOOK_PAGE_ID;
 
+  console.log("[ig] accountId:", accountId, "fbPageId:", fbPageId, "token set:", !!token, "fbToken set:", !!fbToken);
+
   if (!token || !accountId || !fbToken || !fbPageId) {
     return { success: false, error: "Instagram/Facebook tokens not configured" };
   }
 
   try {
-    // Upload to FB as unpublished to get a hosted URL for IG
+    // Step 1: Upload image to FB as unpublished to get a hosted URL
     const fbPhotoId = await withRetry(() =>
-      uploadImageBuffer(imageBuffer, fbPageId, fbToken, false)
+      uploadImageToFB(imageBuffer, fbPageId, fbToken, false)
     );
 
-    const photoData = await graphGet(fbPhotoId, {
-      fields: "images",
-      access_token: fbToken,
-    });
+    // Step 2: Get the hosted image URL from FB
+    const photoRes = await fetch(
+      `${GRAPH_API}/${fbPhotoId}?fields=images&access_token=${fbToken}`
+    );
+    const photoData = await photoRes.json() as any;
     const hostedUrl: string = photoData.images?.[0]?.source ?? "";
     if (!hostedUrl) throw new Error("Could not get hosted image URL from FB");
 
-    // Create IG media container
-    const container = await withRetry(() =>
-      graphPost(`${accountId}/media`, {
-        image_url: hostedUrl,
-        caption: post.caption,
-        access_token: token,
+    // Step 3: Create IG media container
+    const containerRes = await withRetry(() =>
+      fetch(`${GRAPH_API}/${accountId}/media`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image_url: hostedUrl, caption: post.caption, access_token: token }),
       })
     );
+    const container = await (containerRes as any).json() as any;
+    if (!(containerRes as any).ok || container.error) {
+      throw new Error(container?.error?.message ?? "IG container creation failed");
+    }
 
-    // Publish container
-    const published = await withRetry(() =>
-      graphPost(`${accountId}/media_publish`, {
-        creation_id: container.id,
-        access_token: token,
+    // Step 4: Publish the container
+    const publishRes = await withRetry(() =>
+      fetch(`${GRAPH_API}/${accountId}/media_publish`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ creation_id: container.id, access_token: token }),
       })
     );
+    const published = await (publishRes as any).json() as any;
+    if (!(publishRes as any).ok || published.error) {
+      throw new Error(published?.error?.message ?? "IG publish failed");
+    }
 
     return { success: true, postId: published.id };
   } catch (err: any) {
+    console.error("[ig] error:", err?.message);
     return { success: false, error: err?.message ?? "Unknown error" };
   }
 }
@@ -133,23 +114,21 @@ async function publishToFacebook(
   const token = process.env.FACEBOOK_ACCESS_TOKEN;
   const pageId = process.env.FACEBOOK_PAGE_ID;
 
+  console.log("[fb] pageId:", pageId, "token set:", !!token);
+
   if (!token || !pageId) {
     return { success: false, error: "Facebook tokens not configured" };
   }
 
   try {
-    const FormData = (await import("form-data")).default;
+    const blob = new Blob([imageBuffer], { type: "image/jpeg" });
     const form = new FormData();
-    form.append("source", imageBuffer, { filename: "image.jpg", contentType: "image/jpeg" });
+    form.append("source", blob, "image.jpg");
     form.append("caption", post.caption);
     form.append("access_token", token);
 
     const res = await withRetry(() =>
-      fetch(`${GRAPH_API}/${pageId}/photos`, {
-        method: "POST",
-        body: form as any,
-        headers: form.getHeaders(),
-      })
+      fetch(`${GRAPH_API}/${pageId}/photos`, { method: "POST", body: form })
     );
     const data = await (res as any).json() as any;
     if (!(res as any).ok || data.error) {
@@ -158,6 +137,7 @@ async function publishToFacebook(
 
     return { success: true, postId: data.id };
   } catch (err: any) {
+    console.error("[fb] error:", err?.message);
     return { success: false, error: err?.message ?? "Unknown error" };
   }
 }
