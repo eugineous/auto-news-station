@@ -28,7 +28,7 @@ async function uploadImageToFB(
   published = false
 ): Promise<string> {
   // Use native FormData (Node 18+) instead of form-data package
-  const blob = new Blob([imageBuffer as unknown as Uint8Array], { type: "image/jpeg" });
+  const blob = new Blob([imageBuffer.buffer.slice(imageBuffer.byteOffset, imageBuffer.byteOffset + imageBuffer.byteLength) as ArrayBuffer], { type: "image/jpeg" });
   const form = new FormData();
   form.append("source", blob, "image.jpg");
   form.append("published", String(published));
@@ -121,7 +121,7 @@ async function publishToFacebook(
   }
 
   try {
-    const blob = new Blob([imageBuffer as unknown as Uint8Array], { type: "image/jpeg" });
+    const blob = new Blob([imageBuffer.buffer.slice(imageBuffer.byteOffset, imageBuffer.byteOffset + imageBuffer.byteLength) as ArrayBuffer], { type: "image/jpeg" });
     const form = new FormData();
     form.append("source", blob, "image.jpg");
     form.append("caption", post.caption);
