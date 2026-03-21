@@ -15,7 +15,7 @@ export async function GET(req: NextRequest) {
     url: "https://ppptv-v2.vercel.app",
     imageUrl:
       searchParams.get("imageUrl") ??
-      "https://ichef.bbci.co.uk/ace/standard/240/cpsprodpb/ded3/live/e1ecfce0-24c8-11f1-ad78-bf5290e8c730.jpg",
+      "https://deadline.com/wp-content/uploads/2026/03/Chuck-Norris-Donald-Trump-2-shot.jpg",
     summary: "Preview",
     fullBody: "Preview body",
     sourceName: "PPP TV",

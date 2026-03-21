@@ -111,13 +111,12 @@ export default function Home() {
       <div style={{ background: "#161616", border: "1px solid #222", borderRadius: 8, padding: 24 }}>
         <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 16 }}>Setup Checklist</h2>
         {[
-          { done: true, label: "Next.js app built and deployed on Vercel" },
+          { done: true, label: "Next.js app deployed on Vercel" },
           { done: true, label: "RSS scraper + image generator ready" },
-          { done: true, label: "Cloudflare Worker cron configured (cloudflare/worker.js)" },
-          { done: false, label: "Add UPSTASH_REDIS_REST_URL + TOKEN to Vercel env vars" },
-          { done: false, label: "Add INSTAGRAM_ACCESS_TOKEN + INSTAGRAM_ACCOUNT_ID" },
-          { done: false, label: "Add FACEBOOK_ACCESS_TOKEN + FACEBOOK_PAGE_ID" },
-          { done: false, label: "Deploy Cloudflare Worker (cd cloudflare && wrangler deploy)" },
+          { done: true, label: "Cloudflare Worker deployed with cron (every 30 min)" },
+          { done: true, label: "Cloudflare KV (SEEN_ARTICLES) created and bound" },
+          { done: false, label: "Add INSTAGRAM_ACCESS_TOKEN + INSTAGRAM_ACCOUNT_ID to Vercel" },
+          { done: false, label: "Add FACEBOOK_ACCESS_TOKEN + FACEBOOK_PAGE_ID to Vercel" },
         ].map((item) => (
           <div key={item.label} style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 10 }}>
             <span style={{ color: item.done ? "#4ade80" : "#555", fontSize: 18, lineHeight: 1.2 }}>

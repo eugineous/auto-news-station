@@ -1,102 +1,107 @@
-import Parser from "rss-parser";
 import { createHash } from "crypto";
 import { Article } from "./types";
 
-// Use dynamic import for cheerio to avoid ESM/undici bundling issues
-async function loadCheerio() {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  return require("cheerio") as typeof import("cheerio");
-}
-
 const RSS_URL = "https://ppptv-v2.vercel.app/api/rss";
-const BASE_URL = "https://ppptv-v2.vercel.app";
-
-const parser = new Parser({
-  customFields: {
-    item: [
-      ["media:content", "mediaContent", { keepArray: false }],
-      ["media:thumbnail", "mediaThumbnail", { keepArray: false }],
-    ],
-  },
-});
 
 function hashUrl(url: string): string {
   return createHash("sha256").update(url).digest("hex").slice(0, 16);
 }
 
+function extractTag(xml: string, tag: string): string {
+  const m = xml.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i"));
+  return m ? m[1].trim() : "";
+}
+
+function extractCdata(raw: string): string {
+  const m = raw.match(/<!\[CDATA\[([\s\S]*?)\]\]>/);
+  return m ? m[1].trim() : raw.replace(/<[^>]+>/g, "").trim();
+}
+
+function extractAttr(xml: string, tag: string, attr: string): string {
+  const m = xml.match(new RegExp(`<${tag}[^>]*\\s${attr}="([^"]*)"`, "i"));
+  return m ? m[1] : "";
+}
+
 async function fetchFullBody(articlePageUrl: string): Promise<string> {
   try {
-    const res = await fetch(articlePageUrl, { signal: AbortSignal.timeout(10000) });
+    const res = await fetch(articlePageUrl, { signal: AbortSignal.timeout(8000) });
     if (!res.ok) return "";
-    const data = await res.text();
-    const cheerio = await loadCheerio();
-    const $ = cheerio.load(data);
+    const html = await res.text();
+    // Extract paragraphs without cheerio (avoid undici bundling)
     const paragraphs: string[] = [];
-    $("article p, main p, .prose p, .content p").each((_, el) => {
-      const text = $(el).text().trim();
-      if (text.length > 20) paragraphs.push(text);
-    });
-    if (paragraphs.length === 0) {
-      $("p").each((_, el) => {
-        const text = $(el).text().trim();
-        if (text.length > 20) paragraphs.push(text);
-      });
+    const pRegex = /<p[^>]*>([\s\S]*?)<\/p>/gi;
+    let m: RegExpExecArray | null;
+    while ((m = pRegex.exec(html)) !== null) {
+      const text = m[1].replace(/<[^>]+>/g, "").trim();
+      if (text.length > 30) paragraphs.push(text);
     }
-    return paragraphs.join("\n\n");
+    return paragraphs.slice(0, 20).join("\n\n");
   } catch {
     return "";
   }
 }
 
 export async function fetchArticles(): Promise<Article[]> {
-  const feed = await parser.parseURL(RSS_URL);
-  const results: Article[] = [];
+  const res = await fetch(RSS_URL, {
+    headers: { "User-Agent": "PPPTVAutoPoster/1.0" },
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!res.ok) throw new Error(`RSS fetch failed: ${res.status}`);
 
-  for (const item of feed.items) {
-    const title = (item.title ?? "").trim();
-    const rawLink = item.link ?? "";
-    if (!title || !rawLink) continue;
+  const xml = await res.text();
+  const items: Article[] = [];
 
-    const detailUrl = rawLink.startsWith("http")
-      ? rawLink
-      : `${BASE_URL}${rawLink}`;
+  const itemRegex = /<item>([\s\S]*?)<\/item>/g;
+  let match: RegExpExecArray | null;
 
-    const imageUrl: string =
-      (item as any).mediaContent?.$.url ??
-      (item as any).mediaThumbnail?.$.url ??
-      item.enclosure?.url ??
+  while ((match = itemRegex.exec(xml)) !== null) {
+    const block = match[1];
+
+    const rawTitle = extractTag(block, "title");
+    const rawLink = extractTag(block, "link");
+    const rawDesc = extractTag(block, "description");
+    const rawCategory = extractTag(block, "category");
+    const pubDate = extractTag(block, "pubDate");
+
+    const title = extractCdata(rawTitle);
+    const link = extractCdata(rawLink) || rawLink;
+    const description = extractCdata(rawDesc);
+    const category = extractCdata(rawCategory) || "GENERAL";
+
+    if (!title || !link) continue;
+
+    // Image from enclosure or media:content
+    const imageUrl =
+      extractAttr(block, "enclosure", "url") ||
+      extractAttr(block, "media:content", "url") ||
       "";
 
-    const summary = (item.contentSnippet ?? item.summary ?? "").trim();
-    const sourceName = (item.creator ?? (item as any).author ?? "PPP TV").trim();
-    const category = ((item.categories?.[0] ?? "GENERAL") as string).toUpperCase();
-    const publishedAt = item.pubDate ? new Date(item.pubDate) : new Date();
-
-    const slugMatch = detailUrl.match(/\/news\/([A-Za-z0-9+/=_-]+)$/);
-    let canonicalUrl = detailUrl;
+    // Decode base64 slug to get canonical source URL
+    const slugMatch = link.match(/\/news\/([A-Za-z0-9+/=_-]+)$/);
+    let canonicalUrl = link;
     if (slugMatch) {
       try {
         canonicalUrl = Buffer.from(slugMatch[1], "base64").toString("utf-8");
       } catch {
-        canonicalUrl = detailUrl;
+        canonicalUrl = link;
       }
     }
 
     const id = hashUrl(canonicalUrl);
-    const fullBody = await fetchFullBody(detailUrl);
+    const fullBody = await fetchFullBody(link);
 
-    results.push({
+    items.push({
       id,
       title,
       url: canonicalUrl,
       imageUrl,
-      summary,
-      fullBody: fullBody || summary,
-      sourceName,
-      category,
-      publishedAt,
+      summary: description.slice(0, 200),
+      fullBody: fullBody || description,
+      sourceName: "PPP TV",
+      category: category.toUpperCase(),
+      publishedAt: pubDate ? new Date(pubDate) : new Date(),
     });
   }
 
-  return results;
+  return items;
 }
