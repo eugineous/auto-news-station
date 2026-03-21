@@ -69,20 +69,25 @@ async function fetchImageBuffer(url: string): Promise<Buffer | null> {
 }
 
 async function loadFont(): Promise<ArrayBuffer> {
-  const url =
-    "https://fonts.gstatic.com/s/oswald/v53/TK3_WkUHHAIjg75cFRf3bXL8LICs1_FvsUZiZQ.woff2";
-  try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
-    if (!res.ok) throw new Error("font fetch failed");
-    return res.arrayBuffer();
-  } catch {
-    // Fallback: Inter Bold
-    const fallback = await fetch(
-      "https://fonts.gstatic.com/s/inter/v13/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuFuYAZJhiI2B.woff2",
-      { signal: AbortSignal.timeout(10000) }
-    );
-    return fallback.arrayBuffer();
+  // satori requires OTF/TTF/WOFF — NOT woff2
+  // Use Oswald Bold from jsDelivr (serves the raw OTF)
+  const sources = [
+    // Oswald Bold OTF via jsDelivr
+    "https://cdn.jsdelivr.net/npm/@fontsource/oswald@5.0.8/files/oswald-latin-700-normal.woff",
+    // Fallback: Inter Bold woff
+    "https://cdn.jsdelivr.net/npm/@fontsource/inter@5.0.8/files/inter-latin-700-normal.woff",
+  ];
+
+  for (const url of sources) {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
+      if (res.ok) return res.arrayBuffer();
+    } catch {
+      // try next
+    }
   }
+
+  throw new Error("Could not load any font");
 }
 
 export async function generateImage(article: Article): Promise<Buffer> {
