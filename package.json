@@ -1,35 +1,36 @@
 {
-    "name": "auto-news-station",
-    "version": "1.0.0",
-    "description": "Automated Politics & Tech News Station with Carousel Generation",
-    "private": true,
-    "scripts": {
-        "dev": "next dev",
-        "build": "next build",
-        "start": "next start",
-        "lint": "next lint"
-    },
-    "dependencies": {
-        "@upstash/redis": "^1.37.0",
-        "@vercel/og": "^0.6.2",
-        "autoprefixer": "^10.4.17",
-        "axios": "^1.6.7",
-        "cheerio": "^1.2.0",
-        "date-fns": "^3.3.1",
-        "lucide-react": "^0.330.0",
-        "next": "14.1.0",
-        "postcss": "^8.4.35",
-        "react": "^18.2.0",
-        "react-dom": "^18.2.0",
-        "rss-parser": "^3.13.0",
-        "satori": "^0.10.13",
-        "sharp": "^0.33.2",
-        "tailwindcss": "^3.4.1"
-    },
-    "devDependencies": {
-        "@types/node": "^20.11.17",
-        "@types/react": "^18.2.55",
-        "@types/react-dom": "^18.2.19",
-        "typescript": "^5.3.3"
-    }
+    "name":  "auto-news-station",
+    "version":  "1.0.0",
+    "description":  "Automated Politics \u0026 Tech News Station with Carousel Generation",
+    "private":  true,
+    "scripts":  {
+                    "dev":  "next dev",
+                    "build":  "next build",
+                    "start":  "next start",
+                    "lint":  "next lint"
+                },
+    "dependencies":  {
+                         "@upstash/redis":  "^1.37.0",
+                         "@vercel/og":  "^0.6.2",
+                         "autoprefixer":  "^10.4.17",
+                         "axios":  "^1.6.7",
+                         "cheerio":  "^1.2.0",
+                         "date-fns":  "^3.3.1",
+                         "lucide-react":  "^0.330.0",
+                         "next":  "14.1.0",
+                         "postcss":  "^8.4.35",
+                         "react":  "^18.2.0",
+                         "react-dom":  "^18.2.0",
+                         "rss-parser":  "^3.13.0",
+                         "satori":  "^0.10.13",
+                         "sharp":  "^0.33.2",
+                         "tailwindcss":  "^3.4.1",
+                         "@google/generative-ai":  "^0.21.0"
+                     },
+    "devDependencies":  {
+                            "@types/node":  "^20.11.17",
+                            "@types/react":  "^18.2.55",
+                            "@types/react-dom":  "^18.2.19",
+                            "typescript":  "^5.3.3"
+                        }
 }
