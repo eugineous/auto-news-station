@@ -77,7 +77,7 @@ export default function Home() {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 36 }}>
         {[
           { label: "News Source", value: "ppptv-v2.vercel.app", ok: true },
-          { label: "Image Template", value: "1080×1080 JPEG", ok: true },
+          { label: "Image Template", value: "1080×1350 (4:5)", ok: true },
           { label: "Social APIs", value: "Awaiting tokens", ok: false },
         ].map((card) => (
           <div key={card.label} style={{ background: "#111", border: "1px solid #222", borderRadius: 8, padding: "14px 18px" }}>
