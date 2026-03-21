@@ -1,4 +1,4 @@
-﻿import satori from "satori";
+import satori from "satori";
 import sharp from "sharp";
 import { Article } from "./types";
 
@@ -70,6 +70,106 @@ async function loadFont(): Promise<ArrayBuffer> {
   throw new Error("Could not load font");
 }
 
+// ── PPP TV Logo component ─────────────────────────────────────────────────────
+// Top-left branded logo block: pink dot + "PPP" white + "TV" pink + "KENYA" tag
+// Sits on a semi-transparent dark pill for legibility over any background
+function buildLogo() {
+  return {
+    type: "div",
+    props: {
+      style: {
+        position: "absolute" as const,
+        top: 44,
+        left: 44,
+        display: "flex",
+        flexDirection: "column" as const,
+        alignItems: "flex-start",
+      },
+      children: [
+        // Main logo pill
+        {
+          type: "div",
+          props: {
+            style: {
+              display: "flex",
+              alignItems: "center",
+              background: "rgba(0,0,0,0.72)",
+              borderRadius: 6,
+              paddingLeft: 16,
+              paddingRight: 20,
+              paddingTop: 10,
+              paddingBottom: 10,
+              borderLeft: `5px solid ${PINK}`,
+            },
+            children: [
+              // Pink accent dot
+              {
+                type: "span",
+                props: {
+                  style: {
+                    width: 14,
+                    height: 14,
+                    borderRadius: "50%",
+                    backgroundColor: PINK,
+                    marginRight: 12,
+                    flexShrink: 0,
+                  },
+                  children: " ",
+                },
+              },
+              // "PPP" in white
+              {
+                type: "span",
+                props: {
+                  style: {
+                    color: WHITE,
+                    fontSize: 52,
+                    fontWeight: 700,
+                    letterSpacing: 3,
+                    lineHeight: 1,
+                  },
+                  children: "PPP",
+                },
+              },
+              // "TV" in pink
+              {
+                type: "span",
+                props: {
+                  style: {
+                    color: PINK,
+                    fontSize: 52,
+                    fontWeight: 700,
+                    letterSpacing: 3,
+                    lineHeight: 1,
+                    marginLeft: 6,
+                  },
+                  children: "TV",
+                },
+              },
+            ],
+          },
+        },
+        // "KENYA" sub-label
+        {
+          type: "div",
+          props: {
+            style: {
+              color: WHITE,
+              fontSize: 16,
+              fontWeight: 700,
+              letterSpacing: 8,
+              marginTop: 5,
+              marginLeft: 22,
+              opacity: 0.85,
+            },
+            children: "KENYA",
+          },
+        },
+      ],
+    },
+  };
+}
+
 export async function generateImage(article: Article): Promise<Buffer> {
   const [fontData, rawBg] = await Promise.all([
     loadFont(),
@@ -103,6 +203,7 @@ export async function generateImage(article: Article): Promise<Buffer> {
           fontFamily: "BebasNeue",
         },
         children: [
+          // Background image
           bgBase64 ? {
             type: "img",
             props: {
@@ -110,49 +211,22 @@ export async function generateImage(article: Article): Promise<Buffer> {
               style: { position: "absolute", top: 0, left: 0, width: W, height: H, objectFit: "cover", objectPosition: "center top" },
             },
           } : null,
+
+          // Gradient overlay — dark at bottom for text legibility
           {
             type: "div",
             props: {
               style: {
                 position: "absolute", left: 0, right: 0, top: 0, height: H,
-                background: "linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 35%, rgba(0,0,0,0.55) 52%, rgba(0,0,0,0.88) 65%, rgba(0,0,0,1) 78%)",
+                background: "linear-gradient(to bottom, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0) 30%, rgba(0,0,0,0.5) 50%, rgba(0,0,0,0.88) 65%, rgba(0,0,0,1) 78%)",
               },
             },
           },
-          {
-            type: "div",
-            props: {
-              style: {
-                position: "absolute", top: 40, left: 44,
-                display: "flex", flexDirection: "column", alignItems: "flex-start",
-              },
-              children: [
-                {
-                  type: "div",
-                  props: {
-                    style: {
-                      display: "flex", alignItems: "center", gap: 4,
-                      background: "rgba(0,0,0,0.55)",
-                      paddingLeft: 10, paddingRight: 14, paddingTop: 7, paddingBottom: 7,
-                      borderRadius: 4,
-                    },
-                    children: [
-                      { type: "span", props: { style: { fontSize: 18, color: PINK, lineHeight: 1, marginRight: 5 }, children: "\u25CF" } },
-                      { type: "span", props: { style: { color: WHITE, fontSize: 30, fontWeight: 700, letterSpacing: 2, lineHeight: 1 }, children: "PPP" } },
-                      { type: "span", props: { style: { color: PINK, fontSize: 30, fontWeight: 700, letterSpacing: 2, lineHeight: 1 }, children: "TV" } },
-                    ],
-                  },
-                },
-                {
-                  type: "div",
-                  props: {
-                    style: { color: PINK, fontSize: 11, fontWeight: 700, letterSpacing: 4, marginTop: 3, marginLeft: 10 },
-                    children: "KENYA",
-                  },
-                },
-              ],
-            },
-          },
+
+          // ── PPP TV LOGO (top-left) ──────────────────────────────────────
+          buildLogo(),
+
+          // ── Bottom content block ────────────────────────────────────────
           {
             type: "div",
             props: {
@@ -162,21 +236,38 @@ export async function generateImage(article: Article): Promise<Buffer> {
                 padding: "0 44px 52px 44px",
               },
               children: [
+                // Category badge — large, bold, prominent
                 {
                   type: "div",
                   props: {
                     style: {
-                      display: "flex", alignSelf: "flex-start",
+                      display: "flex",
+                      alignSelf: "flex-start",
                       backgroundColor: PINK,
-                      paddingLeft: 16, paddingRight: 16, paddingTop: 5, paddingBottom: 5,
-                      borderRadius: 4, marginBottom: 18,
+                      paddingLeft: 20,
+                      paddingRight: 20,
+                      paddingTop: 8,
+                      paddingBottom: 8,
+                      borderRadius: 4,
+                      marginBottom: 20,
                     },
                     children: [{
                       type: "span",
-                      props: { style: { color: WHITE, fontSize: 20, fontWeight: 700, letterSpacing: 3 }, children: category },
+                      props: {
+                        style: {
+                          color: WHITE,
+                          fontSize: 34,       // was 20 — now 34, much more visible
+                          fontWeight: 700,
+                          letterSpacing: 4,
+                          lineHeight: 1,
+                        },
+                        children: category,
+                      },
                     }],
                   },
                 },
+
+                // Headline
                 {
                   type: "div",
                   props: {
@@ -188,6 +279,8 @@ export async function generateImage(article: Article): Promise<Buffer> {
                     children: headlineSpans,
                   },
                 },
+
+                // Summary sub-line
                 article.summary ? {
                   type: "div",
                   props: {
