@@ -126,7 +126,7 @@ export async function generateAIContent(article: Article): Promise<AIContent> {
 
     const prompt =
       "ARTICLE TITLE: " + article.title + "\n" +
-      "SUMMARY: " + (article.summary || article.excerpt || "") + "\n" +
+      "SUMMARY: " + (article.summary || "") + "\n" +
       "CATEGORY: " + article.category + "\n" +
       "SOURCE: " + (article.sourceName || "PPP TV Kenya") + "\n\n" +
       "Apply the psychology rules from your system instructions.\n\n" +
@@ -167,9 +167,11 @@ function buildCaption(article: Article): string {
   const tags = BASE_HASHTAGS + " " + (CAT_TAGS[article.category] ?? "");
   return (
     "🔥 " + article.title + "\n\n" +
-    (article.summary || article.excerpt || "") + "\n\n" +
+    (article.summary || "") + "\n\n" +
     "📰 " + (article.sourceName || "PPP TV Kenya") + "\n" +
     "🔗 " + article.url + "\n\n" +
     tags
   );
 }
+
+
