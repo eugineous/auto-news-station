@@ -3,6 +3,7 @@ import { scrapeUrl } from "@/lib/url-scraper";
 import { generateAIContent } from "@/lib/gemini";
 import { generateImage } from "@/lib/image-gen";
 import { publish } from "@/lib/publisher";
+import { resolveVideoUrl } from "@/lib/video-downloader";
 import { Article } from "@/lib/types";
 import { createHash } from "crypto";
 
@@ -49,6 +50,8 @@ export async function POST(req: NextRequest) {
   try {
     let article: Article;
     let videoUrl: string | undefined;
+    let isVideo = false;
+    let videoType = "";
 
     if (/instagram\.com/.test(url) && manualTitle && manualCaption) {
       article = {
@@ -65,7 +68,15 @@ export async function POST(req: NextRequest) {
     } else {
       const scraped = await scrapeUrl(url);
       if (!scraped.title) return NextResponse.json({ error: "Could not extract content from URL" }, { status: 422 });
-      videoUrl = scraped.videoUrl; // direct MP4 URL if available
+      isVideo = scraped.isVideo;
+      videoType = scraped.type;
+      // Re-resolve video URL fresh at post time (CDN URLs expire)
+      if (scraped.isVideo) {
+        const freshResolved = await resolveVideoUrl(url).catch(() => null);
+        videoUrl = freshResolved?.url || scraped.videoUrl;
+      } else {
+        videoUrl = scraped.videoUrl;
+      }
       article = {
         id: createHash("sha256").update(url).digest("hex").slice(0, 16),
         title: manualTitle || scraped.title,
@@ -79,7 +90,7 @@ export async function POST(req: NextRequest) {
       };
     }
 
-    const ai = await generateAIContent(article);
+    const ai = await generateAIContent(article, { isVideo, videoType });
     const articleWithAITitle = { ...article, title: ai.clickbaitTitle };
     const imageBuffer = await generateImage(articleWithAITitle, { isBreaking: false });
 
@@ -98,7 +109,7 @@ export async function POST(req: NextRequest) {
         title: ai.clickbaitTitle,
         url: article.url,
         category: article.category,
-        sourceType: /instagram\.com/.test(url) ? "instagram" : "article",
+        sourceType: videoType || (/instagram\.com/.test(url) ? "instagram" : "article"),
         instagram: result.instagram,
         facebook: result.facebook,
         postedAt: new Date().toISOString(),

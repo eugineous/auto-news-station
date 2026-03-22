@@ -46,7 +46,10 @@ The award was presented at a ceremony in Nairobi, celebrating her journey from h
 Drop your thoughts below 👇
 Who else deserves a legacy award in Kenya?`;
 
-export async function generateAIContent(article: Article): Promise<AIContent> {
+export async function generateAIContent(
+  article: Article,
+  options?: { isVideo?: boolean; videoType?: string }
+): Promise<AIContent> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) return fallback(article);
 
@@ -58,14 +61,27 @@ export async function generateAIContent(article: Article): Promise<AIContent> {
     });
 
     const hasSummary = article.summary && article.summary.trim().length > 20;
-    const prompt =
+    const isVideo = options?.isVideo || false;
+    const videoType = options?.videoType || "";
+
+    let prompt =
       "Write a social media caption for PPP TV Kenya based on this article.\n\n" +
       "ARTICLE TITLE: " + article.title + "\n" +
       "CATEGORY: " + article.category + "\n" +
       "SOURCE: " + (article.sourceName || "unknown") + "\n" +
       (hasSummary ? "ARTICLE CONTENT:\n" + article.summary + "\n\n" : "\n") +
       "IMPORTANT: Use ONLY facts from the article above. Include real names, places, and details.\n" +
-      "Do NOT include any hashtags.\n\n" +
+      "Do NOT include any hashtags.\n\n";
+
+    if (isVideo) {
+      prompt +=
+        `This is a VIDEO post (shared from ${videoType || "video platform"}). ` +
+        "The caption should be SHORT — max 100 words. The video speaks for itself.\n" +
+        "Structure: Title line (ALL CAPS) → 1-2 sentences about what the video shows → engaging question.\n" +
+        "Credit the original creator if known.\n\n";
+    }
+
+    prompt +=
       "Respond in EXACTLY this format:\n" +
       "CLICKBAIT_TITLE: [your title in ALL CAPS, max 10 words]\n" +
       "CAPTION: [your full caption starting with the title line]";

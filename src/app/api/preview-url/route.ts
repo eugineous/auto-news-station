@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
       publishedAt: new Date(),
     };
 
-    const ai = await generateAIContent(article);
+    const ai = await generateAIContent(article, { isVideo: scraped.isVideo, videoType: scraped.type });
     const articleWithAITitle = { ...article, title: ai.clickbaitTitle };
     const imageBuffer = await generateImage(articleWithAITitle, { isBreaking: false });
 

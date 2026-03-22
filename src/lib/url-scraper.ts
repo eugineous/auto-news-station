@@ -1,3 +1,4 @@
+import { resolveVideoUrl } from "./video-downloader";
 
 // Scrapes any URL and extracts: title, description, image/thumbnail, video URL
 // Handles: articles, YouTube, TikTok, Twitter/X, Instagram
@@ -94,16 +95,17 @@ export async function scrapeUrl(inputUrl: string): Promise<ScrapedContent> {
     const title = oembed?.title || "YouTube Video";
     const author = oembed?.author_name || "YouTube";
 
+    // Resolve direct video URL via Cobalt
+    const resolved = await resolveVideoUrl(inputUrl).catch(() => null);
+
     return {
       type: "youtube",
       title,
       description: `Watch: ${title} — ${author}`,
       imageUrl: thumbnail,
       videoThumbnailUrl: thumbnail,
-      // YouTube embed URL for iframe player
       videoEmbedUrl: `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0`,
-      // No direct downloadable URL — YouTube blocks it; use thumbnail for posting
-      videoUrl: undefined,
+      videoUrl: resolved?.url || undefined,
       sourceUrl: inputUrl,
       sourceName: author,
       embedId: videoId,
@@ -120,9 +122,9 @@ export async function scrapeUrl(inputUrl: string): Promise<ScrapedContent> {
       );
       if (oembedRes.ok) {
         const oembed = await oembedRes.json() as any;
-        // Extract TikTok video ID for embed
         const videoIdMatch = inputUrl.match(/video\/(\d+)/);
         const videoId = videoIdMatch?.[1] || "";
+        const resolved = await resolveVideoUrl(inputUrl).catch(() => null);
         return {
           type: "tiktok",
           title: oembed.title || "TikTok Video",
@@ -130,7 +132,7 @@ export async function scrapeUrl(inputUrl: string): Promise<ScrapedContent> {
           imageUrl: oembed.thumbnail_url || "",
           videoThumbnailUrl: oembed.thumbnail_url || "",
           videoEmbedUrl: videoId ? `https://www.tiktok.com/embed/v2/${videoId}` : undefined,
-          videoUrl: undefined,
+          videoUrl: resolved?.url || undefined,
           sourceUrl: inputUrl,
           sourceName: oembed.author_name || "TikTok",
           isVideo: true,
@@ -138,12 +140,14 @@ export async function scrapeUrl(inputUrl: string): Promise<ScrapedContent> {
       }
     } catch { /* fall through */ }
 
+    const resolved = await resolveVideoUrl(inputUrl).catch(() => null);
     const html = await fetchHtml(inputUrl);
     return {
       type: "tiktok",
       title: extractTitle(html),
       description: extractDescription(html),
       imageUrl: extractImage(html),
+      videoUrl: resolved?.url || undefined,
       sourceUrl: inputUrl,
       sourceName: "TikTok",
       isVideo: true,
@@ -153,6 +157,9 @@ export async function scrapeUrl(inputUrl: string): Promise<ScrapedContent> {
   // ── Twitter/X ────────────────────────────────────────────────────────────
   if (type === "twitter") {
     const tweetId = getTweetId(inputUrl);
+    // Check if tweet has video via Cobalt
+    const resolved = await resolveVideoUrl(inputUrl).catch(() => null);
+    const hasVideo = !!resolved?.url;
     try {
       const oembedRes = await fetch(
         `https://publish.twitter.com/oembed?url=${encodeURIComponent(inputUrl)}&omit_script=true`,
@@ -169,11 +176,12 @@ export async function scrapeUrl(inputUrl: string): Promise<ScrapedContent> {
           title: `${author}: ${text.slice(0, 100)}`,
           description: text.slice(0, 500),
           imageUrl,
+          videoUrl: resolved?.url || undefined,
           videoEmbedUrl: `https://platform.twitter.com/embed/Tweet.html?id=${tweetId}`,
           sourceUrl: inputUrl,
           sourceName: author,
           embedId: tweetId,
-          isVideo: false,
+          isVideo: hasVideo,
         };
       }
     } catch {}
@@ -183,10 +191,11 @@ export async function scrapeUrl(inputUrl: string): Promise<ScrapedContent> {
       title: extractTitle(html),
       description: extractDescription(html),
       imageUrl: extractImage(html),
+      videoUrl: resolved?.url || undefined,
       sourceUrl: inputUrl,
       sourceName: "X / Twitter",
       embedId: tweetId,
-      isVideo: false,
+      isVideo: hasVideo,
     };
   }
 
@@ -194,6 +203,7 @@ export async function scrapeUrl(inputUrl: string): Promise<ScrapedContent> {
   if (type === "instagram") {
     const postId = inputUrl.match(/\/p\/([A-Za-z0-9_-]+)/)?.[1] ||
                    inputUrl.match(/\/reel\/([A-Za-z0-9_-]+)/)?.[1] || "";
+    const resolved = await resolveVideoUrl(inputUrl).catch(() => null);
     try {
       const oembedRes = await fetch(
         `https://graph.facebook.com/v19.0/instagram_oembed?url=${encodeURIComponent(inputUrl)}&access_token=${process.env.INSTAGRAM_ACCESS_TOKEN || ""}`,
@@ -208,6 +218,7 @@ export async function scrapeUrl(inputUrl: string): Promise<ScrapedContent> {
           imageUrl: oembed.thumbnail_url || "",
           videoThumbnailUrl: oembed.thumbnail_url || "",
           videoEmbedUrl: postId ? `https://www.instagram.com/p/${postId}/embed/` : undefined,
+          videoUrl: resolved?.url || undefined,
           sourceUrl: inputUrl,
           sourceName: oembed.author_name || "Instagram",
           embedId: postId,
@@ -215,12 +226,12 @@ export async function scrapeUrl(inputUrl: string): Promise<ScrapedContent> {
         };
       }
     } catch {}
-    // Fallback stub — needs manual input
     return {
       type: "instagram",
       title: "",
       description: "",
       imageUrl: "",
+      videoUrl: resolved?.url || undefined,
       sourceUrl: inputUrl,
       sourceName: "Instagram",
       embedId: postId,
