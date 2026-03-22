@@ -18,7 +18,6 @@ function isYouTube(url: string): boolean {
 async function resolveYouTube(url: string): Promise<VideoResolution | null> {
   try {
     const info = await ytdl.getInfo(url);
-    // Prefer mp4 720p, then best mp4, then any video format
     const formats = ytdl.filterFormats(info.formats, "videoandaudio");
     const mp4 = formats
       .filter((f) => f.container === "mp4")
@@ -34,16 +33,12 @@ async function resolveYouTube(url: string): Promise<VideoResolution | null> {
 }
 
 export async function resolveVideoUrl(sourceUrl: string): Promise<VideoResolution | null> {
-  // Direct video file — pass through
   if (/\.(mp4|mov|webm)(\?|$)/i.test(sourceUrl)) {
     return { url: sourceUrl };
   }
-
   if (isYouTube(sourceUrl)) {
     return resolveYouTube(sourceUrl);
   }
-
-  // For TikTok, Twitter/X, Instagram — return null and let the caller
-  // pass the original URL directly to the Graph API (FB/IG can fetch from source)
+  // TikTok/Twitter/Instagram: return null, caller passes original URL to Graph API
   return null;
 }

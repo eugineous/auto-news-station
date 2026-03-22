@@ -9,10 +9,20 @@ export default function LoginPage() {
   const router = useRouter();
 
   async function login() {
-    setLoading(true); setErr("");
-    const r = await fetch("/api/auth", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password: pw }) });
-    if (r.ok) { router.push("/dashboard"); router.refresh(); }
-    else { setErr("Wrong password"); setLoading(false); }
+    setLoading(true);
+    setErr("");
+    const r = await fetch("/api/auth", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: pw }),
+    });
+    if (r.ok) {
+      router.push("/dashboard");
+      router.refresh();
+    } else {
+      setErr("Wrong password");
+      setLoading(false);
+    }
   }
 
   return (
@@ -38,7 +48,7 @@ export default function LoginPage() {
           disabled={loading || !pw}
           style={{ width: "100%", background: "#E50914", color: "#fff", border: "none", borderRadius: 8, padding: "13px", fontSize: 15, fontWeight: 700, cursor: loading || !pw ? "not-allowed" : "pointer", opacity: loading || !pw ? 0.5 : 1 }}
         >
-          {loading ? "Signing in…" : "Sign In"}
+          {loading ? "Signing in..." : "Sign In"}
         </button>
       </div>
     </div>
