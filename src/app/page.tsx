@@ -365,7 +365,7 @@ export default function Home() {
         </button>
         <button style={S.navBtn(tab==="log")}   onClick={()=>setTab("log")}>
           <span style={{fontSize:20}}>📋</span>
-          <span>Feed {postLog.length>0&&<span style={{background:RED,borderRadius:10,padding:"0 5px",fontSize:10}}>{postLog.length}</span>}</span>
+          <span style={{display:"flex",alignItems:"center",gap:3}}>Feed{postLog.length>0&&<span style={{background:RED,borderRadius:10,padding:"0 5px",fontSize:10,lineHeight:"16px"}}>{postLog.length}</span>}</span>
         </button>
         <button style={S.navBtn(tab==="stats")} onClick={()=>setTab("stats")}>
           <span style={{fontSize:20}}>📊</span>Stats

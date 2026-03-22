@@ -196,7 +196,44 @@ export async function scrapeUrl(inputUrl: string): Promise<ScrapedContent> {
     };
   }
 
-  // ── Article / generic URL ─────────────────────────────────────────────────
+  // ── Instagram ──────────────────────────────────────────────────────────────
+  if (type === "instagram") {
+    // Instagram blocks server-side scraping — extract post ID and use oEmbed
+    const postId = inputUrl.match(/\/p\/([A-Za-z0-9_-]+)/)?.[1] || 
+                   inputUrl.match(/\/reel\/([A-Za-z0-9_-]+)/)?.[1] || "";
+    try {
+      // Try Instagram oEmbed (works without auth for public posts)
+      const oembedRes = await fetch(
+        `https://graph.facebook.com/v19.0/instagram_oembed?url=${encodeURIComponent(inputUrl)}&access_token=${process.env.INSTAGRAM_ACCESS_TOKEN || ""}`,
+        { signal: AbortSignal.timeout(8000) }
+      );
+      if (oembedRes.ok) {
+        const oembed = await oembedRes.json() as any;
+        return {
+          type: "instagram",
+          title: oembed.title || `Instagram post by ${oembed.author_name || "user"}`,
+          description: oembed.title || "Instagram post",
+          imageUrl: oembed.thumbnail_url || "",
+          videoThumbnailUrl: oembed.thumbnail_url || "",
+          sourceUrl: inputUrl,
+          sourceName: oembed.author_name || "Instagram",
+          embedId: postId,
+        };
+      }
+    } catch { /* fall through */ }
+    // Fallback: return a usable stub so the post can still be created
+    return {
+      type: "instagram",
+      title: `Instagram Post${postId ? " (" + postId + ")" : ""}`,
+      description: "Instagram post — content loaded from the original post.",
+      imageUrl: "",
+      sourceUrl: inputUrl,
+      sourceName: "Instagram",
+      embedId: postId,
+    };
+  }
+
+    // ── Article / generic URL ─────────────────────────────────────────────────
   const html = await fetchHtml(inputUrl);
   const hostname = new URL(inputUrl).hostname.replace("www.", "");
 

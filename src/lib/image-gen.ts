@@ -195,7 +195,7 @@ export async function generateImage(article: Article, opts: ImageOptions = {}): 
             : buildGradientBg(category),
 
           // Gradient overlay
-          { type: "div", props: { style: { position: "absolute", left: 0, right: 0, top: 0, height: imgH, background: "linear-gradient(to bottom, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0) 30%, rgba(0,0,0,0.5) 50%, rgba(0,0,0,0.88) 65%, rgba(0,0,0,1) 78%)" } } },
+          { type: "div", props: { style: { display: "flex", position: "absolute", left: 0, right: 0, top: 0, height: imgH, background: "linear-gradient(to bottom, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0) 30%, rgba(0,0,0,0.5) 50%, rgba(0,0,0,0.88) 65%, rgba(0,0,0,1) 78%)" } } },
 
           // Breaking banner (conditional)
           showBreaking ? buildBreakingBanner() : null,
@@ -231,7 +231,7 @@ export async function generateImage(article: Article, opts: ImageOptions = {}): 
                 article.summary ? {
                   type: "div",
                   props: {
-                    style: { color: "rgba(255,255,255,0.72)", fontSize: 26, fontWeight: 400, fontStyle: "italic", lineHeight: 1.35, letterSpacing: 0.3 },
+                    style: { display: "flex", color: "rgba(255,255,255,0.72)", fontSize: 26, fontWeight: 400, fontStyle: "italic", lineHeight: 1.35, letterSpacing: 0.3 },
                     children: article.summary.slice(0, 90) + (article.summary.length > 90 ? "\u2026" : ""),
                   },
                 } : null,

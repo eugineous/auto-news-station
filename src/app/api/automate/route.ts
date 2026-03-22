@@ -12,16 +12,47 @@ const WORKER_SECRET = process.env.WORKER_SECRET || "";
 
 // ── Kenya relevance filter ────────────────────────────────────────────────────
 const KENYA_TERMS = [
-  "kenya","nairobi","mombasa","kisumu","nakuru","eldoret","kenyan","kenyans",
-  "ksh","kes","safaricom","mpesa","m-pesa","uhuru","ruto","raila","odinga",
-  "jubilee","azimio","odm","east africa","eastafrica","ugali","matatu",
-  "ppptv","ppp tv","wahu","avril","size 8","nameless","akothee","bahati",
-  "sauti sol","nyashinski","khaligraph","octopizzo","nviiri","bien","bensoul",
-  "naiboi","otile","brown mauzo","tanasha","vera sidika","huddah","eric omondi",
+  // Geography
+  "kenya","nairobi","mombasa","kisumu","nakuru","eldoret","thika","machakos",
+  "nyeri","kakamega","garissa","malindi","lamu","kitale","kericho","embu",
+  "kenyan","kenyans","east africa","eastafrica",
+  // Economy
+  "ksh","kes","safaricom","mpesa","m-pesa","equity bank","kcb","co-op bank",
+  "nse","nairobi stock","kengen","kplc","kenya power","kra","jubilee",
+  // Politics
+  "uhuru","ruto","raila","odinga","azimio","odm","jubilee","cord","nasa",
+  "william ruto","uhuru kenyatta","raila odinga","dp ruto","cs","cs kenya",
+  // Culture / Food
+  "ugali","matatu","nyama choma","sukuma wiki","githeri","mandazi","chapati",
+  // Media / Brands
+  "ppptv","ppp tv","citizen tv","ntv kenya","kbc","k24","standard media",
+  "nation media","the star kenya","tuko","kenyans.co.ke","nairobinews",
+  // Institutions
+  "kcaa","kaa","knbs","iebc","dci kenya","nps","kdf","gsma","safaricom",
+  // Artists / Celebs
+  "wahu","avril","size 8","nameless","akothee","bahati","sauti sol",
+  "nyashinski","khaligraph","octopizzo","nviiri","bien","bensoul",
+  "naiboi","otile","brown mauzo","tanasha","vera sidika","huddah",
+  "eric omondi","polyann","polyann njeri","sauti","sol band",
+  "king kaka","rabbit","fena gitu","nadia mukami","arrow bwoy",
+  "rekles","mejja","timmy tdat","stivo simple boy","gengetone",
+  "victoria kimani","dela","vivian","mercy masika","ruth kahiu",
+  "lupita nyong","lupita","nick mutuma","brenda wairimu","jacky vike",
+  "abel mutua","phil karanja","kate actress","celestine ndinda",
+  "mwende macharia","betty kyallo","janet mbugua","lillian muli",
+  "kanze dena","lulu hassan","rashid abdalla","willis raburu",
+  "jeff koinange","larry madowo","ken wa maria","kamene goro",
+  "andrew kibe","jalang'o","felix odiwuor","mwalimu rachel",
+  // Sports
+  "harambee stars","gor mahia","afc leopards","tusker fc","bandari",
+  "eliud kipchoge","kipchoge","faith kipyegon","peres jepchirchir",
+  "timothy cheruiyot","conseslus kipruto","kenya athletics",
 ];
 
 function isKenyaRelevant(a: Article): boolean {
-  const text = (a.title + " " + (a.summary || "") + " " + a.category).toLowerCase();
+  const text = (a.title + " " + (a.summary || "") + " " + a.category + " " + (a.url || "")).toLowerCase();
+  // Also match .co.ke domains and common Kenya news sites
+  if (text.includes(".co.ke") || text.includes("kenyans.co") || text.includes("tuko.co") || text.includes("standardmedia") || text.includes("nation.africa") || text.includes("the-star.co")) return true;
   return KENYA_TERMS.some(t => text.includes(t));
 }
 
@@ -249,7 +280,7 @@ export async function POST(req: NextRequest) {
 
     // 3. Dedup
     const unseen = await filterUnseen(quality);
-    response.skipped = all.length - unseen.length;
+    response.skipped = quality.length - unseen.length; // articles deduped
 
     if (unseen.length === 0) {
       return NextResponse.json({ ...response, message: "No new Kenya articles to post" });
