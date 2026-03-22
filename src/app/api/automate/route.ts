@@ -5,7 +5,7 @@ import { generateImage } from "@/lib/image-gen";
 import { publish } from "@/lib/publisher";
 import { Article, SchedulerResponse } from "@/lib/types";
 
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 const WORKER_URL = process.env.CLOUDFLARE_WORKER_URL || "https://ppptv-worker.euginemicah.workers.dev";
 const WORKER_SECRET = process.env.WORKER_SECRET || "";
@@ -37,10 +37,9 @@ function hasMinimumContent(a: Article): boolean {
 // Peak Kenyan scroll times: 7-9am, 12-2pm, 6-8pm, 9-10pm EAT (UTC+3)
 function isPostingHour(): boolean {
   const hourEAT = (new Date().getUTCHours() + 3) % 24;
-  return (hourEAT >= 7 && hourEAT < 9) ||
-         (hourEAT >= 12 && hourEAT < 14) ||
-         (hourEAT >= 18 && hourEAT < 20) ||
-         (hourEAT >= 21 && hourEAT < 23);
+  // Post from 6am to 11pm EAT — covers all waking hours
+  // Skips midnight to 6am only (dead zone)
+  return hourEAT >= 6 && hourEAT < 23;
 }
 
 // ── Daily post cap — max 6 posts per day ─────────────────────────────────────
@@ -230,7 +229,7 @@ export async function POST(req: NextRequest) {
 
   // ── Daily cap check ───────────────────────────────────────────────────────
   const dailyCount = await getDailyCount();
-  if (dailyCount >= 6) {
+  if (dailyCount >= 8) {
     return NextResponse.json({ ...response, message: "Daily cap reached (6 posts)" });
   }
 
@@ -269,7 +268,7 @@ export async function POST(req: NextRequest) {
       .sort((a, b) => b.score - a.score);
 
     // 6. Post up to 2 articles (respecting daily cap)
-    const remaining = 6 - dailyCount;
+    const remaining = 8 - dailyCount;
     const toPost = scored.slice(0, Math.min(2, remaining)).map(s => s.article);
 
     for (const article of toPost) {
