@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
 import { Article } from "./types";
 
 export interface AIContent {
@@ -72,6 +72,13 @@ const VIDEO_EXTRA = `
 - Credit the original creator if their name is known
 - Don't describe the video frame by frame — just the key moment or topic`;
 
+// Singleton client — reused across calls
+let _client: GoogleGenAI | null = null;
+function getClient(apiKey: string): GoogleGenAI {
+  if (!_client) _client = new GoogleGenAI({ apiKey });
+  return _client;
+}
+
 export async function generateAIContent(
   article: Article,
   options?: { isVideo?: boolean; videoType?: string }
@@ -83,19 +90,9 @@ export async function generateAIContent(
   const videoType = options?.videoType || "";
 
   try {
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({
-      model: "gemini-2.0-flash",
-      generationConfig: {
-        temperature: 0.7,
-        maxOutputTokens: 1200,
-        topP: 0.9,
-      },
-    });
-
+    const client = getClient(apiKey);
     const systemPrompt = isVideo ? SYSTEM_PROMPT + VIDEO_EXTRA : SYSTEM_PROMPT;
 
-    // Build context — use fullBody if available for richer AI input
     const hasBody = article.fullBody && article.fullBody.trim().length > 50;
     const hasSummary = article.summary && article.summary.trim().length > 20;
     const content = hasBody
@@ -110,11 +107,8 @@ export async function generateAIContent(
       "CATEGORY: " + article.category + "\n" +
       "SOURCE: " + (article.sourceName || "unknown") + "\n";
 
-    if (content) {
-      prompt += "FULL ARTICLE:\n" + content + "\n\n";
-    } else {
-      prompt += "\n";
-    }
+    if (content) prompt += "FULL ARTICLE:\n" + content + "\n\n";
+    else prompt += "\n";
 
     if (isVideo) {
       prompt += `This is a VIDEO post from ${videoType || "a video platform"}. Keep the caption under 80 words.\n\n`;
@@ -126,15 +120,23 @@ export async function generateAIContent(
       "CLICKBAIT_TITLE: YOUR TITLE HERE IN ALL CAPS\n" +
       "CAPTION: Your full caption here";
 
-    const result = await model.generateContent({
-      systemInstruction: systemPrompt,
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
+    // Use the Interactions API
+    const interaction = await (client.interactions as any).create({
+      model: "gemini-3-flash-preview",
+      system_instruction: systemPrompt,
+      input: prompt,
+      config: {
+        temperature: 0.7,
+        max_output_tokens: 1200,
+        top_p: 0.9,
+      },
+      store: false,
     });
 
-    const text = result.response.text().trim();
+    const text = extractText(interaction);
     let { clickbaitTitle, caption } = parseResponse(text);
 
-    // If first attempt is vague, retry once with stricter instructions
+    // If vague, retry once with stricter prompt using stateful conversation
     if (isVagueCaption(caption) && content) {
       const retryPrompt =
         "Your previous caption was too vague. Try again.\n\n" +
@@ -148,11 +150,16 @@ export async function generateAIContent(
         "CAPTION: ...";
 
       try {
-        const retry = await model.generateContent({
-          systemInstruction: systemPrompt,
-          contents: [{ role: "user", parts: [{ text: retryPrompt }] }],
+        const retry = await (client.interactions as any).create({
+          model: "gemini-3-flash-preview",
+          system_instruction: systemPrompt,
+          // Continue the conversation statefully if we have an interaction ID
+          ...(interaction?.id ? { previous_interaction_id: interaction.id } : {}),
+          input: retryPrompt,
+          config: { temperature: 0.5, max_output_tokens: 1200 },
+          store: false,
         });
-        const retryText = retry.response.text().trim();
+        const retryText = extractText(retry);
         const retryParsed = parseResponse(retryText);
         if (!isVagueCaption(retryParsed.caption)) {
           clickbaitTitle = retryParsed.clickbaitTitle || clickbaitTitle;
@@ -166,7 +173,6 @@ export async function generateAIContent(
     if (!clickbaitTitle) clickbaitTitle = buildClickbaitTitle(article);
     if (isVagueCaption(caption)) caption = buildFallbackCaption(article, clickbaitTitle);
 
-    // Final cleanup
     caption = caption.replace(/#\w+/g, "").replace(/\n{3,}/g, "\n\n").trim();
 
     return { clickbaitTitle, caption };
@@ -174,6 +180,23 @@ export async function generateAIContent(
     console.error("[gemini] failed:", err);
     return fallback(article);
   }
+}
+
+// Extract text from Interactions API response
+function extractText(interaction: any): string {
+  if (!interaction) return "";
+  // outputs is an array of output turns
+  if (Array.isArray(interaction.outputs) && interaction.outputs.length > 0) {
+    const last = interaction.outputs[interaction.outputs.length - 1];
+    if (last?.text) return last.text.trim();
+    // parts-based output
+    if (Array.isArray(last?.parts)) {
+      return last.parts.map((p: any) => p.text || "").join("").trim();
+    }
+  }
+  // Fallback: top-level text
+  if (interaction.text) return interaction.text.trim();
+  return "";
 }
 
 function parseResponse(text: string): { clickbaitTitle: string; caption: string } {
@@ -189,7 +212,6 @@ function parseResponse(text: string): { clickbaitTitle: string; caption: string 
   if (captionMatch) {
     caption = captionMatch[1].trim().replace(/^["']|["']$/g, "");
   } else if (!titleMatch) {
-    // Gemini didn't follow format — use entire output
     caption = text;
     const firstLine = text.split("\n")[0].trim();
     if (firstLine === firstLine.toUpperCase() && firstLine.length > 10) {
@@ -214,8 +236,7 @@ function isVagueCaption(caption: string): boolean {
     /this is (?:huge|big|massive)/i,
     /you won'?t believe/i,
   ];
-  const vagueCount = vaguePatterns.filter(p => p.test(caption)).length;
-  return vagueCount >= 2;
+  return vaguePatterns.filter(p => p.test(caption)).length >= 2;
 }
 
 function fallback(article: Article): AIContent {
@@ -230,14 +251,11 @@ function buildClickbaitTitle(article: Article): string {
 function buildFallbackCaption(article: Article, clickbaitTitle: string): string {
   const source = article.sourceName ? " — " + article.sourceName + " reports." : ".";
   const lede = article.title + source;
-
-  // Use fullBody or summary for the body
   const body = article.fullBody && article.fullBody.trim().length > 50
     ? article.fullBody.trim().slice(0, 500)
     : article.summary && article.summary.trim().length > 30
       ? article.summary.trim().slice(0, 500)
       : "";
-
   return (
     clickbaitTitle + "\n\n" +
     lede +
