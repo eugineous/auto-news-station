@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
       url: scraped.sourceUrl,
       imageUrl: scraped.imageUrl || scraped.videoThumbnailUrl || "",
       summary: description,
-      fullBody: description,
+      fullBody: scraped.bodyText || description,
       sourceName: scraped.sourceName,
       category: category || typeToCategory(scraped.type, title),
       publishedAt: new Date(),

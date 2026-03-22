@@ -7,6 +7,7 @@ export interface ScrapedContent {
   type: "article" | "youtube" | "tiktok" | "twitter" | "instagram" | "unknown";
   title: string;
   description: string;
+  bodyText: string;           // extracted article body text for AI context
   imageUrl: string;
   videoUrl?: string;          // public video URL for Graph API posting
   videoEmbedUrl?: string;     // iframe embed URL for preview player
@@ -44,6 +45,53 @@ function extractDescription(html: string): string {
 
 function extractImage(html: string): string {
   return extractMeta(html, "og:image") || extractMeta(html, "twitter:image") || extractMeta(html, "twitter:image:src") || "";
+}
+
+function extractBodyText(html: string): string {
+  // Try to extract article body from common selectors via regex
+  // Priority: <article>, [role="main"], .post-content, .article-body, .entry-content, main
+  const selectors = [
+    /<article[^>]*>([\s\S]*?)<\/article>/i,
+    /<div[^>]+class="[^"]*(?:article-body|post-content|entry-content|story-body|article-text|content-body)[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
+    /<main[^>]*>([\s\S]*?)<\/main>/i,
+  ];
+
+  let raw = "";
+  for (const re of selectors) {
+    const m = html.match(re);
+    if (m?.[1] && m[1].length > 200) {
+      raw = m[1];
+      break;
+    }
+  }
+
+  if (!raw) {
+    // Fallback: grab all <p> tags
+    const paragraphs = html.match(/<p[^>]*>([^<]{40,})<\/p>/gi) || [];
+    raw = paragraphs.join(" ");
+  }
+
+  if (!raw) return "";
+
+  // Strip HTML tags, decode entities, clean whitespace
+  const text = raw
+    .replace(/<script[\s\S]*?<\/script>/gi, "")
+    .replace(/<style[\s\S]*?<\/style>/gi, "")
+    .replace(/<nav[\s\S]*?<\/nav>/gi, "")
+    .replace(/<footer[\s\S]*?<\/footer>/gi, "")
+    .replace(/<aside[\s\S]*?<\/aside>/gi, "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#039;/g, "'")
+    .replace(/&nbsp;/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  // Return first ~2000 chars — enough context for AI without being excessive
+  return text.slice(0, 2000);
 }
 
 function detectType(url: string): ScrapedContent["type"] {
@@ -102,6 +150,7 @@ export async function scrapeUrl(inputUrl: string): Promise<ScrapedContent> {
       type: "youtube",
       title,
       description: `Watch: ${title} — ${author}`,
+      bodyText: "",
       imageUrl: thumbnail,
       videoThumbnailUrl: thumbnail,
       videoEmbedUrl: `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0`,
@@ -129,6 +178,7 @@ export async function scrapeUrl(inputUrl: string): Promise<ScrapedContent> {
           type: "tiktok",
           title: oembed.title || "TikTok Video",
           description: oembed.title || "",
+          bodyText: "",
           imageUrl: oembed.thumbnail_url || "",
           videoThumbnailUrl: oembed.thumbnail_url || "",
           videoEmbedUrl: videoId ? `https://www.tiktok.com/embed/v2/${videoId}` : undefined,
@@ -146,6 +196,7 @@ export async function scrapeUrl(inputUrl: string): Promise<ScrapedContent> {
       type: "tiktok",
       title: extractTitle(html),
       description: extractDescription(html),
+      bodyText: "",
       imageUrl: extractImage(html),
       videoUrl: resolved?.url || undefined,
       sourceUrl: inputUrl,
@@ -175,6 +226,7 @@ export async function scrapeUrl(inputUrl: string): Promise<ScrapedContent> {
           type: "twitter",
           title: `${author}: ${text.slice(0, 100)}`,
           description: text.slice(0, 500),
+          bodyText: text,
           imageUrl,
           videoUrl: resolved?.url || undefined,
           videoEmbedUrl: `https://platform.twitter.com/embed/Tweet.html?id=${tweetId}`,
@@ -190,6 +242,7 @@ export async function scrapeUrl(inputUrl: string): Promise<ScrapedContent> {
       type: "twitter",
       title: extractTitle(html),
       description: extractDescription(html),
+      bodyText: "",
       imageUrl: extractImage(html),
       videoUrl: resolved?.url || undefined,
       sourceUrl: inputUrl,
@@ -215,6 +268,7 @@ export async function scrapeUrl(inputUrl: string): Promise<ScrapedContent> {
           type: "instagram",
           title: oembed.title || `Instagram post by ${oembed.author_name || "user"}`,
           description: oembed.title || "Instagram post",
+          bodyText: "",
           imageUrl: oembed.thumbnail_url || "",
           videoThumbnailUrl: oembed.thumbnail_url || "",
           videoEmbedUrl: postId ? `https://www.instagram.com/p/${postId}/embed/` : undefined,
@@ -230,6 +284,7 @@ export async function scrapeUrl(inputUrl: string): Promise<ScrapedContent> {
       type: "instagram",
       title: "",
       description: "",
+      bodyText: "",
       imageUrl: "",
       videoUrl: resolved?.url || undefined,
       sourceUrl: inputUrl,
@@ -248,6 +303,7 @@ export async function scrapeUrl(inputUrl: string): Promise<ScrapedContent> {
     type: "article",
     title: extractTitle(html),
     description: extractDescription(html),
+    bodyText: extractBodyText(html),
     imageUrl: extractImage(html),
     videoUrl: isDirectVideo ? inputUrl : undefined,
     sourceUrl: inputUrl,

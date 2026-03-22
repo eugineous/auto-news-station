@@ -6,45 +6,71 @@ export interface AIContent {
   caption: string;
 }
 
-const SYSTEM_PROMPT = `You are the senior content editor for PPP TV Kenya — a Kenyan entertainment news brand on Instagram and Facebook.
-You write like a professional Nairobi journalist. Every caption must deliver real information.
+const SYSTEM_PROMPT = `You are the head of content at PPP TV Kenya — a popular Kenyan entertainment and news brand on Instagram and Facebook. You write like a seasoned Nairobi journalist who knows how to hook readers while delivering real news.
 
-CLICKBAIT_TITLE RULES:
-- ALL CAPS. Max 10 words.
-- Must contain a real name, place, or detail from the article.
-- Use curiosity or urgency naturally — do NOT force clickbait.
-- Kenyan slang only when it fits naturally: KUMBE, WUEH, ENYEWE
-- NEVER fabricate facts. Only use what is in the article.
+Your job: turn articles into social media captions that are informative, engaging, and feel like they were written by a real Kenyan news editor — not a robot.
 
-CAPTION RULES:
-Write a short news story. The reader must learn the actual story just from your caption.
+## TITLE RULES
+- ALL CAPS, max 10 words
+- Must include a real name, place, or number from the article
+- Be specific: "RUTO SIGNS KSH 4.2B HOUSING DEAL" not "GOVERNMENT MAKES BIG MOVE"
+- Use Kenyan slang only when natural: KUMBE, WUEH, ENYEWE, SASA
+- Never fabricate — only use facts from the article
 
-STRUCTURE:
-[TITLE IN ALL CAPS]
+## CAPTION STRUCTURE
+Your caption has 4 parts, separated by blank lines:
 
-[One-sentence lede: WHO did WHAT, WHERE. Use the person's real name.]
+1. HEADLINE — the title in ALL CAPS (same as CLICKBAIT_TITLE)
+2. LEDE — one punchy sentence: WHO did WHAT, WHERE. Real name required.
+3. BODY — 2-4 sentences of real detail. Include: names, locations, Ksh figures, dates, quotes, context. The reader should understand the full story without clicking.
+4. CTA — one engaging question specific to this story + optional 👇
 
-[2-3 sentences with real details: names, locations, Ksh figures, dates, quotes, what happened, why it matters. Be specific — never be vague.]
+## WHAT MAKES A GOOD CAPTION
+- Every sentence has a SPECIFIC FACT (name, number, place, date, quote)
+- Reads like a journalist wrote it, not a content mill
+- Flows naturally — no forced transitions
+- Feels like insider knowledge being shared
 
-[Engaging question about this specific story]
+## WHAT MAKES A BAD CAPTION (never do these)
+- Vague filler: "The internet is buzzing", "Here's everything you need to know", "This is huge"
+- Generic CTAs: "Stay tuned", "Watch this space", "Link in bio"
+- Repeating the title as the lede with no new info
+- Writing "BREAKING" anywhere
+- ALL CAPS in the body (only the headline)
+- Any hashtags whatsoever
+- More than 2 emojis total
 
-STRICT RULES:
-- ZERO hashtags anywhere
-- Max 2 emojis in the entire caption
-- Never write "BREAKING", "Here's everything you need to know", "Get the full story", "link in bio", "stay tuned", or "watch this space"
-- Never use all-caps in the body paragraphs — only the title line
-- Every sentence must contain a specific fact, name, or detail
-- The caption must be at least 200 characters long
+## EXAMPLES
 
-EXAMPLE:
-WAHU KAGWI HONOURED WITH ONERPM KENYA LEGACY AWARD
+GOOD:
+CLICKBAIT_TITLE: BIEN AIME EXITS SOL GENERATION AFTER 12 YEARS
+CAPTION: BIEN AIME EXITS SOL GENERATION AFTER 12 YEARS
 
-Wahu Kagwi has been recognised with the ONErpm Kenya Legacy Award for two decades of shaping Kenyan music.
+Bien-Aimé Baraza has officially left Sol Generation, the label he co-founded with Sauti Sol in 2018.
 
-The award was presented at a ceremony in Nairobi, celebrating her journey from her 2003 debut to becoming one of East Africa's most influential artists. ONErpm Kenya cited her consistent output and mentorship of younger artists as key reasons for the honour. Wahu dedicated the award to her fans and her family.
+The announcement came via a statement on his socials, citing "creative differences and a need to explore solo ventures." Bien's departure leaves Savara as the only active member still releasing music under the Sol Generation umbrella. His debut solo album is reportedly in the works, with features from Nyashinski and Karun. The split has been described as amicable, with both sides wishing each other well.
 
-Drop your thoughts below 👇
-Who else deserves a legacy award in Kenya?`;
+What do you think Bien's solo music will sound like? 👇
+
+GOOD (shorter article with less detail):
+CLICKBAIT_TITLE: KENYA RUGBY 7S SQUAD NAMED FOR HONG KONG
+CAPTION: KENYA RUGBY 7S SQUAD NAMED FOR HONG KONG
+
+Head coach Damian McGrath has announced Kenya's 13-man squad for the Hong Kong Sevens this weekend.
+
+The team includes returning captain Nelson Oyoo and in-form winger Daniel Taabu, who scored 5 tries in the last leg. Youngster Johnstone Olindi earns his first tournament call-up after impressing in training camp.
+
+Who's your pick for player of the tournament? 👇
+
+BAD (do NOT write like this):
+"Exciting news from the Kenyan entertainment scene! Something big just happened and everyone is talking about it. Here's everything you need to know about this developing story. Stay tuned for more updates from PPP TV Kenya!"`;
+
+const VIDEO_EXTRA = `
+## VIDEO CAPTION RULES (this is a video post)
+- Keep the caption SHORT — max 80 words total. The video speaks for itself.
+- Structure: HEADLINE → 1-2 sentences about what the video shows → question
+- Credit the original creator if their name is known
+- Don't describe the video frame by frame — just the key moment or topic`;
 
 export async function generateAIContent(
   article: Article,
@@ -53,79 +79,95 @@ export async function generateAIContent(
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) return fallback(article);
 
+  const isVideo = options?.isVideo || false;
+  const videoType = options?.videoType || "";
+
   try {
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash",
-      generationConfig: { temperature: 0.6, maxOutputTokens: 1000 },
+      model: "gemini-2.0-flash",
+      generationConfig: {
+        temperature: 0.7,
+        maxOutputTokens: 1200,
+        topP: 0.9,
+      },
     });
 
+    const systemPrompt = isVideo ? SYSTEM_PROMPT + VIDEO_EXTRA : SYSTEM_PROMPT;
+
+    // Build context — use fullBody if available for richer AI input
+    const hasBody = article.fullBody && article.fullBody.trim().length > 50;
     const hasSummary = article.summary && article.summary.trim().length > 20;
-    const isVideo = options?.isVideo || false;
-    const videoType = options?.videoType || "";
+    const content = hasBody
+      ? article.fullBody.trim().slice(0, 2000)
+      : hasSummary
+        ? article.summary.trim()
+        : "";
 
     let prompt =
-      "Write a social media caption for PPP TV Kenya based on this article.\n\n" +
-      "ARTICLE TITLE: " + article.title + "\n" +
+      "Write a PPP TV Kenya social media caption for this:\n\n" +
+      "TITLE: " + article.title + "\n" +
       "CATEGORY: " + article.category + "\n" +
-      "SOURCE: " + (article.sourceName || "unknown") + "\n" +
-      (hasSummary ? "ARTICLE CONTENT:\n" + article.summary + "\n\n" : "\n") +
-      "IMPORTANT: Use ONLY facts from the article above. Include real names, places, and details.\n" +
-      "Do NOT include any hashtags.\n\n";
+      "SOURCE: " + (article.sourceName || "unknown") + "\n";
+
+    if (content) {
+      prompt += "FULL ARTICLE:\n" + content + "\n\n";
+    } else {
+      prompt += "\n";
+    }
 
     if (isVideo) {
-      prompt +=
-        `This is a VIDEO post (shared from ${videoType || "video platform"}). ` +
-        "The caption should be SHORT — max 100 words. The video speaks for itself.\n" +
-        "Structure: Title line (ALL CAPS) → 1-2 sentences about what the video shows → engaging question.\n" +
-        "Credit the original creator if known.\n\n";
+      prompt += `This is a VIDEO post from ${videoType || "a video platform"}. Keep the caption under 80 words.\n\n`;
     }
 
     prompt +=
-      "Respond in EXACTLY this format:\n" +
-      "CLICKBAIT_TITLE: [your title in ALL CAPS, max 10 words]\n" +
-      "CAPTION: [your full caption starting with the title line]";
+      "Use ONLY facts from the article. No hashtags. No fabrication.\n\n" +
+      "Respond EXACTLY like this:\n" +
+      "CLICKBAIT_TITLE: YOUR TITLE HERE IN ALL CAPS\n" +
+      "CAPTION: Your full caption here";
 
     const result = await model.generateContent({
-      systemInstruction: SYSTEM_PROMPT,
+      systemInstruction: systemPrompt,
       contents: [{ role: "user", parts: [{ text: prompt }] }],
     });
 
     const text = result.response.text().trim();
+    let { clickbaitTitle, caption } = parseResponse(text);
 
-    // More robust parsing — handle various Gemini output quirks
-    let clickbaitTitle = "";
-    let rawCaption = "";
+    // If first attempt is vague, retry once with stricter instructions
+    if (isVagueCaption(caption) && content) {
+      const retryPrompt =
+        "Your previous caption was too vague. Try again.\n\n" +
+        "TITLE: " + article.title + "\n" +
+        "ARTICLE:\n" + content + "\n\n" +
+        "RULES:\n" +
+        "- Every sentence MUST contain a real name, place, date, or number\n" +
+        "- No filler phrases like 'the internet is buzzing' or 'here's what happened'\n" +
+        "- Write like you're texting a friend the actual news\n\n" +
+        "CLICKBAIT_TITLE: ...\n" +
+        "CAPTION: ...";
 
-    const titleMatch = text.match(/CLICKBAIT_TITLE:\s*(.+)/);
-    if (titleMatch) {
-      clickbaitTitle = titleMatch[1].trim().replace(/^["']|["']$/g, "");
-    }
-
-    const captionMatch = text.match(/CAPTION:\s*([\s\S]+)/);
-    if (captionMatch) {
-      rawCaption = captionMatch[1].trim().replace(/^["']|["']$/g, "");
-    } else if (!titleMatch) {
-      // Gemini didn't follow format — use the whole output as caption
-      rawCaption = text;
-      const firstLine = text.split("\n")[0].trim();
-      if (firstLine === firstLine.toUpperCase() && firstLine.length > 10) {
-        clickbaitTitle = firstLine;
+      try {
+        const retry = await model.generateContent({
+          systemInstruction: systemPrompt,
+          contents: [{ role: "user", parts: [{ text: retryPrompt }] }],
+        });
+        const retryText = retry.response.text().trim();
+        const retryParsed = parseResponse(retryText);
+        if (!isVagueCaption(retryParsed.caption)) {
+          clickbaitTitle = retryParsed.clickbaitTitle || clickbaitTitle;
+          caption = retryParsed.caption;
+        }
+      } catch {
+        // Keep first attempt
       }
     }
 
-    // Strip any hashtags Gemini sneaks in
-    rawCaption = rawCaption.replace(/#\w+/g, "").replace(/[ \t]{2,}/g, " ").trim();
-    // Clean up excessive newlines but keep paragraph breaks
-    rawCaption = rawCaption.replace(/\n{3,}/g, "\n\n").trim();
+    if (!clickbaitTitle) clickbaitTitle = buildClickbaitTitle(article);
+    if (isVagueCaption(caption)) caption = buildFallbackCaption(article, clickbaitTitle);
 
-    if (!clickbaitTitle) {
-      clickbaitTitle = buildClickbaitTitle(article);
-    }
-
-    const caption = isVagueCaption(rawCaption)
-      ? buildFallbackCaption(article, clickbaitTitle)
-      : rawCaption;
+    // Final cleanup
+    caption = caption.replace(/#\w+/g, "").replace(/\n{3,}/g, "\n\n").trim();
 
     return { clickbaitTitle, caption };
   } catch (err) {
@@ -134,8 +176,32 @@ export async function generateAIContent(
   }
 }
 
+function parseResponse(text: string): { clickbaitTitle: string; caption: string } {
+  let clickbaitTitle = "";
+  let caption = "";
+
+  const titleMatch = text.match(/CLICKBAIT_TITLE:\s*(.+)/);
+  if (titleMatch) {
+    clickbaitTitle = titleMatch[1].trim().replace(/^["']|["']$/g, "");
+  }
+
+  const captionMatch = text.match(/CAPTION:\s*([\s\S]+)/);
+  if (captionMatch) {
+    caption = captionMatch[1].trim().replace(/^["']|["']$/g, "");
+  } else if (!titleMatch) {
+    // Gemini didn't follow format — use entire output
+    caption = text;
+    const firstLine = text.split("\n")[0].trim();
+    if (firstLine === firstLine.toUpperCase() && firstLine.length > 10) {
+      clickbaitTitle = firstLine;
+    }
+  }
+
+  return { clickbaitTitle, caption };
+}
+
 function isVagueCaption(caption: string): boolean {
-  if (caption.length < 80) return true;
+  if (!caption || caption.length < 60) return true;
   const vaguePatterns = [
     /here'?s everything you need to know/i,
     /get the full story/i,
@@ -143,8 +209,11 @@ function isVagueCaption(caption: string): boolean {
     /stay tuned/i,
     /watch this space/i,
     /follow .+ for (?:more|the latest)/i,
+    /the internet is buzzing/i,
+    /everyone is talking/i,
+    /this is (?:huge|big|massive)/i,
+    /you won'?t believe/i,
   ];
-  // Only reject if more than half the caption is vague filler
   const vagueCount = vaguePatterns.filter(p => p.test(caption)).length;
   return vagueCount >= 2;
 }
@@ -155,23 +224,25 @@ function fallback(article: Article): AIContent {
 }
 
 function buildClickbaitTitle(article: Article): string {
-  // Just use the article title in caps — no cheesy suffixes
   return article.title.toUpperCase().slice(0, 80);
 }
 
 function buildFallbackCaption(article: Article, clickbaitTitle: string): string {
-  const hasSummary = article.summary && article.summary.trim().length > 30;
-  const summary = hasSummary ? article.summary!.trim() : "";
   const source = article.sourceName ? " — " + article.sourceName + " reports." : ".";
   const lede = article.title + source;
-  const body = summary
-    ? summary.slice(0, 500)
-    : "Details on this story are still emerging.";
+
+  // Use fullBody or summary for the body
+  const body = article.fullBody && article.fullBody.trim().length > 50
+    ? article.fullBody.trim().slice(0, 500)
+    : article.summary && article.summary.trim().length > 30
+      ? article.summary.trim().slice(0, 500)
+      : "";
+
   return (
     clickbaitTitle + "\n\n" +
-    lede + "\n\n" +
-    body + "\n\n" +
-    "Drop your thoughts below 👇\n" +
-    "What do you make of this?"
+    lede +
+    (body ? "\n\n" + body : "") +
+    "\n\n" +
+    "What do you think about this? 👇"
   );
 }
