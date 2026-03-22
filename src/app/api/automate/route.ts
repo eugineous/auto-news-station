@@ -261,7 +261,7 @@ export async function POST(req: NextRequest) {
   // ── Daily cap check ───────────────────────────────────────────────────────
   const dailyCount = await getDailyCount();
   if (dailyCount >= 8) {
-    return NextResponse.json({ ...response, message: "Daily cap reached (6 posts)" });
+    return NextResponse.json({ ...response, message: "Daily cap reached (8 posts/day)" });
   }
 
   try {
