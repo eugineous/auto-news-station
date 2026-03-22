@@ -299,7 +299,7 @@ export async function POST(req: NextRequest) {
       .sort((a, b) => b.score - a.score);
 
     // 6. Post exactly 2 articles per run
-    const remaining = 6 - dailyCount;
+    const remaining = 12 - dailyCount;
     const toPost = scored.slice(0, Math.min(2, remaining)).map(s => s.article);
 
     // CRITICAL: Mark all selected articles as seen IMMEDIATELY before posting

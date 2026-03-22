@@ -145,6 +145,8 @@ async function publishToInstagram(post: SocialPost, imageBuffer: Buffer): Promis
     const photoData = await photoRes.json() as any;
     const hostedUrl: string = photoData.images?.[0]?.source ?? "";
     if (!hostedUrl) throw new Error("Could not get hosted image URL from FB");
+    // Wait for FB CDN propagation before creating IG container
+    await sleep(4000);
 
     const containerRes = await withRetry(() =>
       fetch(`${GRAPH_API}/${accountId}/media`, {
