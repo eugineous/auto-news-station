@@ -195,7 +195,7 @@ export async function generateImage(article: Article, opts: ImageOptions = {}): 
             : buildGradientBg(category),
 
           // Gradient overlay
-          { type: "div", props: { style: { display: "flex", position: "absolute", left: 0, right: 0, top: 0, height: imgH, background: "linear-gradient(to bottom, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0) 30%, rgba(0,0,0,0.5) 50%, rgba(0,0,0,0.88) 65%, rgba(0,0,0,1) 78%)" } } },
+          { type: "div", props: { style: { display: "flex", position: "absolute", left: 0, right: 0, top: 0, height: imgH, background: "linear-gradient(to bottom, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0) 30%, rgba(0,0,0,0.5) 50%, rgba(0,0,0,0.88) 65%, rgba(0,0,0,1) 78%)" }, children: [] } },
 
           // Breaking banner (conditional)
           showBreaking ? buildBreakingBanner() : null,
