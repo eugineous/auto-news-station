@@ -10,6 +10,7 @@
         "lint": "next lint"
     },
     "dependencies": {
+        "@distube/ytdl-core": "^4.16.12",
         "@google/genai": "^1.46.0",
         "@upstash/redis": "^1.37.0",
         "@vercel/og": "^0.6.2",
