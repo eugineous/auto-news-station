@@ -18,52 +18,48 @@ Your job: turn articles into social media captions that are informative, engagin
 - Never fabricate — only use facts from the article
 
 ## CAPTION STRUCTURE
-Your caption has 4 parts, separated by blank lines:
+Your caption has 3 parts, separated by blank lines. DO NOT include the headline/title inside the caption at all:
 
-1. HEADLINE — the title in ALL CAPS (same as CLICKBAIT_TITLE)
-2. LEDE — one punchy sentence: WHO did WHAT, WHERE. Real name required.
-3. BODY — 2-4 sentences of real detail. Include: names, locations, Ksh figures, dates, quotes, context. The reader should understand the full story without clicking.
-4. CTA — one engaging question specific to this story + optional 👇
+1. LEDE — one punchy sentence: WHO did WHAT, WHERE. Real name required. NO ALL CAPS.
+2. BODY — one paragraph (3-5 sentences) of real detail. Include: names, locations, Ksh figures, dates, quotes, context. The reader should understand the full story without clicking. Keep it to ONE paragraph only.
+3. CTA — one engaging question specific to this story + optional 👇
 
-## WHAT MAKES A GOOD CAPTION
+## CRITICAL RULES
+- NEVER start the caption with the headline or title — not even paraphrased
+- NEVER use ALL CAPS anywhere in the caption body
+- The caption starts directly with the lede sentence
+- ONE paragraph for the body — not bullet points, not multiple paragraphs of detail
 - Every sentence has a SPECIFIC FACT (name, number, place, date, quote)
-- Reads like a journalist wrote it, not a content mill
-- Flows naturally — no forced transitions
-- Feels like insider knowledge being shared
+- No hashtags whatsoever
+- Max 2 emojis total
 
 ## WHAT MAKES A BAD CAPTION (never do these)
+- Starting with the headline repeated: "REAL MADRID BEAT ATLETICO..." or "Real Madrid Beat Atletico..."
 - Vague filler: "The internet is buzzing", "Here's everything you need to know", "This is huge"
 - Generic CTAs: "Stay tuned", "Watch this space", "Link in bio"
-- Repeating the title as the lede with no new info
 - Writing "BREAKING" anywhere
-- ALL CAPS in the body (only the headline)
-- Any hashtags whatsoever
-- More than 2 emojis total
+- More than one body paragraph
 
 ## EXAMPLES
 
 GOOD:
 CLICKBAIT_TITLE: BIEN AIME EXITS SOL GENERATION AFTER 12 YEARS
-CAPTION: BIEN AIME EXITS SOL GENERATION AFTER 12 YEARS
-
-Bien-Aimé Baraza has officially left Sol Generation, the label he co-founded with Sauti Sol in 2018.
+CAPTION: Bien-Aimé Baraza has officially left Sol Generation, the label he co-founded with Sauti Sol in 2018.
 
 The announcement came via a statement on his socials, citing "creative differences and a need to explore solo ventures." Bien's departure leaves Savara as the only active member still releasing music under the Sol Generation umbrella. His debut solo album is reportedly in the works, with features from Nyashinski and Karun. The split has been described as amicable, with both sides wishing each other well.
 
 What do you think Bien's solo music will sound like? 👇
 
-GOOD (shorter article with less detail):
-CLICKBAIT_TITLE: KENYA RUGBY 7S SQUAD NAMED FOR HONG KONG
-CAPTION: KENYA RUGBY 7S SQUAD NAMED FOR HONG KONG
+GOOD:
+CLICKBAIT_TITLE: VINICIUS DOUBLE KEEPS REAL MADRID FOUR POINTS BEHIND BARCA
+CAPTION: Vinicius Junior scored twice — including a clinical penalty and a stunning late winner — as Real Madrid edged Atletico 3-2 at the Bernabeu.
 
-Head coach Damian McGrath has announced Kenya's 13-man squad for the Hong Kong Sevens this weekend.
+The victory keeps Carlo Ancelotti's side four points behind La Liga leaders Barcelona with eight games remaining. Atletico had levelled twice through Griezmann and Correa before Vinicius sealed it in the 87th minute. The result leaves the title race wide open heading into the final stretch.
 
-The team includes returning captain Nelson Oyoo and in-form winger Daniel Taabu, who scored 5 tries in the last leg. Youngster Johnstone Olindi earns his first tournament call-up after impressing in training camp.
-
-Who's your pick for player of the tournament? 👇
+Who takes La Liga this season? 👇
 
 BAD (do NOT write like this):
-"Exciting news from the Kenyan entertainment scene! Something big just happened and everyone is talking about it. Here's everything you need to know about this developing story. Stay tuned for more updates from PPP TV Kenya!"`;
+"REAL MADRID BEAT ATLETICO 3-2 TO STAY FOUR POINTS BEHIND BARCELONA Real Madrid Beat Atletico 3-2 to Stay Four Points Behind Barcelona — PPP TV Kenya reports..."`;
 
 const VIDEO_EXTRA = `
 ## VIDEO CAPTION RULES (this is a video post)
@@ -115,28 +111,27 @@ export async function generateAIContent(
     }
 
     prompt +=
-      "Use ONLY facts from the article. No hashtags. No fabrication.\n\n" +
+      "Use ONLY facts from the article. No hashtags. No fabrication.\n" +
+      "CRITICAL: Do NOT start the caption with the headline or title.\n\n" +
       "Respond EXACTLY like this:\n" +
       "CLICKBAIT_TITLE: YOUR TITLE HERE IN ALL CAPS\n" +
-      "CAPTION: Your full caption here";
+      "CAPTION: Your full caption here (starts with lede, NOT the headline)";
 
-    // Use the Interactions API
-    const interaction = await (client.interactions as any).create({
-      model: "gemini-3-flash-preview",
-      system_instruction: systemPrompt,
-      input: prompt,
+    const response = await client.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: prompt,
       config: {
+        systemInstruction: systemPrompt,
         temperature: 0.7,
-        max_output_tokens: 1200,
-        top_p: 0.9,
+        maxOutputTokens: 1200,
+        topP: 0.9,
       },
-      store: false,
     });
 
-    const text = extractText(interaction);
+    const text = response.text?.trim() ?? "";
     let { clickbaitTitle, caption } = parseResponse(text);
 
-    // If vague, retry once with stricter prompt using stateful conversation
+    // If vague, retry once with stricter prompt
     if (isVagueCaption(caption) && content) {
       const retryPrompt =
         "Your previous caption was too vague. Try again.\n\n" +
@@ -145,21 +140,22 @@ export async function generateAIContent(
         "RULES:\n" +
         "- Every sentence MUST contain a real name, place, date, or number\n" +
         "- No filler phrases like 'the internet is buzzing' or 'here's what happened'\n" +
-        "- Write like you're texting a friend the actual news\n\n" +
+        "- Write like you're texting a friend the actual news\n" +
+        "- Do NOT start with the headline\n\n" +
         "CLICKBAIT_TITLE: ...\n" +
         "CAPTION: ...";
 
       try {
-        const retry = await (client.interactions as any).create({
-          model: "gemini-3-flash-preview",
-          system_instruction: systemPrompt,
-          // Continue the conversation statefully if we have an interaction ID
-          ...(interaction?.id ? { previous_interaction_id: interaction.id } : {}),
-          input: retryPrompt,
-          config: { temperature: 0.5, max_output_tokens: 1200 },
-          store: false,
+        const retry = await client.models.generateContent({
+          model: "gemini-2.5-flash",
+          contents: retryPrompt,
+          config: {
+            systemInstruction: systemPrompt,
+            temperature: 0.5,
+            maxOutputTokens: 1200,
+          },
         });
-        const retryText = extractText(retry);
+        const retryText = retry.text?.trim() ?? "";
         const retryParsed = parseResponse(retryText);
         if (!isVagueCaption(retryParsed.caption)) {
           clickbaitTitle = retryParsed.clickbaitTitle || clickbaitTitle;
@@ -173,6 +169,8 @@ export async function generateAIContent(
     if (!clickbaitTitle) clickbaitTitle = buildClickbaitTitle(article);
     if (isVagueCaption(caption)) caption = buildFallbackCaption(article, clickbaitTitle);
 
+    // Strip any headline that leaked into the top of the caption
+    caption = stripLeadingHeadline(caption, clickbaitTitle, article.title);
     caption = caption.replace(/#\w+/g, "").replace(/\n{3,}/g, "\n\n").trim();
 
     return { clickbaitTitle, caption };
@@ -182,21 +180,25 @@ export async function generateAIContent(
   }
 }
 
-// Extract text from Interactions API response
-function extractText(interaction: any): string {
-  if (!interaction) return "";
-  // outputs is an array of output turns
-  if (Array.isArray(interaction.outputs) && interaction.outputs.length > 0) {
-    const last = interaction.outputs[interaction.outputs.length - 1];
-    if (last?.text) return last.text.trim();
-    // parts-based output
-    if (Array.isArray(last?.parts)) {
-      return last.parts.map((p: any) => p.text || "").join("").trim();
-    }
+// Strip a headline that leaked into the top of the caption
+function stripLeadingHeadline(caption: string, clickbaitTitle: string, originalTitle: string): string {
+  const lines = caption.split("\n");
+  const first = lines[0].trim();
+  // If the first line is all-caps and matches the headline pattern, drop it
+  if (first === first.toUpperCase() && first.length > 10 && first.replace(/[^A-Z]/g, "").length > 5) {
+    lines.shift();
+    // Also drop the blank line after it
+    while (lines.length && lines[0].trim() === "") lines.shift();
+    return lines.join("\n");
   }
-  // Fallback: top-level text
-  if (interaction.text) return interaction.text.trim();
-  return "";
+  // If the first line starts with the title (title-cased version), drop it
+  const titleNorm = originalTitle.toLowerCase().slice(0, 40);
+  if (first.toLowerCase().startsWith(titleNorm.slice(0, 30))) {
+    lines.shift();
+    while (lines.length && lines[0].trim() === "") lines.shift();
+    return lines.join("\n");
+  }
+  return caption;
 }
 
 function parseResponse(text: string): { clickbaitTitle: string; caption: string } {
@@ -249,17 +251,32 @@ function buildClickbaitTitle(article: Article): string {
 }
 
 function buildFallbackCaption(article: Article, clickbaitTitle: string): string {
-  const source = article.sourceName ? " — " + article.sourceName + " reports." : ".";
-  const lede = article.title + source;
-  const body = article.fullBody && article.fullBody.trim().length > 50
-    ? article.fullBody.trim().slice(0, 500)
+  // Use the best available body text — never repeat the headline in the caption
+  const rawBody = article.fullBody && article.fullBody.trim().length > 50
+    ? article.fullBody.trim()
     : article.summary && article.summary.trim().length > 30
-      ? article.summary.trim().slice(0, 500)
+      ? article.summary.trim()
       : "";
+
+  // Build a single clean paragraph — strip any ALL CAPS lines that look like headlines
+  const cleaned = rawBody
+    .split(/\n+/)
+    .filter(line => {
+      const t = line.trim();
+      if (!t) return false;
+      // Drop lines that are mostly uppercase (headline artifacts)
+      const upperRatio = (t.match(/[A-Z]/g) || []).length / t.replace(/\s/g, "").length;
+      return upperRatio < 0.7;
+    })
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 500);
+
+  const body = cleaned || article.title;
+
   return (
-    clickbaitTitle + "\n\n" +
-    lede +
-    (body ? "\n\n" + body : "") +
+    body +
     "\n\n" +
     "What do you think about this? 👇"
   );

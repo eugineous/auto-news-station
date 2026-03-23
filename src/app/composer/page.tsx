@@ -1,13 +1,17 @@
 ﻿"use client";
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 
 const PINK = "#FF007A";
-const SECRET = process.env.NEXT_PUBLIC_AUTOMATE_SECRET || "";
 
 type Tab = "video" | "carousel";
 type Status = "idle" | "loading" | "success" | "error";
 
-// ── helpers ──────────────────────────────────────────────────────────────────
+async function getSecret(): Promise<string> {
+  const r = await fetch("/api/automate-secret");
+  if (r.ok) { const d = await r.json(); return d.secret || ""; }
+  return "";
+}
+
 function fileToBase64(file: File): Promise<string> {
   return new Promise((res, rej) => {
     const r = new FileReader();
@@ -17,10 +21,57 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
-async function getSecret(): Promise<string> {
-  const r = await fetch("/api/automate-secret");
-  if (r.ok) { const d = await r.json(); return d.secret || ""; }
-  return "";
+// ── Branded thumbnail preview ─────────────────────────────────────────────────
+// imageUrl can be a remote URL (video tab) or a base64 string (carousel cover upload)
+function ThumbnailPreview({ headline, category, imageUrl, imageBase64 }: { headline: string; category: string; imageUrl?: string; imageBase64?: string }) {
+  const [src, setSrc] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!headline.trim()) { setSrc(null); return; }
+    if (!imageUrl && !imageBase64) { setSrc(null); return; }
+
+    setLoading(true);
+    setSrc(null);
+
+    if (imageBase64) {
+      // POST with base64 for uploaded files
+      fetch("/api/preview-image", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: headline, category, imageBase64 }),
+      }).then(r => {
+        if (!r.ok) { setLoading(false); return; }
+        return r.blob();
+      }).then(blob => {
+        if (!blob) return;
+        setSrc(URL.createObjectURL(blob));
+        setLoading(false);
+      }).catch(() => setLoading(false));
+    } else if (imageUrl) {
+      // GET with remote URL for video tab
+      const params = new URLSearchParams({ title: headline, category, imageUrl });
+      const url = `/api/preview-image?${params}`;
+      const img = new Image();
+      img.onload = () => { setSrc(url); setLoading(false); };
+      img.onerror = () => { setSrc(null); setLoading(false); };
+      img.src = url;
+    }
+  }, [headline, category, imageUrl, imageBase64]);
+
+  if (!imageUrl && !imageBase64) return null;
+
+  return (
+    <div style={{ width: "100%", maxWidth: 280, aspectRatio: "4/5", background: "#111", borderRadius: 8, overflow: "hidden", position: "relative", border: "1px solid #222" }}>
+      {loading && (
+        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <span style={{ fontSize: 11, color: "#555" }}>Generating...</span>
+        </div>
+      )}
+      {src && <img src={src} alt="thumbnail preview" style={{ width: "100%", height: "100%", objectFit: "cover", display: loading ? "none" : "block" }} />}
+      <div style={{ position: "absolute", top: 8, right: 8, background: "rgba(0,0,0,.7)", borderRadius: 4, padding: "2px 7px", fontSize: 10, color: "#fff" }}>4:5</div>
+    </div>
+  );
 }
 
 // ── Video Tab ─────────────────────────────────────────────────────────────────
@@ -28,18 +79,14 @@ function VideoTab() {
   const [url, setUrl] = useState("");
   const [headline, setHeadline] = useState("");
   const [caption, setCaption] = useState("");
-  const [category, setCategory] = useState("GENERAL");
+  const [thumbUrl, setThumbUrl] = useState("");
+  const [fetching, setFetching] = useState(false);
   const [status, setStatus] = useState<Status>("idle");
   const [result, setResult] = useState<any>(null);
-  const [thumbPreview, setThumbPreview] = useState<string | null>(null);
-  const [previewing, setPreviewing] = useState(false);
 
-  const CATS = ["GENERAL","CELEBRITY","MUSIC","TV & FILM","FASHION","EVENTS","EAST AFRICA","COMEDY","INFLUENCERS"];
-
-  async function handlePreview() {
+  async function fetchVideoInfo() {
     if (!url.trim()) return;
-    setPreviewing(true);
-    setThumbPreview(null);
+    setFetching(true);
     try {
       const r = await fetch("/api/preview-url", {
         method: "POST",
@@ -47,317 +94,284 @@ function VideoTab() {
         body: JSON.stringify({ url: url.trim() }),
       });
       const d = await r.json();
-      if (d.scraped?.imageUrl) setThumbPreview(d.scraped.imageUrl);
-      if (!headline && d.scraped?.title) setHeadline(d.scraped.title.toUpperCase().slice(0, 80));
+      const img = d.scraped?.imageUrl || d.scraped?.videoThumbnailUrl || "";
+      if (img) setThumbUrl(img);
+      if (!headline && d.scraped?.title) setHeadline(d.scraped.title.toUpperCase().slice(0, 100));
     } catch {}
-    setPreviewing(false);
+    setFetching(false);
   }
 
   async function handlePost() {
     if (!url.trim() || !headline.trim() || !caption.trim()) return;
-    setStatus("loading");
-    setResult(null);
+    setStatus("loading"); setResult(null);
     try {
       const secret = await getSecret();
       const r = await fetch("/api/post-video", {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": "Bearer " + secret },
-        body: JSON.stringify({ url: url.trim(), headline: headline.trim(), caption: caption.trim(), category }),
+        body: JSON.stringify({ url: url.trim(), headline: headline.trim(), caption: caption.trim(), category: "TRENDING" }),
       });
       const d = await r.json();
       setResult(d);
-      setStatus(d.success ? "success" : "error");
-    } catch (err: any) {
-      setResult({ error: err.message });
-      setStatus("error");
-    }
+      setStatus(d.instagram?.success || d.facebook?.success ? "success" : "error");
+    } catch (err: any) { setResult({ error: err.message }); setStatus("error"); }
   }
 
   const canPost = url.trim() && headline.trim() && caption.trim() && status !== "loading";
 
   return (
-    <div className="space-y-5">
-      {/* URL input */}
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      {/* URL */}
       <div>
-        <label className="block text-xs font-bold uppercase tracking-widest text-gray-400 mb-2">Video URL</label>
-        <div className="flex gap-2">
+        <label style={labelStyle}>Video URL</label>
+        <div style={{ display: "flex", gap: 8 }}>
           <input
             value={url} onChange={e => setUrl(e.target.value)}
-            onBlur={handlePreview}
+            onBlur={fetchVideoInfo}
             placeholder="YouTube, TikTok, Instagram, or direct .mp4 URL"
-            className="flex-1 bg-[#111] border border-[#222] rounded px-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#FF007A]"
+            style={inputStyle}
           />
-          <button onClick={handlePreview} disabled={!url.trim() || previewing}
-            className="px-4 py-3 text-xs font-black uppercase tracking-widest rounded transition-opacity hover:opacity-80 disabled:opacity-40"
-            style={{ background: "#1a1a1a", border: "1px solid #333", color: "#fff" }}>
-            {previewing ? "..." : "Preview"}
+          <button onClick={fetchVideoInfo} disabled={!url.trim() || fetching} style={ghostBtnStyle}>
+            {fetching ? "..." : "Fetch"}
           </button>
         </div>
-        <p className="text-[10px] text-gray-600 mt-1">Thumbnail is auto-fetched from the video and smart-cropped to 4:5</p>
+        <p style={hintStyle}>Paste URL → app fetches thumbnail + downloads video for posting</p>
       </div>
-
-      {/* Thumbnail preview */}
-      {thumbPreview && (
-        <div className="flex gap-4 items-start">
-          <div className="shrink-0 rounded overflow-hidden" style={{ width: 90, aspectRatio: "4/5", background: "#111" }}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={thumbPreview} alt="thumbnail" className="w-full h-full object-cover" style={{ objectPosition: "center top" }} />
-          </div>
-          <p className="text-[11px] text-gray-500 mt-1">Auto-fetched thumbnail · will be cropped to 4:5 with headline overlay</p>
-        </div>
-      )}
 
       {/* Headline */}
       <div>
-        <label className="block text-xs font-bold uppercase tracking-widest text-gray-400 mb-2">Headline <span className="text-gray-600">(appears on thumbnail)</span></label>
+        <label style={labelStyle}>Headline <span style={{ color: "#555", fontWeight: 400 }}>(appears on thumbnail image)</span></label>
         <input
-          value={headline} onChange={e => setHeadline(e.target.value.toUpperCase())}
+          value={headline}
+          onChange={e => setHeadline(e.target.value.toUpperCase())}
           placeholder="TYPE YOUR HEADLINE IN CAPS"
           maxLength={120}
-          className="w-full bg-[#111] border border-[#222] rounded px-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#FF007A] uppercase"
+          style={{ ...inputStyle, textTransform: "uppercase", letterSpacing: 1 }}
         />
-        <p className="text-[10px] text-gray-600 mt-1">{headline.length}/120</p>
+        <p style={hintStyle}>{headline.length}/120 chars</p>
       </div>
+
+      {/* Live thumbnail preview */}
+      {(thumbUrl || headline) && (
+        <div>
+          <label style={labelStyle}>Thumbnail Preview</label>
+          <ThumbnailPreview headline={headline} category="TRENDING" imageUrl={thumbUrl} />
+          {!thumbUrl && <p style={{ ...hintStyle, color: "#FF007A" }}>Paste a URL above to auto-fetch the thumbnail image</p>}
+        </div>
+      )}
 
       {/* Caption */}
       <div>
-        <label className="block text-xs font-bold uppercase tracking-widest text-gray-400 mb-2">Caption <span className="text-gray-600">(Instagram & Facebook post text)</span></label>
+        <label style={labelStyle}>Caption <span style={{ color: "#555", fontWeight: 400 }}>(Instagram & Facebook post text)</span></label>
         <textarea
           value={caption} onChange={e => setCaption(e.target.value)}
-          placeholder="Write your caption here... add hashtags, emojis, etc."
-          rows={5}
-          className="w-full bg-[#111] border border-[#222] rounded px-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#FF007A] resize-none"
+          placeholder="Write your caption here..."
+          rows={6}
+          style={{ ...inputStyle, resize: "vertical" as const }}
         />
       </div>
 
-      {/* Category */}
-      <div>
-        <label className="block text-xs font-bold uppercase tracking-widest text-gray-400 mb-2">Category</label>
-        <select value={category} onChange={e => setCategory(e.target.value)}
-          className="bg-[#111] border border-[#222] rounded px-4 py-3 text-sm text-white focus:outline-none focus:border-[#FF007A]">
-          {CATS.map(c => <option key={c} value={c}>{c}</option>)}
-        </select>
-      </div>
-
-      {/* Post button */}
       <button onClick={handlePost} disabled={!canPost}
-        className="w-full py-4 text-sm font-black uppercase tracking-widest text-white rounded transition-opacity hover:opacity-85 disabled:opacity-40"
-        style={{ background: canPost ? PINK : "#333" }}>
-        {status === "loading" ? "Posting... (this takes ~60s for video processing)" : "Post Video to Instagram & Facebook"}
+        style={{ width: "100%", padding: "15px 0", fontSize: 13, fontWeight: 800, letterSpacing: 1, textTransform: "uppercase" as const, color: "#fff", background: canPost ? PINK : "#1a1a1a", border: "none", borderRadius: 8, cursor: canPost ? "pointer" : "not-allowed", opacity: canPost ? 1 : 0.5, transition: "opacity .15s" }}>
+        {status === "loading" ? "Posting video... (~60s)" : "Post Video to IG + FB"}
       </button>
 
-      {/* Result */}
-      {result && (
-        <div className="rounded p-4 text-sm" style={{ background: status === "success" ? "rgba(16,185,129,.1)" : "rgba(239,68,68,.1)", border: `1px solid ${status === "success" ? "#10b981" : "#ef4444"}` }}>
-          {status === "success" ? (
-            <div className="space-y-1">
-              <p className="font-bold text-green-400">Posted successfully</p>
-              {result.instagram?.success && <p className="text-gray-300 text-xs">Instagram ✓ {result.instagram.postId}</p>}
-              {result.facebook?.success && <p className="text-gray-300 text-xs">Facebook ✓ {result.facebook.postId}</p>}
-              {!result.instagram?.success && <p className="text-red-400 text-xs">Instagram ✗ {result.instagram?.error}</p>}
-              {!result.facebook?.success && <p className="text-red-400 text-xs">Facebook ✗ {result.facebook?.error}</p>}
-            </div>
-          ) : (
-            <p className="text-red-400">{result.error || "Post failed"}</p>
-          )}
-        </div>
-      )}
+      <PostResult status={status} result={result} />
     </div>
   );
 }
 
 // ── Carousel Tab ──────────────────────────────────────────────────────────────
-interface CarouselItem { type: "image" | "video"; file?: File; url?: string; preview?: string; base64?: string; }
+interface CarouselItem { type: "image"; file: File; base64: string; preview: string; }
 
 function CarouselTab() {
-  const [items, setItems] = useState<CarouselItem[]>([]);
-  const [caption, setCaption] = useState("");
+  const [cover, setCover] = useState<CarouselItem | null>(null);
+  const [slides, setSlides] = useState<CarouselItem[]>([]);
   const [headline, setHeadline] = useState("");
+  const [caption, setCaption] = useState("");
   const [status, setStatus] = useState<Status>("idle");
   const [result, setResult] = useState<any>(null);
   const coverRef = useRef<HTMLInputElement>(null);
-  const mediaRef = useRef<HTMLInputElement>(null);
+  const slidesRef = useRef<HTMLInputElement>(null);
 
-  const addCover = useCallback(async (file: File) => {
+  const loadImage = useCallback(async (file: File): Promise<CarouselItem> => {
     const base64 = await fileToBase64(file);
     const preview = URL.createObjectURL(file);
-    setItems(prev => {
-      const rest = prev.filter((_, i) => i !== 0);
-      return [{ type: "image", file, base64, preview }, ...rest];
-    });
+    return { type: "image", file, base64, preview };
   }, []);
 
-  const addMedia = useCallback(async (files: FileList) => {
-    const newItems: CarouselItem[] = [];
-    for (const file of Array.from(files)) {
-      if (file.type.startsWith("image/")) {
-        const base64 = await fileToBase64(file);
-        const preview = URL.createObjectURL(file);
-        newItems.push({ type: "image", file, base64, preview });
-      } else if (file.type.startsWith("video/")) {
-        const preview = URL.createObjectURL(file);
-        newItems.push({ type: "video", file, preview });
-      }
-    }
-    setItems(prev => [...prev, ...newItems].slice(0, 10));
-  }, []);
+  async function onCoverChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setCover(await loadImage(file));
+  }
 
-  const removeItem = (idx: number) => setItems(prev => prev.filter((_, i) => i !== idx));
+  async function onSlidesChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files || []).filter(f => f.type.startsWith("image/"));
+    const loaded = await Promise.all(files.map(loadImage));
+    setSlides(prev => [...prev, ...loaded].slice(0, 9));
+  }
+
+  function removeSlide(i: number) { setSlides(prev => prev.filter((_, idx) => idx !== i)); }
 
   async function handlePost() {
-    if (items.length < 2 || !caption.trim()) return;
-    setStatus("loading");
-    setResult(null);
-
+    if (!cover || slides.length === 0 || !caption.trim()) return;
+    setStatus("loading"); setResult(null);
     try {
-      // For video items, we need a URL not base64 — skip for now, only images in carousel
-      const payload = items.map(item => ({
-        type: item.type,
-        base64: item.base64,
-        url: item.url,
-      }));
-
+      const items = [cover, ...slides].map(item => ({ type: "image", base64: item.base64 }));
       const secret = await getSecret();
       const r = await fetch("/api/post-carousel", {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": "Bearer " + secret },
-        body: JSON.stringify({ items: payload, caption: caption.trim(), headline: headline.trim() }),
+        body: JSON.stringify({ items, caption: caption.trim(), headline: headline.trim() }),
       });
       const d = await r.json();
       setResult(d);
-      setStatus(d.success ? "success" : "error");
-    } catch (err: any) {
-      setResult({ error: err.message });
-      setStatus("error");
-    }
+      setStatus(d.instagram?.success || d.facebook?.success ? "success" : "error");
+    } catch (err: any) { setResult({ error: err.message }); setStatus("error"); }
   }
 
-  const canPost = items.length >= 2 && caption.trim() && status !== "loading";
-  const hasCover = items.length > 0 && items[0].type === "image";
+  const canPost = cover && slides.length > 0 && caption.trim() && status !== "loading";
+  const totalItems = (cover ? 1 : 0) + slides.length;
 
   return (
-    <div className="space-y-5">
-      <p className="text-xs text-gray-500">First image = cover. Add up to 9 more images after it. Max 10 total.</p>
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      <p style={hintStyle}>Cover image = first slide with PPP TV branded overlay. Add up to 9 more images after it.</p>
 
-      {/* Cover image */}
+      {/* Cover */}
       <div>
-        <label className="block text-xs font-bold uppercase tracking-widest text-gray-400 mb-2">Cover Image <span className="text-gray-600">(required, first slide)</span></label>
-        <input ref={coverRef} type="file" accept="image/*" className="hidden"
-          onChange={e => e.target.files?.[0] && addCover(e.target.files[0])} />
-        {hasCover ? (
-          <div className="relative inline-block">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={items[0].preview} alt="cover" className="rounded object-cover" style={{ width: 120, height: 150, objectFit: "cover" }} />
-            <button onClick={() => removeItem(0)}
-              className="absolute top-1 right-1 w-5 h-5 rounded-full text-white text-xs flex items-center justify-center"
-              style={{ background: "rgba(0,0,0,.7)" }}>✕</button>
-            <span className="absolute bottom-1 left-1 text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded"
-              style={{ background: PINK, color: "#fff" }}>Cover</span>
+        <label style={labelStyle}>Cover Image <span style={{ color: "#555", fontWeight: 400 }}>(required · gets PPP TV overlay)</span></label>
+        <input ref={coverRef} type="file" accept="image/*" style={{ display: "none" }} onChange={onCoverChange} />
+        {cover ? (
+          <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+            <div style={{ position: "relative", flexShrink: 0 }}>
+              <img src={cover.preview} alt="cover" style={{ width: 100, height: 125, objectFit: "cover", borderRadius: 6, display: "block" }} />
+              <button onClick={() => setCover(null)}
+                style={{ position: "absolute", top: 4, right: 4, width: 20, height: 20, borderRadius: "50%", background: "rgba(0,0,0,.8)", border: "none", color: "#fff", fontSize: 10, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
+              <span style={{ position: "absolute", bottom: 4, left: 4, background: PINK, color: "#fff", fontSize: 9, fontWeight: 800, letterSpacing: 1, padding: "2px 6px", borderRadius: 3 }}>COVER</span>
+            </div>
+            {headline && (
+              <div style={{ flex: 1 }}>
+                <p style={{ ...hintStyle, marginBottom: 8 }}>Thumbnail preview:</p>
+                <ThumbnailPreview headline={headline} category="TRENDING" imageBase64={cover.base64} />
+              </div>
+            )}
           </div>
         ) : (
           <button onClick={() => coverRef.current?.click()}
-            className="flex items-center justify-center gap-2 w-full py-8 rounded border-2 border-dashed text-gray-500 hover:text-white hover:border-[#FF007A] transition-colors text-sm"
-            style={{ borderColor: "#333" }}>
+            style={{ width: "100%", padding: "32px 0", background: "#0a0a0a", border: "2px dashed #222", borderRadius: 8, color: "#555", fontSize: 13, cursor: "pointer" }}>
             + Upload Cover Image
           </button>
         )}
       </div>
 
-      {/* Additional media */}
-      <div>
-        <label className="block text-xs font-bold uppercase tracking-widest text-gray-400 mb-2">Additional Images <span className="text-gray-600">(slides 2–10)</span></label>
-        <input ref={mediaRef} type="file" accept="image/*,video/*" multiple className="hidden"
-          onChange={e => e.target.files && addMedia(e.target.files)} />
-
-        <div className="flex flex-wrap gap-2 mb-3">
-          {items.slice(1).map((item, i) => (
-            <div key={i} className="relative rounded overflow-hidden" style={{ width: 80, height: 100 }}>
-              {item.type === "image" ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={item.preview} alt="" className="w-full h-full object-cover" />
-              ) : (
-                <video src={item.preview} className="w-full h-full object-cover" muted />
-              )}
-              <button onClick={() => removeItem(i + 1)}
-                className="absolute top-1 right-1 w-5 h-5 rounded-full text-white text-xs flex items-center justify-center"
-                style={{ background: "rgba(0,0,0,.7)" }}>✕</button>
-              <span className="absolute bottom-1 left-1 text-[9px] font-black uppercase tracking-widest px-1 py-0.5 rounded"
-                style={{ background: "#1a1a1a", color: "#aaa" }}>{i + 2}</span>
-            </div>
-          ))}
-          {items.length < 10 && (
-            <button onClick={() => mediaRef.current?.click()}
-              className="flex items-center justify-center rounded border-2 border-dashed text-gray-600 hover:text-white hover:border-[#FF007A] transition-colors text-xl"
-              style={{ width: 80, height: 100, borderColor: "#333" }}>+</button>
-          )}
-        </div>
-        <p className="text-[10px] text-gray-600">{items.length}/10 items</p>
-      </div>
-
       {/* Headline */}
       <div>
-        <label className="block text-xs font-bold uppercase tracking-widest text-gray-400 mb-2">Headline <span className="text-gray-600">(optional)</span></label>
-        <input value={headline} onChange={e => setHeadline(e.target.value)}
-          placeholder="Optional headline for Facebook post"
-          className="w-full bg-[#111] border border-[#222] rounded px-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#FF007A]"
+        <label style={labelStyle}>Headline <span style={{ color: "#555", fontWeight: 400 }}>(appears on cover thumbnail)</span></label>
+        <input
+          value={headline} onChange={e => setHeadline(e.target.value.toUpperCase())}
+          placeholder="TYPE YOUR HEADLINE IN CAPS"
+          maxLength={120}
+          style={{ ...inputStyle, textTransform: "uppercase" as const, letterSpacing: 1 }}
         />
+      </div>
+
+      {/* Slides */}
+      <div>
+        <label style={labelStyle}>Slides <span style={{ color: "#555", fontWeight: 400 }}>(slides 2–10 · images only)</span></label>
+        <input ref={slidesRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={onSlidesChange} />
+        <div style={{ display: "flex", flexWrap: "wrap" as const, gap: 8, marginBottom: 8 }}>
+          {slides.map((item, i) => (
+            <div key={i} style={{ position: "relative", width: 80, height: 100, borderRadius: 6, overflow: "hidden", flexShrink: 0 }}>
+              <img src={item.preview} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              <button onClick={() => removeSlide(i)}
+                style={{ position: "absolute", top: 3, right: 3, width: 18, height: 18, borderRadius: "50%", background: "rgba(0,0,0,.8)", border: "none", color: "#fff", fontSize: 9, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
+              <span style={{ position: "absolute", bottom: 3, left: 3, background: "#111", color: "#aaa", fontSize: 9, fontWeight: 700, padding: "1px 5px", borderRadius: 3 }}>{i + 2}</span>
+            </div>
+          ))}
+          {slides.length < 9 && (
+            <button onClick={() => slidesRef.current?.click()}
+              style={{ width: 80, height: 100, borderRadius: 6, background: "#0a0a0a", border: "2px dashed #222", color: "#555", fontSize: 22, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
+          )}
+        </div>
+        <p style={hintStyle}>{totalItems}/10 items total</p>
       </div>
 
       {/* Caption */}
       <div>
-        <label className="block text-xs font-bold uppercase tracking-widest text-gray-400 mb-2">Caption</label>
-        <textarea value={caption} onChange={e => setCaption(e.target.value)}
-          placeholder="Write your caption... hashtags, emojis, etc."
-          rows={5}
-          className="w-full bg-[#111] border border-[#222] rounded px-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#FF007A] resize-none"
+        <label style={labelStyle}>Caption</label>
+        <textarea
+          value={caption} onChange={e => setCaption(e.target.value)}
+          placeholder="Write your caption here..."
+          rows={6}
+          style={{ ...inputStyle, resize: "vertical" as const }}
         />
       </div>
 
       <button onClick={handlePost} disabled={!canPost}
-        className="w-full py-4 text-sm font-black uppercase tracking-widest text-white rounded transition-opacity hover:opacity-85 disabled:opacity-40"
-        style={{ background: canPost ? PINK : "#333" }}>
-        {status === "loading" ? "Posting carousel..." : "Post Carousel to Instagram & Facebook"}
+        style={{ width: "100%", padding: "15px 0", fontSize: 13, fontWeight: 800, letterSpacing: 1, textTransform: "uppercase" as const, color: "#fff", background: canPost ? PINK : "#1a1a1a", border: "none", borderRadius: 8, cursor: canPost ? "pointer" : "not-allowed", opacity: canPost ? 1 : 0.5, transition: "opacity .15s" }}>
+        {status === "loading" ? "Posting carousel..." : `Post Carousel (${totalItems} slides) to IG + FB`}
       </button>
 
-      {result && (
-        <div className="rounded p-4 text-sm" style={{ background: status === "success" ? "rgba(16,185,129,.1)" : "rgba(239,68,68,.1)", border: `1px solid ${status === "success" ? "#10b981" : "#ef4444"}` }}>
-          {status === "success" ? (
-            <div className="space-y-1">
-              <p className="font-bold text-green-400">Carousel posted</p>
-              {result.instagram?.success && <p className="text-gray-300 text-xs">Instagram ✓ {result.instagram.postId}</p>}
-              {result.facebook?.success && <p className="text-gray-300 text-xs">Facebook ✓ {result.facebook.postId}</p>}
-              {!result.instagram?.success && <p className="text-red-400 text-xs">Instagram ✗ {result.instagram?.error}</p>}
-              {!result.facebook?.success && <p className="text-red-400 text-xs">Facebook ✗ {result.facebook?.error}</p>}
-            </div>
-          ) : (
-            <p className="text-red-400">{result.error || "Post failed"}</p>
-          )}
+      <PostResult status={status} result={result} />
+    </div>
+  );
+}
+
+// ── Shared result component ───────────────────────────────────────────────────
+function PostResult({ status, result }: { status: Status; result: any }) {
+  if (!result || status === "idle" || status === "loading") return null;
+  const ok = status === "success";
+  return (
+    <div style={{ borderRadius: 8, padding: "14px 16px", background: ok ? "rgba(16,185,129,.08)" : "rgba(239,68,68,.08)", border: `1px solid ${ok ? "#10b981" : "#ef4444"}` }}>
+      {ok ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <span style={{ fontWeight: 700, color: "#4ade80", fontSize: 13 }}>Posted successfully</span>
+          {result.instagram?.success && <span style={{ fontSize: 12, color: "#aaa" }}>Instagram ✓ {result.instagram.postId}</span>}
+          {result.facebook?.success && <span style={{ fontSize: 12, color: "#aaa" }}>Facebook ✓ {result.facebook.postId}</span>}
+          {!result.instagram?.success && <span style={{ fontSize: 12, color: "#f87171" }}>Instagram ✗ {result.instagram?.error}</span>}
+          {!result.facebook?.success && <span style={{ fontSize: 12, color: "#f87171" }}>Facebook ✗ {result.facebook?.error}</span>}
         </div>
+      ) : (
+        <span style={{ color: "#f87171", fontSize: 13 }}>{result.error || "Post failed"}</span>
       )}
     </div>
   );
 }
 
-// ── Main Composer Page ────────────────────────────────────────────────────────
+// ── Shared styles ─────────────────────────────────────────────────────────────
+const labelStyle: React.CSSProperties = { display: "block", fontSize: 10, fontWeight: 700, letterSpacing: 2, textTransform: "uppercase", color: "#666", marginBottom: 8 };
+const inputStyle: React.CSSProperties = { width: "100%", background: "#0a0a0a", border: "1px solid #222", borderRadius: 6, padding: "12px 14px", color: "#fff", fontSize: 14, outline: "none", boxSizing: "border-box" };
+const hintStyle: React.CSSProperties = { fontSize: 11, color: "#444", marginTop: 5 };
+const ghostBtnStyle: React.CSSProperties = { background: "#111", border: "1px solid #333", color: "#888", borderRadius: 6, padding: "12px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" };
+
+// ── Main Page ─────────────────────────────────────────────────────────────────
 export default function ComposerPage() {
   const [tab, setTab] = useState<Tab>("video");
 
   return (
-    <div className="min-h-screen" style={{ background: "#0a0a0a", color: "#fff" }}>
-      <div className="max-w-2xl mx-auto px-4 py-8">
+    <div style={{ minHeight: "100dvh", background: "#000", color: "#fff", fontFamily: "'Inter',system-ui,sans-serif" }}>
+      <style>{`*{box-sizing:border-box;margin:0;padding:0} input,button,textarea,select{font-family:inherit} input::placeholder,textarea::placeholder{color:#444} textarea{font-family:inherit}`}</style>
+      <div style={{ maxWidth: 600, margin: "0 auto", padding: "24px 16px 80px" }}>
+
         {/* Header */}
-        <div className="mb-8">
-          <a href="/dashboard" className="text-xs text-gray-600 hover:text-white transition-colors mb-4 inline-block">← Dashboard</a>
-          <h1 className="text-2xl font-black uppercase tracking-widest" style={{ color: PINK }}>Composer</h1>
-          <p className="text-gray-500 text-sm mt-1">Post a video or carousel manually to Instagram & Facebook</p>
+        <div style={{ marginBottom: 28 }}>
+          <a href="/dashboard" style={{ fontSize: 11, color: "#444", textDecoration: "none", letterSpacing: 1 }}>← DASHBOARD</a>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12 }}>
+            <div style={{ width: 8, height: 8, borderRadius: "50%", background: PINK }} />
+            <span style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 24, letterSpacing: 2 }}>
+              AUTO <span style={{ color: PINK }}>PPP TV</span>
+            </span>
+            <span style={{ fontSize: 10, color: "#444", letterSpacing: 2 }}>COMPOSER</span>
+          </div>
+          <p style={{ fontSize: 12, color: "#444", marginTop: 6 }}>Manually post a video or carousel to Instagram & Facebook</p>
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-1 mb-8 p-1 rounded" style={{ background: "#111" }}>
-          {([["video", "🎬 Video Post"], ["carousel", "🖼 Carousel"]] as [Tab, string][]).map(([t, label]) => (
+        <div style={{ display: "flex", gap: 4, marginBottom: 28, padding: 4, background: "#0a0a0a", borderRadius: 8, border: "1px solid #111" }}>
+          {([["video", "🎬  Video Post"], ["carousel", "🖼  Carousel"]] as [Tab, string][]).map(([t, label]) => (
             <button key={t} onClick={() => setTab(t)}
-              className="flex-1 py-2.5 text-xs font-black uppercase tracking-widest rounded transition-all"
-              style={tab === t ? { background: PINK, color: "#fff" } : { color: "#666" }}>
+              style={{ flex: 1, padding: "10px 0", fontSize: 12, fontWeight: 800, letterSpacing: 1, textTransform: "uppercase", border: "none", borderRadius: 6, cursor: "pointer", transition: "all .15s", background: tab === t ? PINK : "transparent", color: tab === t ? "#fff" : "#555" }}>
               {label}
             </button>
           ))}

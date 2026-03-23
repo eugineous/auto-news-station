@@ -158,12 +158,12 @@ export default function Dashboard() {
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#E50914", animation: "pulse 1.5s infinite" }} />
           <span style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 20, letterSpacing: 1 }}>
-            PPP<span style={{ color: "#E50914" }}>TV</span>
+            AUTO <span style={{ color: "#E50914" }}>PPP TV</span>
           </span>
           <span style={{ fontSize: 10, color: "#444", letterSpacing: 2, textTransform: "uppercase" }}>LIVE</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <span style={{ fontSize: 12, color: "#555" }}>{todayCount}/12 today</span>
+          <span style={{ fontSize: 12, color: "#555" }}>{todayCount}/24 today</span>
           <Link href="/composer" style={{ fontSize: 12, color: "#FF007A", textDecoration: "none", fontWeight: 600 }}>+ Video</Link>
         </div>
       </header>
@@ -333,7 +333,7 @@ export default function Dashboard() {
             </div>
             <div className="card" style={{ padding: "16px 18px" }}>
               <div style={{ fontSize: 10, color: "#444", letterSpacing: 2, fontWeight: 700, textTransform: "uppercase", marginBottom: 14 }}>Config</div>
-              {[["Schedule", "Every 30 min"], ["Peak Hours", "6am-11pm EAT"], ["Daily Cap", "12/day"], ["Per Run", "2 posts"], ["Dedup", "Cloudflare KV"], ["Filter", "Kenya only"]].map(([k, v]) => (
+              {[["Schedule", "Every 15 min"], ["Peak Hours", "6am-11pm EAT"], ["Daily Cap", "24/day"], ["Per Run", "1 post"], ["Dedup", "Cloudflare KV"], ["Filter", "Kenya only"]].map(([k, v]) => (
                 <div key={k} style={{ display: "flex", justifyContent: "space-between", padding: "9px 0", borderBottom: "1px solid #0f0f0f", fontSize: 12 }}>
                   <span style={{ color: "#444" }}>{k}</span>
                   <span style={{ fontWeight: 600, color: "#888" }}>{v}</span>

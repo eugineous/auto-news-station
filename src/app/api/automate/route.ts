@@ -260,8 +260,8 @@ export async function POST(req: NextRequest) {
 
   // ── Daily cap check ───────────────────────────────────────────────────────
   const dailyCount = await getDailyCount();
-  if (dailyCount >= 12) {
-    return NextResponse.json({ ...response, message: "Daily cap reached (12 posts/day)" });
+  if (dailyCount >= 24) {
+    return NextResponse.json({ ...response, message: "Daily cap reached (24 posts/day)" });
   }
 
   try {
@@ -298,9 +298,9 @@ export async function POST(req: NextRequest) {
       .map(a => ({ article: a, score: scoreArticle(a, trendingTopics) }))
       .sort((a, b) => b.score - a.score);
 
-    // 6. Post exactly 2 articles per run
-    const remaining = 12 - dailyCount;
-    const toPost = scored.slice(0, Math.min(2, remaining)).map(s => s.article);
+    // 6. Post exactly 1 article per run (15-min cron = up to 68/day, capped at 24)
+    const remaining = 24 - dailyCount;
+    const toPost = scored.slice(0, Math.min(1, remaining)).map(s => s.article);
 
     // CRITICAL: Mark all selected articles as seen IMMEDIATELY before posting
     // This prevents concurrent cron runs from picking the same articles

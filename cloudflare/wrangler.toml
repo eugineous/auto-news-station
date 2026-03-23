@@ -1,10 +1,10 @@
-name = "ppptv-auto-poster"
+name = "auto-ppp-tv"
 main = "worker.js"
 compatibility_date = "2024-01-01"
 
-# Cron: every 30 minutes
+# Cron: every 15 minutes
 [triggers]
-crons = ["*/10 * * * *"]
+crons = ["*/15 * * * *"]
 
 # Cloudflare KV namespace for deduplication
 # Create with: wrangler kv:namespace create SEEN_ARTICLES
