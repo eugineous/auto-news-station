@@ -161,7 +161,7 @@ async function filterUnseen(articles: Article[]): Promise<Article[]> {
     const res = await fetch(WORKER_URL + "/seen/check", {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },
-      body: JSON.stringify({ ids: articles.map(a => a.id) }),
+      body: JSON.stringify({ ids: articles.map(a => a.id), titles: articles.map(a => a.title) }),
       signal: AbortSignal.timeout(8000),
     });
     if (!res.ok) return articles;
@@ -171,7 +171,7 @@ async function filterUnseen(articles: Article[]): Promise<Article[]> {
   } catch { return articles; }
 }
 
-async function markSeen(id: string): Promise<void> {
+async function markSeen(id: string, title?: string): Promise<void> {
   if (!WORKER_SECRET) return;
   try {
     await fetch(WORKER_URL + "/seen", {
@@ -305,7 +305,7 @@ export async function POST(req: NextRequest) {
     // CRITICAL: Mark all selected articles as seen IMMEDIATELY before posting
     // This prevents concurrent cron runs from picking the same articles
     if (toPost.length > 0) {
-      await Promise.all(toPost.map(a => markSeen(a.id)));
+      await Promise.all(toPost.map(a => markSeen(a.id, a.title)));
     }
 
     for (const article of toPost) {
