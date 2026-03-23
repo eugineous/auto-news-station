@@ -53,58 +53,11 @@ async function waitForIGContainer(containerId: string, token: string): Promise<v
   console.warn("[ig] container polling timed out — attempting publish anyway");
 }
 
-// Upload video buffer to IG via resumable upload API, return the video handle
-async function uploadVideoToIG(
-  videoBuffer: Buffer,
-  accountId: string,
-  token: string
-): Promise<string> {
-  const fileSize = videoBuffer.byteLength;
-
-  // Step 1: Initialize upload session
-  const initRes = await fetch(`https://rupload.facebook.com/ig-api-upload/v19.0/${accountId}/videos`, {
-    method: "POST",
-    headers: {
-      "Authorization": `OAuth ${token}`,
-      "X-FB-Video-File-Size": String(fileSize),
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ upload_type: "resumable" }),
-  });
-  const initData = await initRes.json() as any;
-  if (!initRes.ok || initData.error) throw new Error(initData?.error?.message ?? `IG upload init failed: HTTP ${initRes.status}`);
-  const uploadUrl = initData.uri as string;
-  if (!uploadUrl) throw new Error("IG upload init did not return a URI");
-
-  // Step 2: Upload the video bytes
-  const blob = new Blob(
-    [videoBuffer.buffer.slice(videoBuffer.byteOffset, videoBuffer.byteOffset + videoBuffer.byteLength) as ArrayBuffer],
-    { type: "video/mp4" }
-  );
-  const uploadRes = await fetch(uploadUrl, {
-    method: "POST",
-    headers: {
-      "Authorization": `OAuth ${token}`,
-      "X-Entity-Type": "video/mp4",
-      "X-Entity-Name": "video.mp4",
-      "X-Entity-Length": String(fileSize),
-      "Offset": "0",
-      "Content-Type": "application/octet-stream",
-    },
-    body: blob,
-  });
-  const uploadData = await uploadRes.json() as any;
-  if (!uploadRes.ok || uploadData.error) throw new Error(uploadData?.error?.message ?? `IG video upload failed: HTTP ${uploadRes.status}`);
-  const videoHandle = uploadData.h as string;
-  if (!videoHandle) throw new Error("IG video upload did not return a handle");
-  return videoHandle;
-}
-
 // ── Video posting to Instagram ───────────────────────────────────────────────
-// Strategy: upload video buffer directly to IG via resumable upload API → create Reels container with video handle
+// Accepts a pre-staged FB video URL
 async function publishVideoToInstagram(
   post: SocialPost,
-  videoBuffer: Buffer,
+  videoUrl: string,
   coverUrl?: string
 ): Promise<{ success: boolean; postId?: string; error?: string }> {
   const token = process.env.INSTAGRAM_ACCESS_TOKEN;
@@ -112,17 +65,13 @@ async function publishVideoToInstagram(
   if (!token || !accountId) return { success: false, error: "Instagram tokens not configured" };
 
   try {
-    // Upload video directly to IG and get a video handle
-    const videoHandle = await uploadVideoToIG(videoBuffer, accountId, token);
-
-    // Create IG Reels container using the video handle
     const containerRes = await withRetry(() =>
       fetch(`${GRAPH_API}/${accountId}/media`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           media_type: "REELS",
-          video_handle: videoHandle,
+          video_url: videoUrl,
           caption: post.caption,
           share_to_feed: true,
           ...(coverUrl ? { cover_url: coverUrl } : {}),
@@ -147,36 +96,6 @@ async function publishVideoToInstagram(
     return { success: true, postId: published.id };
   } catch (err: any) {
     console.error("[ig-video] error:", err?.message);
-    return { success: false, error: err?.message ?? "Unknown error" };
-  }
-}
-
-// ── Video posting to Facebook ────────────────────────────────────────────────
-async function publishVideoToFacebook(
-  post: SocialPost,
-  videoBuffer: Buffer
-): Promise<{ success: boolean; postId?: string; error?: string }> {
-  const token = process.env.FACEBOOK_ACCESS_TOKEN;
-  const pageId = process.env.FACEBOOK_PAGE_ID;
-  if (!token || !pageId) return { success: false, error: "Facebook tokens not configured" };
-
-  try {
-    const fbCaption = post.articleUrl ? post.caption + "\n\n\uD83D\uDD17 " + post.articleUrl : post.caption;
-    const blob = new Blob(
-      [videoBuffer.buffer.slice(videoBuffer.byteOffset, videoBuffer.byteOffset + videoBuffer.byteLength) as ArrayBuffer],
-      { type: "video/mp4" }
-    );
-    const form = new FormData();
-    form.append("source", blob, "video.mp4");
-    form.append("description", fbCaption);
-    form.append("published", "true");
-    form.append("access_token", token);
-    const res = await withRetry(() => fetch(`${GRAPH_API}/${pageId}/videos`, { method: "POST", body: form }));
-    const data = await res.json() as any;
-    if (!res.ok || data.error) throw new Error(data?.error?.message ?? `HTTP ${res.status}`);
-    return { success: true, postId: data.id };
-  } catch (err: any) {
-    console.error("[fb-video] error:", err?.message);
     return { success: false, error: err?.message ?? "Unknown error" };
   }
 }
@@ -258,15 +177,80 @@ export async function publish(
   coverImageUrl?: string
 ): Promise<PublishResult> {
   if (videoBuffer) {
-    // Post as actual video to both platforms (sequential — FB first since IG reuses FB CDN)
-    const facebook = posts.fb
-      ? await publishVideoToFacebook(posts.fb, videoBuffer)
-      : { success: false, error: "skipped" };
-    const instagram = posts.ig
-      ? await publishVideoToInstagram(posts.ig, videoBuffer, coverImageUrl)
-      : { success: false, error: "skipped" };
+    // Stage video on FB first (unpublished) — this gives us a URL for IG
+    // Then publish the same staged video to FB feed
+    const fbToken = process.env.FACEBOOK_ACCESS_TOKEN;
+    const fbPageId = process.env.FACEBOOK_PAGE_ID;
+
+    let stagedVideoId: string | null = null;
+    let stagedVideoUrl: string | null = null;
+
+    if (fbToken && fbPageId) {
+      try {
+        const blob = new Blob(
+          [videoBuffer.buffer.slice(videoBuffer.byteOffset, videoBuffer.byteOffset + videoBuffer.byteLength) as ArrayBuffer],
+          { type: "video/mp4" }
+        );
+        const form = new FormData();
+        form.append("source", blob, "video.mp4");
+        form.append("published", "false");
+        form.append("access_token", fbToken);
+        const res = await fetch(`${GRAPH_API}/${fbPageId}/videos`, { method: "POST", body: form });
+        const data = await res.json() as any;
+        if (res.ok && !data.error) {
+          stagedVideoId = data.id as string;
+          // Poll for permalink
+          for (let i = 0; i < 24; i++) {
+            await sleep(5000);
+            const infoRes = await fetch(`${GRAPH_API}/${stagedVideoId}?fields=permalink_url,status&access_token=${fbToken}`);
+            const info = await infoRes.json() as any;
+            console.log(`[fb-stage] video ${stagedVideoId} processing: ${info.status?.processing_progress ?? "?"}%`);
+            if (info.permalink_url) {
+              stagedVideoUrl = `https://www.facebook.com${info.permalink_url}`;
+              break;
+            }
+          }
+        }
+      } catch (e: any) {
+        console.error("[fb-stage] failed:", e?.message);
+      }
+    }
+
+    // Post IG using the staged FB video URL
+    const instagram = posts.ig && stagedVideoUrl
+      ? await publishVideoToInstagram(posts.ig, stagedVideoUrl, coverImageUrl)
+      : posts.ig
+        ? { success: false, error: "FB video staging failed — no URL for IG" }
+        : { success: false, error: "skipped" };
+
+    // Publish the already-staged FB video to the feed
+    let facebook: { success: boolean; postId?: string; error?: string } = { success: false, error: "skipped" };
+    if (posts.fb && stagedVideoId && fbToken && fbPageId) {
+      try {
+        const fbCaption = posts.fb.articleUrl
+          ? posts.fb.caption + "\n\n\uD83D\uDD17 " + posts.fb.articleUrl
+          : posts.fb.caption;
+        const pubRes = await fetch(`${GRAPH_API}/${stagedVideoId}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ published: true, description: fbCaption, access_token: fbToken }),
+        });
+        const pubData = await pubRes.json() as any;
+        if (pubRes.ok && !pubData.error) {
+          facebook = { success: true, postId: stagedVideoId };
+        } else {
+          facebook = { success: false, error: pubData?.error?.message ?? "FB publish failed" };
+        }
+      } catch (e: any) {
+        facebook = { success: false, error: e?.message };
+      }
+    } else if (posts.fb && !stagedVideoId) {
+      facebook = { success: false, error: "FB video staging failed" };
+    }
+
     return { instagram, facebook };
   }
+
   // Default: post as image
   const [instagram, facebook] = await Promise.all([
     posts.ig ? publishToInstagram(posts.ig, imageBuffer) : Promise.resolve({ success: false, error: "skipped" }),
