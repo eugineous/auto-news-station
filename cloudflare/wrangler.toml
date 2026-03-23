@@ -2,17 +2,21 @@ name = "auto-ppp-tv"
 main = "worker.js"
 compatibility_date = "2024-01-01"
 
-# Cron: every 15 minutes
+# Cron: every 15 minutes (auto-poster) + daily cleanup of R2 videos
 [triggers]
-crons = ["*/15 * * * *"]
+crons = ["*/15 * * * *", "0 3 * * *"]
 
 # Cloudflare KV namespace for deduplication
-# Create with: wrangler kv:namespace create SEEN_ARTICLES
-# Then paste the returned id below
 [[kv_namespaces]]
 binding = "SEEN_ARTICLES"
 id = "fa43238e08df4ef691d8bfcde1160f14"
 
+# R2 bucket for temporary video staging (auto-deleted after 24h via cron)
+[[r2_buckets]]
+binding = "VIDEOS"
+bucket_name = "ppptv-videos"
+
 # Secrets (set via wrangler secret put):
 #   VERCEL_APP_URL   = https://your-app.vercel.app
 #   AUTOMATE_SECRET  = your_secret_token
+#   WORKER_SECRET    = your_worker_secret

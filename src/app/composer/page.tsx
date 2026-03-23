@@ -134,7 +134,7 @@ function VideoTab() {
             {fetching ? "..." : "Fetch"}
           </button>
         </div>
-        <p style={hintStyle}>Paste URL → app fetches thumbnail + downloads video for posting</p>
+      <p style={hintStyle}>Paste URL → video staged on Cloudflare R2 → posted as Reel to IG + video to FB</p>
       </div>
 
       {/* Headline */}
