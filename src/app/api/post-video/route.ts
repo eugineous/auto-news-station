@@ -4,6 +4,7 @@ import { generateImage } from "@/lib/image-gen";
 import { publish } from "@/lib/publisher";
 import { resolveVideoUrl } from "@/lib/video-downloader";
 import { Article } from "@/lib/types";
+import { isAuthenticated } from "@/lib/auth";
 import { createHash } from "crypto";
 
 export const maxDuration = 180;
@@ -50,8 +51,7 @@ async function uploadThumbnailToCDN(imageBuffer: Buffer): Promise<string | undef
 }
 
 export async function POST(req: NextRequest) {
-  const auth = req.headers.get("authorization");
-  if (auth !== "Bearer " + process.env.AUTOMATE_SECRET) {
+  if (!isAuthenticated(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
