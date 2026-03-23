@@ -79,7 +79,7 @@ export async function POST(req: NextRequest) {
       publishedAt: new Date(),
     };
 
-    const imageBuffer = await generateImage(article, { isBreaking: false, categoryLabel: "TRENDING" });
+    const imageBuffer = await generateImage(article, { isBreaking: false });
     const coverImageUrl = await uploadThumbnailToCDN(imageBuffer);
 
     // YouTube: resolved via ytdl-core; direct .mp4: pass through; others: use original URL
