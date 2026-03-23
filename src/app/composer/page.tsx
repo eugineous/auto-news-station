@@ -7,7 +7,13 @@ const PINK = "#FF007A";
 type Tab = "video" | "carousel";
 type Status = "idle" | "loading" | "success" | "error";
 
-
+async function getSecret(): Promise<string> {
+  try {
+    const r = await fetch("/api/automate-secret");
+    if (r.ok) { const d = await r.json(); return d.secret || ""; }
+  } catch {}
+  return "";
+}
 
 function fileToBase64(file: File): Promise<string> {
   return new Promise((res, rej) => {
@@ -102,9 +108,10 @@ function VideoTab() {
     if (!url.trim() || !headline.trim() || !caption.trim()) return;
     setStatus("loading"); setResult(null);
     try {
+      const secret = await getSecret();
       const r = await fetch("/api/post-video", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...(secret ? { "Authorization": "Bearer " + secret } : {}) },
         body: JSON.stringify({ url: url.trim(), headline: headline.trim(), caption: caption.trim(), category: "TRENDING" }),
       });
       const d = await r.json();
@@ -215,9 +222,10 @@ function CarouselTab() {
     setStatus("loading"); setResult(null);
     try {
       const items = [cover, ...slides].map(item => ({ type: "image", base64: item.base64 }));
+      const secret = await getSecret();
       const r = await fetch("/api/post-carousel", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...(secret ? { "Authorization": "Bearer " + secret } : {}) },
         body: JSON.stringify({ items, caption: caption.trim(), headline: headline.trim() }),
       });
       const d = await r.json();

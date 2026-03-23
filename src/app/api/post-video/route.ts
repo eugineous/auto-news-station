@@ -51,7 +51,9 @@ async function uploadThumbnailToCDN(imageBuffer: Buffer): Promise<string | undef
 }
 
 export async function POST(req: NextRequest) {
-  if (!isAuthenticated(req)) {
+  const auth = req.headers.get("authorization");
+  const bearerOk = auth === "Bearer " + process.env.AUTOMATE_SECRET && !!process.env.AUTOMATE_SECRET;
+  if (!isAuthenticated(req) && !bearerOk) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
