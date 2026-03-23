@@ -152,7 +152,7 @@ function HeroBanner({ entry, nextPostIn }: { entry: LogEntry | null; nextPostIn:
               {entry.title}
             </h1>
             <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
-              <span style={{ fontSize: 12, color: "#666" }}>{ago(entry.postedAt)}</span>
+              <span style={{ fontSize: 12, color: "#aaa" }}>{ago(entry.postedAt)}</span>
               <span style={{ fontSize: 12, color: entry.instagram.success ? "#4ade80" : "#f87171" }}>
                 {entry.instagram.success ? "✓" : "✗"} Instagram
               </span>
@@ -161,7 +161,7 @@ function HeroBanner({ entry, nextPostIn }: { entry: LogEntry | null; nextPostIn:
               </span>
               {entry.url && (
                 <a href={entry.url} target="_blank" rel="noopener noreferrer"
-                  style={{ fontSize: 11, color: "#555", textDecoration: "none", border: "1px solid #2a2a2a", borderRadius: 4, padding: "3px 10px" }}>
+                  style={{ fontSize: 11, color: "#aaa", textDecoration: "none", border: "1px solid #3a3a3a", borderRadius: 4, padding: "3px 10px" }}>
                   Source ↗
                 </a>
               )}
@@ -169,8 +169,8 @@ function HeroBanner({ entry, nextPostIn }: { entry: LogEntry | null; nextPostIn:
           </>
         ) : (
           <div>
-            <h1 style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 42, letterSpacing: 2, color: "#333", marginBottom: 8 }}>No posts yet</h1>
-            <p style={{ fontSize: 13, color: "#444" }}>Auto-poster will publish the first article soon.</p>
+            <h1 style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 42, letterSpacing: 2, color: "#aaa", marginBottom: 8 }}>No posts yet</h1>
+            <p style={{ fontSize: 13, color: "#888" }}>Auto-poster will publish the first article soon.</p>
           </div>
         )}
       </div>
@@ -343,7 +343,7 @@ function StatsRow({ log }: { log: LogEntry[] }) {
     { label: "Total Posts", value: total, sub: `${successRate}% success`, color: "#fff" },
     { label: "Instagram", value: igCount, sub: "published", color: "#E1306C" },
     { label: "Facebook", value: fbCount, sub: "published", color: "#1877f2" },
-    { label: "Failed", value: failCount, sub: "need retry", color: failCount > 0 ? "#f87171" : "#444" },
+    { label: "Failed", value: failCount, sub: "need retry", color: failCount > 0 ? "#f87171" : "#888" },
   ];
 
   return (
@@ -351,8 +351,8 @@ function StatsRow({ log }: { log: LogEntry[] }) {
       {stats.map(s => (
         <div key={s.label} className="card" style={{ padding: "18px 16px" }}>
           <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 40, color: s.color, lineHeight: 1, letterSpacing: 1 }}>{s.value}</div>
-          <div style={{ fontSize: 10, color: "#555", marginTop: 4, letterSpacing: 2, fontWeight: 700, textTransform: "uppercase" }}>{s.label}</div>
-          <div style={{ fontSize: 10, color: "#333", marginTop: 2 }}>{s.sub}</div>
+          <div style={{ fontSize: 10, color: "#aaa", marginTop: 4, letterSpacing: 2, fontWeight: 700, textTransform: "uppercase" }}>{s.label}</div>
+          <div style={{ fontSize: 10, color: "#888", marginTop: 2 }}>{s.sub}</div>
         </div>
       ))}
     </div>
@@ -366,7 +366,7 @@ function CategoryRow({ title, entries, onRetry, retries }: { title: string; entr
     <div style={{ marginBottom: 32 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
         <h2 style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 20, letterSpacing: 1, color: "#fff" }}>{title}</h2>
-        <span style={{ fontSize: 11, color: "#444" }}>{entries.length} posts</span>
+        <span style={{ fontSize: 11, color: "#888" }}>{entries.length} posts</span>
       </div>
       <div className="scroll-row">
         {entries.map(e => <PostCard key={e.articleId} entry={e} onRetry={onRetry} retries={retries} />)}
@@ -385,11 +385,11 @@ function ConfigPanel() {
   ];
   return (
     <div className="card" style={{ padding: "16px 18px" }}>
-      <div style={{ fontSize: 10, color: "#555", letterSpacing: 2, fontWeight: 700, textTransform: "uppercase", marginBottom: 14 }}>System Config</div>
+      <div style={{ fontSize: 10, color: "#aaa", letterSpacing: 2, fontWeight: 700, textTransform: "uppercase", marginBottom: 14 }}>System Config</div>
       {items.map(([k, v]) => (
         <div key={k} style={{ display: "flex", justifyContent: "space-between", padding: "9px 0", borderBottom: "1px solid #1f1f1f", fontSize: 12 }}>
-          <span style={{ color: "#555" }}>{k}</span>
-          <span style={{ fontWeight: 600, color: "#888" }}>{v}</span>
+          <span style={{ color: "#aaa" }}>{k}</span>
+          <span style={{ fontWeight: 600, color: "#e5e5e5" }}>{v}</span>
         </div>
       ))}
     </div>
@@ -491,7 +491,7 @@ export default function Dashboard() {
             ))}
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ fontSize: 11, color: "#444" }}>{todayCount}/24 today</span>
+            <span style={{ fontSize: 11, color: "#aaa" }}>{todayCount}/24 today</span>
             <Link href="/composer" style={{ background: PINK, color: "#fff", border: "none", borderRadius: 6, padding: "7px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", textDecoration: "none", whiteSpace: "nowrap" }}>
               + Compose
             </Link>
@@ -505,40 +505,46 @@ export default function Dashboard() {
             <div className="fade">
               {/* Search + filters */}
               <div style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap", alignItems: "center" }}>
-                <input className="inp" placeholder="🔍 Search posts…" value={search} onChange={e => setSearch(e.target.value)}
+                <input className="inp" placeholder="Search posts…" aria-label="Search posts" value={search} onChange={e => setSearch(e.target.value)}
                   style={{ flex: 1, minWidth: 200, maxWidth: 320 }} />
-                <select className="inp" value={filterCat} onChange={e => setFilterCat(e.target.value)} style={{ width: "auto", minWidth: 130 }}>
+                <select className="inp" aria-label="Filter by category" value={filterCat} onChange={e => setFilterCat(e.target.value)} style={{ width: "auto", minWidth: 130 }}>
                   <option value="ALL">All Categories</option>
                   {CATS.filter(c => c !== "AUTO").map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
                 <div style={{ display: "flex", gap: 4 }}>
                   {(["all", "ig", "fb", "failed"] as const).map(f => (
-                    <button key={f} onClick={() => setFilterPlatform(f)} style={{
-                      padding: "7px 12px", borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: "pointer",
-                      border: `1px solid ${filterPlatform === f ? RED : "#2a2a2a"}`,
-                      background: filterPlatform === f ? RED : "#1a1a1a",
-                      color: filterPlatform === f ? "#fff" : "#666",
-                      transition: "all .15s", textTransform: "uppercase", letterSpacing: .5,
-                    }}>{f === "all" ? "All" : f === "ig" ? "IG ✓" : f === "fb" ? "FB ✓" : "Failed"}</button>
+                    <button
+                      key={f}
+                      onClick={() => setFilterPlatform(f)}
+                      aria-label={f === "all" ? "Show all posts" : f === "ig" ? "Show Instagram posts" : f === "fb" ? "Show Facebook posts" : "Show failed posts"}
+                      aria-pressed={filterPlatform === f}
+                      style={{
+                        padding: "7px 12px", borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: "pointer",
+                        border: `1px solid ${filterPlatform === f ? RED : "#3a3a3a"}`,
+                        background: filterPlatform === f ? RED : "#1a1a1a",
+                        color: filterPlatform === f ? "#fff" : "#aaa",
+                        transition: "all .15s", textTransform: "uppercase", letterSpacing: .5,
+                      }}
+                    >{f === "all" ? "All" : f === "ig" ? "Instagram" : f === "fb" ? "Facebook" : "Failed"}</button>
                   ))}
                 </div>
-                <button className="btn-ghost" style={{ padding: "7px 12px", fontSize: 11 }} onClick={fetchLog}>↻</button>
+                <button className="btn-ghost" style={{ padding: "7px 12px", fontSize: 11 }} onClick={fetchLog} aria-label="Refresh posts">↻ Refresh</button>
               </div>
 
               {logLoading ? (
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 10 }}>
+                <div role="status" aria-label="Loading posts" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 10 }}>
                   {Array.from({ length: 8 }).map((_, i) => (
-                    <div key={i} className="skeleton" style={{ height: 280, borderRadius: 8 }} />
+                    <div key={i} className="skeleton" style={{ height: 280, borderRadius: 8 }} aria-hidden="true" />
                   ))}
                 </div>
               ) : (search || filterCat !== "ALL" || filterPlatform !== "all") ? (
                 // Filtered flat grid
                 <div>
-                  <div style={{ fontSize: 11, color: "#444", marginBottom: 12 }}>{filtered.length} results</div>
+                  <div style={{ fontSize: 11, color: "#aaa", marginBottom: 12 }}>{filtered.length} results</div>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 10 }}>
                     {filtered.map(e => <PostCard key={e.articleId} entry={e} onRetry={doRetry} retries={retries} />)}
                   </div>
-                  {filtered.length === 0 && <div style={{ textAlign: "center", padding: 60, color: "#333", fontSize: 14 }}>No posts match your filters</div>}
+                  {filtered.length === 0 && <div style={{ textAlign: "center", padding: 60, color: "#aaa", fontSize: 14 }}>No posts match your filters</div>}
                 </div>
               ) : (
                 // Netflix rows
@@ -547,7 +553,7 @@ export default function Dashboard() {
                     <div style={{ marginBottom: 32 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
                         <h2 style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 20, letterSpacing: 1 }}>Recently Posted</h2>
-                        <span style={{ fontSize: 11, color: "#444" }}>{recentAll.length} posts</span>
+                        <span style={{ fontSize: 11, color: "#888" }}>{recentAll.length} posts</span>
                       </div>
                       <div className="scroll-row">
                         {recentAll.map(e => <PostCard key={e.articleId} entry={e} onRetry={doRetry} retries={retries} />)}
@@ -557,7 +563,7 @@ export default function Dashboard() {
                   {Object.entries(byCategory).map(([cat, entries]) => (
                     <CategoryRow key={cat} title={cat} entries={entries} onRetry={doRetry} retries={retries} />
                   ))}
-                  {log.length === 0 && <div style={{ textAlign: "center", padding: 80, color: "#333", fontSize: 14 }}>No posts yet — auto-poster will start soon</div>}
+                  {log.length === 0 && <div style={{ textAlign: "center", padding: 80, color: "#aaa", fontSize: 14 }}>No posts yet — auto-poster will start soon</div>}
                 </div>
               )}
             </div>
