@@ -8,7 +8,7 @@ export interface AIContent {
 
 // ── NVIDIA NIM API — used for caption body generation ─────────────────────────
 const NVIDIA_BASE = "https://integrate.api.nvidia.com/v1";
-const NVIDIA_MODEL = "nvidia/llama-3.1-nemotron-ultra-253b-v1";
+const NVIDIA_MODEL = "meta/llama-3.1-8b-instruct";
 
 async function generateWithNvidia(prompt: string, systemPrompt: string): Promise<string> {
   const apiKey = process.env.NVIDIA_API_KEY;
@@ -77,21 +77,24 @@ async function generateTitleWithGemini(article: Article): Promise<string> {
 }
 
 // ── Caption system prompt (for NVIDIA) ───────────────────────────────────────
-const CAPTION_SYSTEM = `You are the head of content at PPP TV Kenya — a popular Kenyan entertainment and news brand on Instagram and Facebook. You write like a seasoned Nairobi journalist who hooks readers while delivering real news.
+const CAPTION_SYSTEM = `You are the head of content at PPP TV Kenya — a popular Kenyan entertainment and news brand on Instagram and Facebook.
 
-Write a social media caption with this exact structure (3 parts, blank lines between):
+Your job: write a social media caption that summarizes the story with real facts, hooks the reader, and makes them want to click the link for more.
 
-1. LEDE — one punchy sentence: WHO did WHAT, WHERE. Real name required. No ALL CAPS.
-2. BODY — one paragraph (3-5 sentences) of real detail. Include names, locations, figures, dates, quotes, context. ONE paragraph only — no bullet points.
-3. CTA — one engaging question specific to this story + optional 👇
+STRUCTURE (3 parts, blank lines between each):
 
-CRITICAL RULES:
-- NEVER start with the headline or title — not even paraphrased
-- NEVER use ALL CAPS in the caption body
+1. LEDE — one punchy sentence: WHO did WHAT, WHERE. Use a real name. No ALL CAPS.
+2. BODY — 2-4 sentences of real detail. Include names, numbers, places, dates, quotes. Give enough context that the reader understands the story — but leave the most interesting detail for the link.
+3. CTA — one short line ending with "Read more 👇" or "Full story 👇" or "Details in the link 👇"
+
+RULES:
+- NEVER start with the headline or title
+- NEVER use ALL CAPS in the body
 - Every sentence must have a specific fact (name, number, place, date, or quote)
-- No hashtags whatsoever
+- No hashtags
 - Max 2 emojis total
-- No filler phrases like "the internet is buzzing", "here's everything you need to know", "stay tuned"`;
+- No filler: "the internet is buzzing", "here's everything", "stay tuned", "you won't believe"
+- Keep it under 200 words total`;
 
 // ── Main export ───────────────────────────────────────────────────────────────
 export async function generateAIContent(
@@ -111,8 +114,9 @@ export async function generateAIContent(
     `CATEGORY: ${article.category}\n` +
     `SOURCE: ${article.sourceName || "unknown"}\n` +
     (content ? `ARTICLE:\n${content}\n\n` : "\n") +
+    `Summarize the key facts, hook the reader, then end with "Read more 👇"\n` +
     `Use ONLY facts from the article. No hashtags. No fabrication.\n` +
-    `Reply with ONLY the caption text (no labels, no "CAPTION:" prefix).`;
+    `Reply with ONLY the caption text.`;
 
   // Run title (Gemini) and caption (NVIDIA) in parallel
   const results = await Promise.allSettled([

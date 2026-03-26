@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchArticles } from "@/lib/scraper";
+import { generateAIContent } from "@/lib/gemini";
 import { generateImage } from "@/lib/image-gen";
 import { publish } from "@/lib/publisher";
 import { Article, SchedulerResponse } from "@/lib/types";
@@ -205,11 +206,33 @@ async function getTrendingTopics(): Promise<string[]> {
 }
 
 async function postOneArticle(article: Article, isBreaking: boolean): Promise<{ success: boolean; error?: string }> {
-  // Generate image using raw article title (no AI clickbait)
-  const imageBuffer = await generateImage(article, { isBreaking });
+  // Generate AI content — Gemini for headline, NVIDIA for caption
+  let clickbaitTitle = article.title;
+  let caption = "";
 
-  // Caption = just the excerpt, no hashtags, no AI
-  const caption = article.summary?.trim() || article.title;
+  try {
+    const ai = await generateAIContent(article);
+    clickbaitTitle = ai.clickbaitTitle || article.title;
+    caption = ai.caption || "";
+  } catch (err: any) {
+    console.warn("[automate] AI generation failed, using fallback:", err.message);
+  }
+
+  // Fallback caption if AI failed
+  if (!caption || caption.length < 40) {
+    const body = article.fullBody?.trim() || article.summary?.trim() || article.title;
+    caption = body.slice(0, 400) + (body.length > 400 ? "..." : "");
+    caption += "\n\nRead more 👇";
+  }
+
+  // Always append article link
+  if (article.url && !caption.includes(article.url)) {
+    caption += `\n\n${article.url}`;
+  }
+
+  // Generate thumbnail using AI clickbait title
+  const articleWithAITitle = { ...article, title: clickbaitTitle };
+  const imageBuffer = await generateImage(articleWithAITitle, { isBreaking });
 
   const igPost = { platform: "instagram" as const, caption, articleUrl: article.url };
   const fbPost = { platform: "facebook" as const, caption, articleUrl: article.url };
@@ -220,7 +243,7 @@ async function postOneArticle(article: Article, isBreaking: boolean): Promise<{ 
   if (anySuccess) {
     await Promise.all([
       logPost({
-        articleId: article.id, title: article.title, url: article.url,
+        articleId: article.id, title: clickbaitTitle, url: article.url,
         category: article.category, instagram: result.instagram,
         facebook: result.facebook, postedAt: new Date().toISOString(),
         isBreaking,
