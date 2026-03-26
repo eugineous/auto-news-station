@@ -1,0 +1,41 @@
+[
+  {
+    "slug": "eugine-micah",
+    "name": "Eugine Micah",
+    "role": "Head of Digital & Lead Presenter",
+    "bio": "Drives PPP TV’s digital strategy, co-hosts Urban News and Campus Xposure, and bridges campus creators with national spotlight.",
+    "image": "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=1200&q=80",
+    "socials": {
+      "instagram": "https://instagram.com/ppptvke",
+      "tiktok": "https://www.tiktok.com/@ppptv_",
+      "x": "https://twitter.com/PPPTV_ke"
+    },
+    "shows": ["urban-news", "campus-xposure"]
+  },
+  {
+    "slug": "lucy-ogunde",
+    "name": "Lucy Ogunde",
+    "role": "Co-host & Editor",
+    "bio": "Sharp storyteller anchoring Urban News and Gospel 10 with bilingual delivery and on-the-ground reports.",
+    "image": "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=1200&q=80",
+    "socials": {
+      "instagram": "https://instagram.com/ppptvke",
+      "tiktok": "https://www.tiktok.com/@ppptv_",
+      "x": "https://twitter.com/PPPTV_ke"
+    },
+    "shows": ["urban-news", "gospel-10"]
+  },
+  {
+    "slug": "vdj-jones",
+    "name": "VDJ Jones",
+    "role": "Resident DJ",
+    "bio": "Gengetone specialist pushing Nairobi club sound to national TV, curating mashups and live campus sets.",
+    "image": "https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?auto=format&fit=crop&w=1200&q=80",
+    "socials": {
+      "instagram": "https://instagram.com/ppptvke",
+      "tiktok": "https://www.tiktok.com/@ppptv_",
+      "x": "https://twitter.com/PPPTV_ke"
+    },
+    "shows": ["dj-culture"]
+  }
+]

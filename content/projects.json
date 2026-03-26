@@ -1,0 +1,18 @@
+[
+  {
+    "slug": "tushinde",
+    "title": "Tushinde",
+    "description": "Bet smarter with fast payouts, live odds, and daily boosts. 18+ Play responsibly.",
+    "image": "https://images.unsplash.com/photo-1504275107627-0c2ba7a43dba?auto=format&fit=crop&w=1200&q=80",
+    "link": "https://tushinde.com",
+    "sponsor": true
+  },
+  {
+    "slug": "campus-xposure-tour",
+    "title": "Campus Xposure Tour",
+    "description": "National creator lab and DJ takeover series across Kenyan universities.",
+    "image": "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1200&q=80",
+    "link": "https://ppptv.co.ke/projects/campus-xposure",
+    "sponsor": false
+  }
+]
