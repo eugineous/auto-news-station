@@ -55,18 +55,18 @@ async function generateTitleWithGemini(article: Article): Promise<string> {
 
   const client = getGeminiClient(apiKey);
   const prompt =
-    `Write a VIRAL, attention-grabbing ALL CAPS headline for this article. Make it impossible to scroll past.\n` +
+    `Write an ALL CAPS headline for this article that makes someone stop scrolling and have to read it.\n\n` +
     `TITLE: ${article.title}\n` +
     `CATEGORY: ${article.category}\n` +
     `SUMMARY: ${(article.summary || "").slice(0, 300)}\n\n` +
     `Rules:\n` +
     `- ALL CAPS only\n` +
-    `- Max 10 words — shorter is more powerful\n` +
-    `- Must include a real name, number, or shocking fact from the article\n` +
-    `- Use power words: EXPOSED, BREAKS SILENCE, CONFIRMS, DROPS, FIRES BACK, CAUGHT, REVEALS, SHOCKS\n` +
-    `- Make it feel urgent and unmissable\n` +
-    `- No hashtags, no quotes around the title\n` +
-    `- Reply with ONLY the headline, nothing else`;
+    `- Max 10 words — the shorter and sharper the better\n` +
+    `- Must be grounded in a real fact from the article (name, number, place, or event)\n` +
+    `- Write it the way a top newspaper editor would write a front-page headline — specific, urgent, impossible to ignore\n` +
+    `- Do NOT use generic filler words or clichés\n` +
+    `- No hashtags, no quotes\n` +
+    `- Reply with ONLY the headline`;
 
   const response = await client.models.generateContent({
     model: "gemini-2.5-flash",
