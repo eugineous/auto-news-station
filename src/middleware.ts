@@ -5,6 +5,8 @@ import { SESSION_COOKIE, SESSION_VALUE } from "@/lib/auth";
 const PUBLIC_PATHS = [
   "/login",
   "/api/auth",
+  "/api/automate",
+  "/api/automate-secret",
   "/about",
   "/contact",
   "/privacy",
