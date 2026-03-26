@@ -96,7 +96,7 @@ CRITICAL RULES:
 // ── Main export ───────────────────────────────────────────────────────────────
 export async function generateAIContent(
   article: Article,
-  options?: { isVideo?: boolean }
+  options?: { isVideo?: boolean; videoType?: string }
 ): Promise<AIContent> {
   const hasGemini = !!process.env.GEMINI_API_KEY;
   const hasNvidia = !!process.env.NVIDIA_API_KEY;

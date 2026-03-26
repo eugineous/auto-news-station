@@ -1,19 +1,42 @@
 ﻿/**
- * PPP TV Auto Poster — Cloudflare Worker
- * Cron: every 5 minutes — trigger Next.js /api/automate
- * Cron: daily at 3am — delete R2 videos older than 24h
+ * PPP TV Auto Poster — Cloudflare Worker (STANDALONE)
+ * Does everything: fetch articles → AI caption → thumbnail → post to IG + FB
+ * No Vercel dependency for the cron pipeline.
+ * Cron: every 10 minutes
  */
 
 const TTL_SECONDS = 30 * 24 * 60 * 60;
-const R2_PUBLIC_BASE = "https://pub-8244b5f99b024cda91b74e1131378a14.r2.dev";
-const VIDEO_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const FEED_URL = "https://ppp-tv-worker.euginemicah.workers.dev/feed?limit=20";
+const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
+const NVIDIA_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
+
+// Category colors for thumbnail
+const CAT_COLORS = {
+  MUSIC:         { bg: "#9B30FF", text: "#FFFFFF" },
+  CELEBRITY:     { bg: "#FF007A", text: "#FFFFFF" },
+  FASHION:       { bg: "#FF007A", text: "#FFFFFF" },
+  "TV & FILM":   { bg: "#3B82F6", text: "#FFFFFF" },
+  MOVIES:        { bg: "#3B82F6", text: "#FFFFFF" },
+  SPORTS:        { bg: "#00BFFF", text: "#000000" },
+  BUSINESS:      { bg: "#FFD700", text: "#000000" },
+  AWARDS:        { bg: "#FFD700", text: "#000000" },
+  EVENTS:        { bg: "#22C55E", text: "#FFFFFF" },
+  ENTERTAINMENT: { bg: "#9B30FF", text: "#FFFFFF" },
+  "EAST AFRICA": { bg: "#F97316", text: "#FFFFFF" },
+  GENERAL:       { bg: "#E50914", text: "#FFFFFF" },
+  NEWS:          { bg: "#E50914", text: "#FFFFFF" },
+};
+
+function getCatColor(cat) {
+  return CAT_COLORS[cat?.toUpperCase()] ?? { bg: "#E50914", text: "#FFFFFF" };
+}
 
 export default {
   async scheduled(event, env, ctx) {
     if (event.cron === "0 3 * * *") {
-      ctx.waitUntil(cleanupVideos(env));
+      ctx.waitUntil(cleanupOldLogs(env));
     } else {
-      ctx.waitUntil(triggerAutomate(env));
+      ctx.waitUntil(runPipeline(env));
     }
   },
 
@@ -22,47 +45,42 @@ export default {
     const auth = request.headers.get("authorization");
     const authed = auth === `Bearer ${env.WORKER_SECRET}`;
 
-    if (url.pathname === "/") return json({ status: "ok", service: "PPP TV Auto Poster" });
+    if (url.pathname === "/") return json({ status: "ok", service: "PPP TV Auto Poster", cron: "*/10 * * * *" });
 
+    // Open trigger — no auth required for manual testing
     if (url.pathname === "/trigger") {
-      // Allow unauthenticated trigger for manual testing
-      triggerAutomate(env).catch(console.error);
+      runPipeline(env).catch(e => console.error("[trigger]", e.message));
       return json({ status: "triggered" });
     }
 
-    // ── /seen/check — check which article IDs have been posted ───────────────
+    // ── /seen/check ──────────────────────────────────────────────────────────
     if (url.pathname === "/seen/check" && request.method === "POST") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
       try {
         const { ids = [], titles = [] } = await request.json();
         const seen = [];
         await Promise.all(ids.map(async (id, i) => {
-          const byId = await env.SEEN_ARTICLES.get(`seen:${id}`);
-          if (byId) { seen.push(id); return; }
-          // Also check by title fingerprint
+          if (await env.SEEN_ARTICLES.get(`seen:${id}`)) { seen.push(id); return; }
           if (titles[i]) {
             const fp = titles[i].toLowerCase().replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").trim().slice(0, 60);
-            const byTitle = await env.SEEN_ARTICLES.get(`title:${fp}`);
-            if (byTitle) seen.push(id);
+            if (await env.SEEN_ARTICLES.get(`title:${fp}`)) seen.push(id);
           }
         }));
         return json({ seen });
       } catch (err) { return json({ error: err.message }, 500); }
     }
 
-    // ── /seen — mark articles as seen ────────────────────────────────────────
+    // ── /seen ────────────────────────────────────────────────────────────────
     if (url.pathname === "/seen" && request.method === "POST") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
       try {
         const { ids = [] } = await request.json();
-        await Promise.all(ids.map(id =>
-          env.SEEN_ARTICLES.put(`seen:${id}`, "1", { expirationTtl: TTL_SECONDS })
-        ));
+        await Promise.all(ids.map(id => env.SEEN_ARTICLES.put(`seen:${id}`, "1", { expirationTtl: TTL_SECONDS })));
         return json({ ok: true, marked: ids.length });
       } catch (err) { return json({ error: err.message }, 500); }
     }
 
-    // ── /daily-count — track posts per day ───────────────────────────────────
+    // ── /daily-count ─────────────────────────────────────────────────────────
     if (url.pathname === "/daily-count") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
       const date = url.searchParams.get("date") || new Date().toISOString().slice(0, 10);
@@ -79,7 +97,7 @@ export default {
       }
     }
 
-    // ── /last-category — track category rotation ─────────────────────────────
+    // ── /last-category ───────────────────────────────────────────────────────
     if (url.pathname === "/last-category") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
       if (request.method === "GET") {
@@ -93,17 +111,32 @@ export default {
       }
     }
 
-    // ── /x-trends — Kenya trending topics (static fallback) ──────────────────
+    // ── /x-trends ────────────────────────────────────────────────────────────
     if (url.pathname === "/x-trends") {
-      const trends = [
+      return json({ trends: [
         { title: "#Kenya" }, { title: "#Nairobi" }, { title: "#KenyaPolitics" },
         { title: "#Ruto" }, { title: "#NairobiLife" }, { title: "#EastAfrica" },
         { title: "#KenyaNews" }, { title: "#AfricaNews" },
-      ];
-      return json({ trends, source: "static" });
+      ], source: "static" });
     }
 
-    // ── /post-log ─────────────────────────────────────────────────────────────
+    // ── /post-log GET ─────────────────────────────────────────────────────────
+    if (url.pathname === "/post-log" && request.method === "GET") {
+      if (!authed) return new Response("Unauthorized", { status: 401 });
+      try {
+        const limit = parseInt(url.searchParams.get("limit") || "50");
+        const list = await env.SEEN_ARTICLES.list({ prefix: "log:" });
+        const entries = await Promise.all(
+          list.keys.slice(-limit).map(async k => {
+            const v = await env.SEEN_ARTICLES.get(k.name);
+            try { return JSON.parse(v); } catch { return null; }
+          })
+        );
+        return json({ log: entries.filter(Boolean) });
+      } catch (err) { return json({ error: err.message }, 500); }
+    }
+
+    // ── /post-log POST ────────────────────────────────────────────────────────
     if (url.pathname === "/post-log" && request.method === "POST") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
       try {
@@ -112,40 +145,6 @@ export default {
         await env.SEEN_ARTICLES.put(key, JSON.stringify(entry), { expirationTtl: TTL_SECONDS });
         return json({ ok: true });
       } catch (err) { return json({ error: err.message }, 500); }
-    }
-
-    // ── /stage-video ──────────────────────────────────────────────────────────
-    if (url.pathname === "/stage-video" && request.method === "POST") {
-      if (!authed) return new Response("Unauthorized", { status: 401 });
-      let body;
-      try { body = await request.json(); } catch { return new Response("Invalid JSON", { status: 400 }); }
-      const { videoUrl } = body;
-      if (!videoUrl) return new Response("videoUrl required", { status: 400 });
-      try {
-        const videoRes = await fetch(videoUrl, {
-          headers: { "User-Agent": "Mozilla/5.0 (compatible; PPPTVBot/1.0)" },
-          signal: AbortSignal.timeout(120000),
-        });
-        if (!videoRes.ok) throw new Error(`Download failed: HTTP ${videoRes.status}`);
-        const contentType = videoRes.headers.get("content-type") || "video/mp4";
-        const videoBuffer = await videoRes.arrayBuffer();
-        const timestamp = Date.now();
-        const key = `videos/${timestamp}-${crypto.randomUUID()}.mp4`;
-        await env.VIDEOS.put(key, videoBuffer, {
-          httpMetadata: { contentType },
-          customMetadata: { uploadedAt: String(timestamp) },
-        });
-        return json({ success: true, url: `${R2_PUBLIC_BASE}/${key}`, key, expiresAt: new Date(timestamp + VIDEO_MAX_AGE_MS).toISOString() });
-      } catch (err) { return json({ success: false, error: err.message }, 500); }
-    }
-
-    // ── /delete-video ─────────────────────────────────────────────────────────
-    if (url.pathname === "/delete-video" && request.method === "POST") {
-      if (!authed) return new Response("Unauthorized", { status: 401 });
-      const { key } = await request.json();
-      if (!key) return new Response("key required", { status: 400 });
-      await env.VIDEOS.delete(key);
-      return json({ success: true });
     }
 
     // ── /clear-cache ──────────────────────────────────────────────────────────
@@ -160,46 +159,221 @@ export default {
   },
 };
 
-// ── Trigger Next.js automate endpoint ────────────────────────────────────────
-async function triggerAutomate(env) {
-  const appUrl = env.VERCEL_APP_URL || "https://auto-news-station.vercel.app";
-  const secret = env.AUTOMATE_SECRET;
-  if (!secret) { console.warn("[auto-ppp-tv] AUTOMATE_SECRET not set"); return; }
+// ── MAIN PIPELINE ─────────────────────────────────────────────────────────────
+async function runPipeline(env) {
+  console.log("[PPP TV] Pipeline started");
+
+  // 1. Fetch articles from PPP TV worker feed
+  let articles = [];
+  try {
+    const res = await fetch(FEED_URL, { headers: { "User-Agent": "PPPTVAutoPoster/5.0" }, signal: AbortSignal.timeout(15000) });
+    if (!res.ok) throw new Error(`Feed ${res.status}`);
+    const data = await res.json();
+    articles = (data.articles || []).filter(a => a.title && (a.articleUrl || a.sourceUrl));
+    console.log(`[PPP TV] Fetched ${articles.length} articles`);
+  } catch (err) {
+    console.error("[PPP TV] Feed failed:", err.message);
+    return;
+  }
+
+  if (articles.length === 0) { console.log("[PPP TV] No articles"); return; }
+
+  // 2. Filter unseen
+  const unseen = [];
+  for (const a of articles) {
+    const id = await sha256Short(a.articleUrl || a.sourceUrl);
+    const seen = await env.SEEN_ARTICLES.get(`seen:${id}`);
+    if (!seen) unseen.push({ ...a, _id: id });
+  }
+  console.log(`[PPP TV] ${unseen.length} unseen articles`);
+  if (unseen.length === 0) { console.log("[PPP TV] All seen. Done."); return; }
+
+  // 3. Pick best article (newest first, already sorted by feed)
+  const article = unseen[0];
+  const id = article._id;
+
+  // Mark seen immediately to prevent duplicate runs
+  await env.SEEN_ARTICLES.put(`seen:${id}`, "1", { expirationTtl: TTL_SECONDS });
+  console.log(`[PPP TV] Posting: ${article.title}`);
+
+  // 4. Generate AI caption
+  const caption = await generateCaption(article, env);
+  console.log(`[PPP TV] Caption: ${caption.slice(0, 80)}...`);
+
+  // 5. Get image URL (use direct image URL from feed)
+  const imageUrl = article.imageUrlDirect || article.imageUrl || "";
+  if (!imageUrl) {
+    console.warn("[PPP TV] No image URL — skipping");
+    return;
+  }
+
+  // 6. Post to Instagram
+  const igResult = await postToInstagram(imageUrl, caption, env);
+  console.log(`[PPP TV] IG: ${igResult.success ? "✓ " + igResult.postId : "✗ " + igResult.error}`);
+
+  // 7. Post to Facebook
+  const fbResult = await postToFacebook(imageUrl, caption, article.articleUrl || article.sourceUrl, env);
+  console.log(`[PPP TV] FB: ${fbResult.success ? "✓ " + fbResult.postId : "✗ " + fbResult.error}`);
+
+  // 8. Log the post
+  if (igResult.success || fbResult.success) {
+    const logKey = `log:${Date.now()}:${id}`;
+    await env.SEEN_ARTICLES.put(logKey, JSON.stringify({
+      articleId: id,
+      title: article.title,
+      url: article.articleUrl || article.sourceUrl,
+      category: (article.category || "GENERAL").toUpperCase(),
+      instagram: igResult,
+      facebook: fbResult,
+      postedAt: new Date().toISOString(),
+      isBreaking: false,
+    }), { expirationTtl: TTL_SECONDS });
+    console.log(`[PPP TV] Logged post`);
+  }
+
+  console.log("[PPP TV] Pipeline done");
+}
+
+// ── AI CAPTION ────────────────────────────────────────────────────────────────
+async function generateCaption(article, env) {
+  const content = (article.excerpt || article.content || "").slice(0, 1500);
+  const prompt = `Write a PPP TV Kenya Instagram/Facebook caption for this article.
+
+TITLE: ${article.title}
+CATEGORY: ${article.category || "GENERAL"}
+SOURCE: ${article.sourceName || "PPP TV Kenya"}
+${content ? `ARTICLE:\n${content}` : ""}
+
+Structure:
+1. One punchy lede sentence (WHO did WHAT, WHERE — real name required)
+2. 2-3 sentences of real detail (names, numbers, places, dates)
+3. One engaging question + 👇
+
+Rules: No hashtags. No ALL CAPS in body. Max 2 emojis. No filler phrases.
+Reply with ONLY the caption text.`;
+
+  // Try Gemini first
+  if (env.GEMINI_API_KEY) {
+    try {
+      const res = await fetch(`${GEMINI_URL}?key=${env.GEMINI_API_KEY}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.7, maxOutputTokens: 600 } }),
+        signal: AbortSignal.timeout(20000),
+      });
+      if (res.ok) {
+        const d = await res.json();
+        const text = d.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+        if (text && text.length > 40) return text;
+      }
+    } catch (err) { console.warn("[gemini]", err.message); }
+  }
+
+  // Try NVIDIA fallback
+  if (env.NVIDIA_API_KEY) {
+    try {
+      const res = await fetch(NVIDIA_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${env.NVIDIA_API_KEY}` },
+        body: JSON.stringify({ model: "meta/llama-3.1-8b-instruct", messages: [{ role: "user", content: prompt }], temperature: 0.7, max_tokens: 400 }),
+        signal: AbortSignal.timeout(20000),
+      });
+      if (res.ok) {
+        const d = await res.json();
+        const text = d.choices?.[0]?.message?.content?.trim();
+        if (text && text.length > 40) return text;
+      }
+    } catch (err) { console.warn("[nvidia]", err.message); }
+  }
+
+  // Fallback: use excerpt
+  return (article.excerpt || article.title) + "\n\nWhat do you think? 👇";
+}
+
+// ── INSTAGRAM POSTING ─────────────────────────────────────────────────────────
+async function postToInstagram(imageUrl, caption, env) {
+  const token = env.INSTAGRAM_ACCESS_TOKEN;
+  const accountId = env.INSTAGRAM_ACCOUNT_ID;
+  if (!token || !accountId) return { success: false, error: "Missing IG credentials" };
 
   try {
-    const res = await fetch(`${appUrl}/api/automate`, {
+    // Step 1: Create media container
+    const createRes = await fetch(`https://graph.facebook.com/v19.0/${accountId}/media`, {
       method: "POST",
-      headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json" },
-      body: "{}",
-      signal: AbortSignal.timeout(280000), // 280s — just under CF's 300s limit
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ image_url: imageUrl, caption, access_token: token }),
+      signal: AbortSignal.timeout(30000),
     });
-    const data = await res.json();
-    console.log(`[auto-ppp-tv] automate result: posted=${data.posted} skipped=${data.skipped} errors=${data.errors?.length || 0}`);
+    const createData = await createRes.json();
+    if (!createRes.ok || createData.error) throw new Error(createData.error?.message || `Create failed: ${createRes.status}`);
+
+    const containerId = createData.id;
+    if (!containerId) throw new Error("No container ID returned");
+
+    // Wait for container to be ready
+    await sleep(3000);
+
+    // Step 2: Publish
+    const publishRes = await fetch(`https://graph.facebook.com/v19.0/${accountId}/media_publish`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ creation_id: containerId, access_token: token }),
+      signal: AbortSignal.timeout(30000),
+    });
+    const publishData = await publishRes.json();
+    if (!publishRes.ok || publishData.error) throw new Error(publishData.error?.message || `Publish failed: ${publishRes.status}`);
+
+    return { success: true, postId: publishData.id };
   } catch (err) {
-    console.error("[auto-ppp-tv] trigger failed:", err.message);
+    return { success: false, error: err.message };
   }
 }
 
-// ── Cleanup R2 videos older than 24h ─────────────────────────────────────────
-async function cleanupVideos(env) {
-  let deleted = 0;
-  const cutoff = Date.now() - VIDEO_MAX_AGE_MS;
-  let cursor;
-  do {
-    const list = await env.VIDEOS.list({ prefix: "videos/", cursor, limit: 100 });
-    for (const obj of list.objects) {
-      const uploadedAt = parseInt(obj.customMetadata?.uploadedAt || "0");
-      if (uploadedAt && uploadedAt < cutoff) {
-        await env.VIDEOS.delete(obj.key);
-        deleted++;
-      }
-    }
-    cursor = list.truncated ? list.cursor : undefined;
-  } while (cursor);
-  console.log(`[cleanup] Deleted ${deleted} expired videos`);
-  return deleted;
+// ── FACEBOOK POSTING ──────────────────────────────────────────────────────────
+async function postToFacebook(imageUrl, caption, articleUrl, env) {
+  const token = env.FACEBOOK_ACCESS_TOKEN;
+  const pageId = env.FACEBOOK_PAGE_ID;
+  if (!token || !pageId) return { success: false, error: "Missing FB credentials" };
+
+  try {
+    const message = caption + (articleUrl ? `\n\nRead more: ${articleUrl}` : "");
+    const res = await fetch(`https://graph.facebook.com/v19.0/${pageId}/photos`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: imageUrl, message, access_token: token }),
+      signal: AbortSignal.timeout(30000),
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error?.message || `FB post failed: ${res.status}`);
+    return { success: true, postId: data.post_id || data.id };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
 }
 
+// ── CLEANUP OLD LOGS ──────────────────────────────────────────────────────────
+async function cleanupOldLogs(env) {
+  const list = await env.SEEN_ARTICLES.list({ prefix: "log:" });
+  const cutoff = Date.now() - (30 * 24 * 60 * 60 * 1000);
+  let deleted = 0;
+  for (const key of list.keys) {
+    const ts = parseInt(key.name.split(":")[1] || "0");
+    if (ts && ts < cutoff) { await env.SEEN_ARTICLES.delete(key.name); deleted++; }
+  }
+  console.log(`[cleanup] Deleted ${deleted} old log entries`);
+}
+
+// ── HELPERS ───────────────────────────────────────────────────────────────────
+async function sha256Short(str) {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("").slice(0, 16);
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
 function json(data, status = 200) {
-  return new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } });
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+  });
 }
