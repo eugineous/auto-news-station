@@ -1,7 +1,9 @@
 import { createHash } from "crypto";
 import { Article } from "./types";
 
-const PPPTV_RSS = "https://ppptv-v2.vercel.app/api/rss";
+// PPP TV Cloudflare Worker /feed endpoint — real-time, image-verified articles
+const PPPTV_FEED_URL = (process.env.PPPTV_WORKER_URL || "https://ppp-tv-worker.euginemicah.workers.dev") + "/feed";
+
 const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
 
 function isWithin24h(pubDate: string | Date | undefined): boolean {
@@ -20,80 +22,57 @@ function titleFingerprint(title: string): string {
   return title.toLowerCase().replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").trim().slice(0, 60);
 }
 
-function extractTag(xml: string, tag: string): string {
-  const m = xml.match(new RegExp("<" + tag + "[^>]*>([\\s\\S]*?)<\\/" + tag + ">", "i"));
-  return m ? m[1].trim() : "";
+interface WorkerFeedItem {
+  slug: string;
+  title: string;
+  excerpt: string;
+  content?: string;
+  category: string;
+  sourceName: string;
+  sourceUrl: string;
+  publishedAt: string;
+  articleUrl: string;
+  imageUrl: string;
+  imageUrlDirect: string;
+  twitterCaption: string;
+  facebookCaption: string;
+  instagramCaption: string;
 }
 
-function extractCdata(raw: string): string {
-  const m = raw.match(/<!\[CDATA\[([\s\S]*?)\]\]>/);
-  return m ? m[1].trim() : raw.replace(/<[^>]+>/g, "").trim();
+interface WorkerFeedResponse {
+  articles: WorkerFeedItem[];
+  total: number;
+  generatedAt: string;
 }
 
-function extractAttr(xml: string, tag: string, attr: string): string {
-  const m = xml.match(new RegExp("<" + tag + "[^>]*\\s" + attr + '="([^"]*)"', "i"));
-  return m ? m[1] : "";
-}
-
-// Strip HTML tags and clean up whitespace for plain text
-function stripHtml(html: string): string {
-  return html
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&nbsp;/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function parsePPPTVFeed(xml: string): Article[] {
+function parseWorkerFeed(data: WorkerFeedResponse): Article[] {
   const articles: Article[] = [];
   const seenTitles = new Set<string>();
   const seenIds = new Set<string>();
 
-  const itemRegex = /<item>([\s\S]*?)<\/item>/g;
-  let match: RegExpExecArray | null;
+  for (const item of data.articles || []) {
+    if (!item.title || !item.sourceUrl) continue;
 
-  while ((match = itemRegex.exec(xml)) !== null) {
-    const block = match[1];
-
-    const title = extractCdata(extractTag(block, "title"));
-    const link = extractCdata(extractTag(block, "link")) || extractTag(block, "link");
-    const rawDescription = extractTag(block, "description");
-    const description = stripHtml(extractCdata(rawDescription) || rawDescription);
-    const category = extractCdata(extractTag(block, "category")) || "GENERAL";
-    const pubDate = extractTag(block, "pubDate");
-    const imageUrl =
-      extractAttr(block, "enclosure", "url") ||
-      extractAttr(block, "media:content", "url") ||
-      "";
-
-    if (!title || !link) continue;
-
-    const id = hashUrl(link);
+    const id = hashUrl(item.sourceUrl);
     if (seenIds.has(id)) continue;
     seenIds.add(id);
 
-    const fp = titleFingerprint(title);
+    const fp = titleFingerprint(item.title);
     if (seenTitles.has(fp)) continue;
     seenTitles.add(fp);
 
-    // Use up to 600 chars of description as summary — gives Gemini enough context
-    const summary = description.slice(0, 600);
+    const fullBody = item.content || item.excerpt || "";
 
     articles.push({
       id,
-      title,
-      url: link,
-      imageUrl,
-      summary,
-      fullBody: description,
-      sourceName: "PPP TV Kenya",
-      category: category.toUpperCase(),
-      publishedAt: pubDate ? new Date(pubDate) : new Date(),
+      title: item.title,
+      url: item.articleUrl || item.sourceUrl,
+      imageUrl: item.imageUrl || item.imageUrlDirect || "",
+      summary: item.excerpt || "",
+      fullBody,
+      sourceName: item.sourceName || "PPP TV Kenya",
+      category: (item.category || "GENERAL").toUpperCase(),
+      publishedAt: item.publishedAt ? new Date(item.publishedAt) : new Date(),
     });
   }
 
@@ -101,18 +80,18 @@ function parsePPPTVFeed(xml: string): Article[] {
 }
 
 export async function fetchArticles(limit = 50): Promise<Article[]> {
-  const res = await fetch(PPPTV_RSS, {
-    headers: {
-      "User-Agent": "PPPTVAutoPoster/3.0",
-      "Accept": "application/rss+xml, application/xml, text/xml, */*",
-    },
+  const url = `${PPPTV_FEED_URL}?limit=${limit}`;
+
+  const res = await fetch(url, {
+    headers: { "User-Agent": "PPPTVAutoPoster/4.0" },
     signal: AbortSignal.timeout(20000),
+    cache: "no-store",
   });
 
-  if (!res.ok) throw new Error("PPP TV RSS fetch failed: " + res.status);
+  if (!res.ok) throw new Error("PPP TV Worker feed fetch failed: " + res.status);
 
-  const xml = await res.text();
-  const articles = parsePPPTVFeed(xml);
+  const data = await res.json() as WorkerFeedResponse;
+  const articles = parseWorkerFeed(data);
 
   // Only articles from last 24h
   const fresh = articles.filter(a => isWithin24h(a.publishedAt));
