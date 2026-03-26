@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import { heartbeat } from "@/lib/cockpit/data";
 
 export function CockpitTopBar() {
@@ -10,7 +10,7 @@ export function CockpitTopBar() {
           {heartbeat.paused ? (
             <span className="text-amber-400">Paused</span>
           ) : (
-            <span className="text-emerald-400">Live � every 10m</span>
+            <span className="text-emerald-400">Live · every 10m</span>
           )}
           <span className="text-xs text-gray-500">Next: {heartbeat.nextRun}</span>
         </div>

@@ -1,4 +1,4 @@
-import { categoryColors, CockpitPost } from "@/lib/cockpit/data";
+﻿import { categoryColors, CockpitPost } from "@/lib/cockpit/data";
 import { cn } from "@/lib/utils";
 
 export function QueueList({ items }: { items: CockpitPost[] }) {
@@ -13,7 +13,7 @@ export function QueueList({ items }: { items: CockpitPost[] }) {
                 <span className="text-xs font-black px-2 py-1 rounded" style={{ background: color, color: "#000" }}>
                   {item.category}
                 </span>
-                <span className="text-[11px] text-gray-400">{item.status === "sent" ? item.postedAt : `ETA ${item.eta || "�"}`}</span>
+                <span className="text-[11px] text-gray-400">{item.status === "sent" ? item.postedAt : `ETA ${item.eta || "—"}`}</span>
               </div>
               <div className="text-lg font-semibold text-white leading-snug line-clamp-2">{item.title}</div>
               <div className="mt-2 flex items-center gap-3 text-xs text-gray-400">

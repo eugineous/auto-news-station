@@ -1,4 +1,4 @@
-import { CockpitNav } from "@/components/cockpit/CockpitNav";
+﻿import { CockpitNav } from "@/components/cockpit/CockpitNav";
 import { CockpitTopBar } from "@/components/cockpit/CockpitTopBar";
 import { StatCard } from "@/components/cockpit/StatCard";
 import { stats } from "@/lib/cockpit/data";
@@ -18,7 +18,7 @@ export default function AnalyticsPage() {
             <StatCard label="FB posted" value={stats.fb} />
           </div>
           <div className="bg-white/5 border border-white/5 rounded-xl p-4 text-sm text-gray-300">
-            Sparkline/graph placeholder � plug in posts/hour and per-category breakdown.
+            Sparkline/graph placeholder — plug in posts/hour and per-category breakdown.
           </div>
         </div>
       </div>

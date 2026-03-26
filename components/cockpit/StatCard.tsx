@@ -1,4 +1,4 @@
-import { ReactNode } from "react";
+﻿import { ReactNode } from "react";
 
 export function StatCard({ label, value, chip, tone = "neutral", children }: { label: string; value: string | number; chip?: string; tone?: "neutral" | "success" | "danger"; children?: ReactNode; }) {
   const color = tone === "success" ? "text-emerald-300" : tone === "danger" ? "text-rose-300" : "text-white";

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+﻿import type { ReactNode } from "react";
 import { Bebas_Neue, Inter } from "next/font/google";
 import "../globals.css";
 

@@ -1,4 +1,4 @@
-export type Platform = "instagram" | "facebook";
+﻿export type Platform = "instagram" | "facebook";
 
 export const categoryColors: Record<string, string> = {
   CELEBRITY: "#FF007A",

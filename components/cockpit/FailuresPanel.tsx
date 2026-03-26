@@ -1,4 +1,4 @@
-import { CockpitPost } from "@/lib/cockpit/data";
+﻿import { CockpitPost } from "@/lib/cockpit/data";
 
 export function FailuresPanel({ items }: { items: CockpitPost[] }) {
   const failed = items.filter((i) => i.status === "failed" || i.failures?.length);
@@ -7,7 +7,7 @@ export function FailuresPanel({ items }: { items: CockpitPost[] }) {
     <div className="grid gap-3">
       {failed.map((item) => (
         <div key={item.id} className="bg-rose-950/40 border border-rose-700/40 rounded-xl p-4">
-          <div className="text-xs text-rose-200 mb-1">Failed � {item.category}</div>
+          <div className="text-xs text-rose-200 mb-1">Failed · {item.category}</div>
           <div className="text-white font-semibold mb-2">{item.title}</div>
           <div className="text-sm text-gray-200 flex flex-wrap gap-2">
             {item.failures?.map((f, idx) => (

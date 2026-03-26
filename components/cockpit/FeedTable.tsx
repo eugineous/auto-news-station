@@ -1,4 +1,4 @@
-import { FeedItem, categoryColors } from "@/lib/cockpit/data";
+﻿import { FeedItem, categoryColors } from "@/lib/cockpit/data";
 
 export function FeedTable({ items }: { items: FeedItem[] }) {
   return (
