@@ -6,8 +6,8 @@ import { Article, SchedulerResponse } from "@/lib/types";
 
 export const maxDuration = 300;
 
-const WORKER_URL = process.env.CLOUDFLARE_WORKER_URL || "https://ppptv-worker.euginemicah.workers.dev";
-const WORKER_SECRET = process.env.WORKER_SECRET || "";
+const WORKER_URL = process.env.CLOUDFLARE_WORKER_URL || "https://auto-ppp-tv.euginemicah.workers.dev";
+const WORKER_SECRET = process.env.WORKER_SECRET || "ppptvWorker2024";
 
 // ── Kenya relevance filter ────────────────────────────────────────────────────
 const KENYA_TERMS = [

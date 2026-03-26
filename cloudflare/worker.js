@@ -6,7 +6,7 @@
  */
 
 const TTL_SECONDS = 30 * 24 * 60 * 60;
-const FEED_URL = "https://ppp-tv-worker.euginemicah.workers.dev/feed?limit=20";
+const FEED_URL = "https://ppp-tv-worker.euginemicah.workers.dev/articles?limit=50";
 const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
 const NVIDIA_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
 
@@ -36,7 +36,7 @@ export default {
     if (event.cron === "0 3 * * *") {
       ctx.waitUntil(cleanupOldLogs(env));
     } else {
-      ctx.waitUntil(runPipeline(env));
+      ctx.waitUntil(triggerAutomate(env));
     }
   },
 
@@ -49,8 +49,18 @@ export default {
 
     // Open trigger — no auth required for manual testing
     if (url.pathname === "/trigger") {
-      runPipeline(env).catch(e => console.error("[trigger]", e.message));
+      triggerAutomate(env).catch(e => console.error("[trigger]", e.message));
       return json({ status: "triggered" });
+    }
+
+    // Debug trigger — runs synchronously and returns result
+    if (url.pathname === "/trigger-debug") {
+      try {
+        const result = await runPipelineDebug(env);
+        return json(result);
+      } catch (err) {
+        return json({ error: err.message, stack: err.stack }, 500);
+      }
     }
 
     // ── /seen/check ──────────────────────────────────────────────────────────
@@ -159,7 +169,26 @@ export default {
   },
 };
 
-// ── MAIN PIPELINE ─────────────────────────────────────────────────────────────
+// ── Trigger Next.js automate endpoint (Vercel handles the full pipeline) ──────
+async function triggerAutomate(env) {
+  const appUrl = env.VERCEL_APP_URL || "https://auto-news-station.vercel.app";
+  const secret = env.AUTOMATE_SECRET;
+  if (!secret) { console.warn("[auto-ppp-tv] AUTOMATE_SECRET not set"); return; }
+
+  try {
+    const res = await fetch(`${appUrl}/api/automate`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json" },
+      body: "{}",
+      signal: AbortSignal.timeout(280000),
+    });
+    const data = await res.json();
+    console.log(`[auto-ppp-tv] result: posted=${data.posted} skipped=${data.skipped} errors=${data.errors?.length || 0}`);
+    if (data.errors?.length > 0) console.warn("[auto-ppp-tv] errors:", JSON.stringify(data.errors));
+  } catch (err) {
+    console.error("[auto-ppp-tv] trigger failed:", err.message);
+  }
+}
 async function runPipeline(env) {
   console.log("[PPP TV] Pipeline started");
 
@@ -169,7 +198,8 @@ async function runPipeline(env) {
     const res = await fetch(FEED_URL, { headers: { "User-Agent": "PPPTVAutoPoster/5.0" }, signal: AbortSignal.timeout(15000) });
     if (!res.ok) throw new Error(`Feed ${res.status}`);
     const data = await res.json();
-    articles = (data.articles || []).filter(a => a.title && (a.articleUrl || a.sourceUrl));
+    const rawArticles = Array.isArray(data) ? data : (data.articles || []);
+    articles = rawArticles.filter(a => a.title && (a.articleUrl || a.sourceUrl || a.slug));
     console.log(`[PPP TV] Fetched ${articles.length} articles`);
   } catch (err) {
     console.error("[PPP TV] Feed failed:", err.message);
@@ -181,7 +211,7 @@ async function runPipeline(env) {
   // 2. Filter unseen
   const unseen = [];
   for (const a of articles) {
-    const id = await sha256Short(a.articleUrl || a.sourceUrl);
+    const id = await sha256Short(a.articleUrl || a.sourceUrl || a.slug || a.title);
     const seen = await env.SEEN_ARTICLES.get(`seen:${id}`);
     if (!seen) unseen.push({ ...a, _id: id });
   }
@@ -200,11 +230,42 @@ async function runPipeline(env) {
   const caption = await generateCaption(article, env);
   console.log(`[PPP TV] Caption: ${caption.slice(0, 80)}...`);
 
-  // 5. Get image URL (use direct image URL from feed)
-  const imageUrl = article.imageUrlDirect || article.imageUrl || "";
-  if (!imageUrl) {
+  // 5. Get image URL — fetch and stage in R2 so IG can access it
+  const rawImageUrl = article.imageUrlDirect || article.imageUrl || "";
+  if (!rawImageUrl) {
     console.warn("[PPP TV] No image URL — skipping");
+    const logKey = `log:${Date.now()}:${id}`;
+    await env.SEEN_ARTICLES.put(logKey, JSON.stringify({
+      articleId: id, title: article.title,
+      url: article.articleUrl || article.sourceUrl,
+      category: (article.category || "GENERAL").toUpperCase(),
+      instagram: { success: false, error: "No image URL" },
+      facebook: { success: false, error: "No image URL" },
+      postedAt: new Date().toISOString(), isBreaking: false,
+    }), { expirationTtl: TTL_SECONDS });
     return;
+  }
+
+  // Stage image in R2 so Instagram/Facebook can fetch it (they block many CDNs)
+  let imageUrl = rawImageUrl;
+  try {
+    const imgRes = await fetch(rawImageUrl, {
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; PPPTVBot/1.0)" },
+      signal: AbortSignal.timeout(15000),
+    });
+    if (imgRes.ok) {
+      const imgBuf = await imgRes.arrayBuffer();
+      const contentType = imgRes.headers.get("content-type") || "image/jpeg";
+      const r2Key = `staged/${Date.now()}-${id}.jpg`;
+      await env.VIDEOS.put(r2Key, imgBuf, {
+        httpMetadata: { contentType },
+        customMetadata: { uploadedAt: String(Date.now()) },
+      });
+      imageUrl = `https://pub-8244b5f99b024cda91b74e1131378a14.r2.dev/${r2Key}`;
+      console.log(`[PPP TV] Image staged: ${imageUrl}`);
+    }
+  } catch (err) {
+    console.warn("[PPP TV] Image staging failed, using original URL:", err.message);
   }
 
   // 6. Post to Instagram
@@ -215,21 +276,19 @@ async function runPipeline(env) {
   const fbResult = await postToFacebook(imageUrl, caption, article.articleUrl || article.sourceUrl, env);
   console.log(`[PPP TV] FB: ${fbResult.success ? "✓ " + fbResult.postId : "✗ " + fbResult.error}`);
 
-  // 8. Log the post
-  if (igResult.success || fbResult.success) {
-    const logKey = `log:${Date.now()}:${id}`;
-    await env.SEEN_ARTICLES.put(logKey, JSON.stringify({
-      articleId: id,
-      title: article.title,
-      url: article.articleUrl || article.sourceUrl,
-      category: (article.category || "GENERAL").toUpperCase(),
-      instagram: igResult,
-      facebook: fbResult,
-      postedAt: new Date().toISOString(),
-      isBreaking: false,
-    }), { expirationTtl: TTL_SECONDS });
-    console.log(`[PPP TV] Logged post`);
-  }
+  // 8. Log the post — always log, even on failure
+  const logKey = `log:${Date.now()}:${id}`;
+  await env.SEEN_ARTICLES.put(logKey, JSON.stringify({
+    articleId: id,
+    title: article.title,
+    url: article.articleUrl || article.sourceUrl,
+    category: (article.category || "GENERAL").toUpperCase(),
+    instagram: igResult,
+    facebook: fbResult,
+    postedAt: new Date().toISOString(),
+    isBreaking: false,
+  }), { expirationTtl: TTL_SECONDS });
+  console.log(`[PPP TV] Logged: IG=${igResult.success} FB=${fbResult.success}`);
 
   console.log("[PPP TV] Pipeline done");
 }
@@ -367,6 +426,67 @@ async function cleanupOldLogs(env) {
 async function sha256Short(str) {
   const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(str));
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("").slice(0, 16);
+}
+
+// ── DEBUG PIPELINE (synchronous, returns result) ─────────────────────────────
+async function runPipelineDebug(env) {
+  const log = [];
+  const step = (msg) => { log.push(msg); console.log("[DEBUG]", msg); };
+
+  step("Fetching feed...");
+  const res = await fetch(FEED_URL, { headers: { "User-Agent": "PPPTVAutoPoster/5.0" }, signal: AbortSignal.timeout(15000) });
+  step(`Feed response: ${res.status} ${res.statusText}`);
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    step(`Feed error body: ${body.slice(0, 200)}`);
+    return { error: `Feed ${res.status}`, log };
+  }
+  const data = await res.json();
+  const rawArticles = Array.isArray(data) ? data : (data.articles || []);
+  const articles = rawArticles.filter(a => a.title && (a.articleUrl || a.sourceUrl || a.slug));
+  step(`Feed returned ${articles.length} articles`);
+  if (articles.length === 0) return { error: "No articles", log };
+
+  const unseen = [];
+  for (const a of articles) {
+    const id = await sha256Short(a.articleUrl || a.sourceUrl);
+    const seen = await env.SEEN_ARTICLES.get(`seen:${id}`);
+    if (!seen) unseen.push({ ...a, _id: id });
+  }
+  step(`${unseen.length} unseen out of ${articles.length}`);
+  if (unseen.length === 0) return { error: "All seen", log };
+
+  const article = unseen[0];
+  step(`Selected: ${article.title}`);
+  step(`Image URL: ${article.imageUrlDirect || article.imageUrl || "NONE"}`);
+
+  const caption = await generateCaption(article, env);
+  step(`Caption (${caption.length} chars): ${caption.slice(0, 100)}`);
+
+  const rawImageUrl = article.imageUrlDirect || article.imageUrl || "";
+  if (!rawImageUrl) return { error: "No image URL", log };
+
+  // Stage image
+  let imageUrl = rawImageUrl;
+  try {
+    const imgRes = await fetch(rawImageUrl, { headers: { "User-Agent": "Mozilla/5.0" }, signal: AbortSignal.timeout(15000) });
+    step(`Image fetch: ${imgRes.status} ${imgRes.headers.get("content-type")}`);
+    if (imgRes.ok) {
+      const imgBuf = await imgRes.arrayBuffer();
+      const r2Key = `staged/${Date.now()}-debug.jpg`;
+      await env.VIDEOS.put(r2Key, imgBuf, { httpMetadata: { contentType: "image/jpeg" } });
+      imageUrl = `https://pub-8244b5f99b024cda91b74e1131378a14.r2.dev/${r2Key}`;
+      step(`Staged to R2: ${imageUrl}`);
+    }
+  } catch (err) { step(`Image staging error: ${err.message}`); }
+
+  const igResult = await postToInstagram(imageUrl, caption, env);
+  step(`IG result: ${JSON.stringify(igResult)}`);
+
+  const fbResult = await postToFacebook(imageUrl, caption, article.articleUrl || article.sourceUrl, env);
+  step(`FB result: ${JSON.stringify(fbResult)}`);
+
+  return { log, igResult, fbResult, article: { title: article.title, imageUrl, category: article.category } };
 }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
