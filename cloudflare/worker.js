@@ -308,12 +308,17 @@ async function triggerAutomate(env) {
   if (!secret) { console.warn("[auto-ppp-tv] AUTOMATE_SECRET not set"); return; }
 
   try {
-    // Every 15-min burst: fire image pipeline (always) + video pipeline (every 3rd run)
+    // Random jitter: wait 0–8 minutes before firing so posts don't land at exact :00/:15/:30/:45
+    const jitterMs = Math.floor(Math.random() * 8 * 60 * 1000);
+    console.log(`[burst] jitter delay: ${Math.round(jitterMs / 1000)}s`);
+    await sleep(jitterMs);
+
+    // Every cron tick: fire image pipeline (always) + video pipeline (every 3rd run)
     const runCount = parseInt(await env.SEEN_ARTICLES.get("run-count") || "0");
     const nextCount = runCount + 1;
     await env.SEEN_ARTICLES.put("run-count", String(nextCount), { expirationTtl: 24 * 3600 });
 
-    const fireVideo = nextCount % 3 === 0; // video every 45 min
+    const fireVideo = nextCount % 3 === 0; // video every ~45 min
 
     // Always fire image pipeline (feed post + IG story + FB story)
     const imagePromise = fetch(`${appUrl}/api/automate`, {

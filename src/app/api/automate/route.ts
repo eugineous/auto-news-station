@@ -416,11 +416,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ...response, message: "Off-peak hours (1-5am EAT) — skipping" });
   }
 
-  // ── Daily cap ─────────────────────────────────────────────────────────────
-  const dailyCount = await getDailyCount();
-  if (dailyCount >= 20) {
-    return NextResponse.json({ ...response, message: "Daily cap reached (20 posts/day) — protecting account health" });
-  }
+  // ── Daily cap removed — post as many as needed ───────────────────────────
+  // No artificial limit; Instagram rate limits will self-regulate
 
   // ── Distributed lock — prevent concurrent runs from double-posting ────────
   const lockAcquired = await acquireLock();
@@ -459,12 +456,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ...response, message: "No new Kenya articles to post" });
     }
 
-    // 4. Category rotation
+    // 4. Category rotation — avoid repeating the same category, prefer underrepresented ones
     let candidates = dedupedUnseen;
     if (lastCategory) {
+      // First try: exclude the last posted category entirely
       const different = dedupedUnseen.filter(a => a.category !== lastCategory);
       if (different.length > 0) candidates = different;
     }
+    // Among candidates, boost variety by deprioritizing any category that appeared in last 3 posts
+    // (already handled by scoring — just ensure we don't pick same category twice in a row)
 
     // 5. Score and sort — trending articles first, then freshest
     const scored = candidates
