@@ -287,8 +287,121 @@ async function fetchVimeoFeed(feedUrl: string, sourceName: string, category: str
   return items.slice(0, 2);
 }
 
-// ── Main aggregator ───────────────────────────────────────────────────────────
-export async function fetchAllVideoSources(): Promise<VideoItem[]> {
+// ── 6. TikTok Account Scraper via TikWM ──────────────────────────────────────
+// Rules:
+// - 1 video per account per day, posted at a staggered hour
+// - No promotional content (ads, sponsored, giveaways, discount codes)
+// - No duplicate posts within 24h
+// - Attribution: accredited news orgs get "Reports @handle" | creators get "@handle reports"
+// - Only news/entertainment/sports content — no lifestyle ads, no brand deals
+
+interface TikTokAccount {
+  username: string;       // TikTok @handle
+  displayName: string;    // Human-readable name for attribution
+  category: string;       // Content category
+  postHourEAT: number;    // Hour (EAT, 0-23) this account's video should post
+  isCreator: boolean;     // true = individual creator, false = org/media
+}
+
+const TIKTOK_ACCOUNTS: TikTokAccount[] = [
+  { username: "tushindecharityshow",  displayName: "Tushinde Charity Show",  category: "ENTERTAINMENT", postHourEAT: 7,  isCreator: false },
+  { username: "bbcnewsswahili",       displayName: "BBC News Swahili",        category: "NEWS",          postHourEAT: 8,  isCreator: false },
+  { username: "footballkenya",        displayName: "Football Kenya",          category: "SPORTS",        postHourEAT: 9,  isCreator: false },
+  { username: "fabrizioromano",       displayName: "Fabrizio Romano",         category: "SPORTS",        postHourEAT: 10, isCreator: true  },
+  { username: "kenya.news.arena",     displayName: "Kenya News Arena",        category: "NEWS",          postHourEAT: 11, isCreator: false },
+  { username: "citizen.digital",      displayName: "Citizen Digital",         category: "NEWS",          postHourEAT: 12, isCreator: false },
+  { username: "thenewsguyke",         displayName: "The News Guy KE",         category: "NEWS",          postHourEAT: 13, isCreator: true  },
+  { username: "sheyii_given",         displayName: "Sheyii Given",            category: "ENTERTAINMENT", postHourEAT: 14, isCreator: true  },
+  { username: "aljazeeraenglish",     displayName: "Al Jazeera English",      category: "NEWS",          postHourEAT: 15, isCreator: false },
+  { username: "cnn",                  displayName: "CNN",                     category: "NEWS",          postHourEAT: 16, isCreator: false },
+  { username: "skysportsnews",        displayName: "Sky Sports News",         category: "SPORTS",        postHourEAT: 17, isCreator: false },
+  { username: "dailymailsport",       displayName: "Daily Mail Sport",        category: "SPORTS",        postHourEAT: 18, isCreator: false },
+  { username: "dylan.page",           displayName: "Dylan Page",              category: "NEWS",          postHourEAT: 19, isCreator: true  },
+];
+
+// Content filter — reject promotional/ad content
+const PROMO_PATTERNS = [
+  /\b(ad|ads|sponsored|promo|promotion|discount|coupon|code|giveaway|win|prize|affiliate|partner|collab|collaboration|paid|#ad|#sponsored|#promo|#gifted|#partner)\b/i,
+  /\b(shop now|buy now|link in bio|swipe up|use code|get \d+% off|limited offer|click link|order now|dm for|dm me for)\b/i,
+  /\b(brand deal|brand partnership|ambassador|endorsement)\b/i,
+];
+
+function isPromo(title: string, desc: string = ""): boolean {
+  const text = `${title} ${desc}`;
+  return PROMO_PATTERNS.some(p => p.test(text));
+}
+
+// Build attribution credit line based on account type
+function buildAttribution(account: TikTokAccount, videoUrl: string): string {
+  if (account.isCreator) {
+    return `@${account.username} reports this. Credit: ${account.displayName} | ${videoUrl}`;
+  }
+  return `Reports: ${account.displayName} (@${account.username}) | ${videoUrl}`;
+}
+
+// Check if this account has already posted today (EAT)
+function isAccountPostHour(account: TikTokAccount): boolean {
+  const nowEAT = (new Date().getUTCHours() + 3) % 24;
+  // Allow posting within a 2-hour window of the scheduled hour
+  const diff = Math.abs(nowEAT - account.postHourEAT);
+  return diff <= 1 || diff >= 23; // handles midnight wrap
+}
+
+async function fetchTikTokAccountVideos(account: TikTokAccount): Promise<VideoItem[]> {
+  // Only fetch if we're in this account's posting window
+  if (!isAccountPostHour(account)) return [];
+
+  try {
+    // TikWM user feed API — returns latest videos for a username
+    const body = new URLSearchParams({ unique_id: account.username, count: "10", cursor: "0" });
+    const res = await fetch("https://www.tikwm.com/api/user/posts", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": "Mozilla/5.0 (compatible; PPPTVBot/1.0)",
+      },
+      body: body.toString(),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok) return [];
+    const data = await res.json() as any;
+    if (data.code !== 0 || !data.data?.videos) return [];
+
+    const items: VideoItem[] = [];
+    for (const v of data.data.videos) {
+      if (!v.title && !v.play_count) continue;
+      const title = v.title || v.desc || "";
+      if (!title) continue;
+
+      // Apply content rules
+      if (isPromo(title, v.desc || "")) continue;
+      if (!isRecent(new Date(v.create_time * 1000).toISOString(), 48)) continue;
+
+      // Only 1 video per account — take the most recent passing filters
+      const videoUrl = `https://www.tiktok.com/@${account.username}/video/${v.id}`;
+      items.push({
+        id: `tiktok:${account.username}:${v.id}`,
+        title: title.slice(0, 200),
+        url: videoUrl,
+        directVideoUrl: v.hdplay || v.play || undefined,
+        thumbnail: v.cover || v.origin_cover || "",
+        publishedAt: new Date(v.create_time * 1000),
+        sourceName: account.displayName,
+        sourceType: "direct-mp4",
+        category: account.category,
+      });
+
+      if (items.length >= 1) break; // 1 per account per day
+    }
+    return items;
+  } catch (err: any) {
+    console.warn(`[tiktok-scraper] ${account.username}: ${err?.message}`);
+    return [];
+  }
+}
+
+export { TIKTOK_ACCOUNTS, buildAttribution };
+
   const allResults = await Promise.allSettled([
     // YouTube (10 channels)
     ...YOUTUBE_CHANNELS.map(ch => fetchYouTubeChannel(ch.id, ch.name, ch.cat)),
@@ -296,10 +409,12 @@ export async function fetchAllVideoSources(): Promise<VideoItem[]> {
     ...DAILYMOTION_FEEDS.map(f => fetchDailymotionFeed(f.url, f.name, f.cat)),
     // Reddit (5 subreddits)
     ...REDDIT_FEEDS.map(f => fetchRedditFeed(f.url, f.name, f.cat)),
-    // News RSS with video embeds (10 feeds)
+    // News RSS with video embeds (20 feeds)
     ...NEWS_RSS_FEEDS.map(f => fetchNewsRSSWithVideo(f.url, f.name, f.cat)),
     // Vimeo (2 feeds)
     ...VIMEO_FEEDS.map(f => fetchVimeoFeed(f.url, f.name, f.cat)),
+    // TikTok accounts (13 accounts, 1 video/day each at staggered hours)
+    ...TIKTOK_ACCOUNTS.map(a => fetchTikTokAccountVideos(a)),
   ]);
 
   const all: VideoItem[] = [];

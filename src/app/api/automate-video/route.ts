@@ -8,7 +8,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { resolveVideoUrl } from "@/lib/video-downloader";
 import { generateAIContent } from "@/lib/gemini";
 import { generateImage } from "@/lib/image-gen";
-import { fetchAllVideoSources, VideoItem } from "@/lib/video-sources";
+import { fetchAllVideoSources, VideoItem, TIKTOK_ACCOUNTS, buildAttribution } from "@/lib/video-sources";
 import { Article } from "@/lib/types";
 import { createHash } from "crypto";
 
@@ -241,7 +241,14 @@ export async function POST(req: NextRequest) {
     engagementType: "tag" as const,
   }));
 
-  const caption = `${ai.caption}\n\nCredit: ${target.sourceName} | ${target.url}`;
+  const caption = `${ai.caption}\n\n${
+    target.sourceType === "direct-mp4" && target.url.includes("tiktok.com")
+      ? (() => {
+          const acct = TIKTOK_ACCOUNTS.find(a => target.url.includes(a.username));
+          return acct ? buildAttribution(acct, target.url) : `Credit: ${target.sourceName} | ${target.url}`;
+        })()
+      : `Credit: ${target.sourceName} | ${target.url}`
+  }`;
 
   // Generate branded cover image
   let coverUrl: string | undefined;
