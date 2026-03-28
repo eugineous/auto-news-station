@@ -1,8 +1,7 @@
 /**
  * /api/automate-video
- * Autonomous video pipeline — pulls entertainment videos from 20+ sources:
- * YouTube RSS, Dailymotion, Reddit, news site RSS with video embeds, Vimeo.
- * No API keys needed. Posts as Instagram Reels + FB videos with source credit.
+ * Autonomous video pipeline — pulls entertainment videos from 20+ sources.
+ * No ffmpeg dependency — streams video directly to R2, uses branded image as cover.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { resolveVideoUrl } from "@/lib/video-downloader";
@@ -11,42 +10,17 @@ import { generateImage } from "@/lib/image-gen";
 import { fetchAllVideoSources, VideoItem, TIKTOK_ACCOUNTS, buildAttribution } from "@/lib/video-sources";
 import { Article } from "@/lib/types";
 import { createHash } from "crypto";
-import ffmpegStatic from "ffmpeg-static";
-import { existsSync } from "fs";
-
-const loadOptional = (id: string) => {
-  try { return eval("require")(id); } catch { return null; }
-};
-const ffmpegLinuxArm = loadOptional("@ffmpeg-installer/linux-arm64");
-const ffmpegLinuxX64 = loadOptional("@ffmpeg-installer/linux-x64");
-import fs from "fs/promises";
-import { tmpdir } from "os";
-import path from "path";
-import { spawn } from "child_process";
 
 export const maxDuration = 300;
 
 const GRAPH_API = "https://graph.facebook.com/v19.0";
 const WORKER_URL = process.env.CLOUDFLARE_WORKER_URL || "https://auto-ppp-tv.euginemicah.workers.dev";
 const WORKER_SECRET = process.env.WORKER_SECRET || "ppptvWorker2024";
-const LOGO_PATH = path.join(process.cwd(), "public", "ppp-logo.png");
-const MAX_BYTES = 400 * 1024 * 1024; // allow up to ~400MB
-const FFMPEG_BIN = (() => {
-  const candidates = [
-    ffmpegStatic as string | null,
-    ffmpegLinuxArm?.path as string | undefined,
-    ffmpegLinuxX64?.path as string | undefined,
-    "/usr/bin/ffmpeg",
-    "ffmpeg",
-  ].filter(Boolean) as string[];
-  return candidates[0] || "ffmpeg";
-})();
 
 async function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)); }
 
 // ── Dedup via CF KV ───────────────────────────────────────────────────────────
 async function isVideoSeen(videoId: string): Promise<boolean> {
-  if (!WORKER_SECRET) return false;
   try {
     const res = await fetch(WORKER_URL + "/seen/check", {
       method: "POST",
@@ -61,7 +35,6 @@ async function isVideoSeen(videoId: string): Promise<boolean> {
 }
 
 async function markVideoSeen(videoId: string): Promise<void> {
-  if (!WORKER_SECRET) return;
   try {
     await fetch(WORKER_URL + "/seen", {
       method: "POST",
@@ -72,57 +45,32 @@ async function markVideoSeen(videoId: string): Promise<void> {
   } catch { /* non-fatal */ }
 }
 
-// ── Stage video in R2 ─────────────────────────────────────────────────────────
+/**
+ * Download the resolved MP4 and upload it directly to R2.
+ * No ffmpeg — no binary dependency, no ENOENT.
+ */
 async function stageVideoInR2(videoUrl: string): Promise<{ url: string; key: string } | null> {
   try {
-    // 1) Download resolved MP4
-    const res = await fetch(videoUrl, { signal: AbortSignal.timeout(120000) });
-    if (!res.ok) return null;
-    const buf = new Uint8Array(await res.arrayBuffer());
-    if (buf.length > MAX_BYTES) throw new Error("Video too large to process (>400MB)");
-
-    // 2) Write temp files
-    const tmpIn = path.join(tmpdir(), `ppp-in-${Date.now()}.mp4`);
-    const tmpOut = path.join(tmpdir(), `ppp-out-${Date.now()}.mp4`);
-    await fs.writeFile(tmpIn, buf);
-    const logoBuf = await fs.readFile(LOGO_PATH);
-    const tmpLogo = path.join(tmpdir(), `ppp-logo-${Date.now()}.png`);
-    await fs.writeFile(tmpLogo, logoBuf);
-
-    // 3) ffmpeg overlay
-    await new Promise<void>((resolve, reject) => {
-      const ff = spawn(FFMPEG_BIN, [
-        "-i", tmpIn,
-        "-i", tmpLogo,
-        "-filter_complex", "overlay=24:24",
-        "-c:a", "copy",
-        "-c:v", "libx264",
-        "-preset", "veryfast",
-        "-movflags", "+faststart",
-        tmpOut
-      ], { stdio: "ignore" });
-      ff.on("error", reject);
-      ff.on("close", (code) => code === 0 ? resolve() : reject(new Error(`ffmpeg exit ${code}`)));
+    const res = await fetch(videoUrl, {
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; PPPTVBot/1.0)" },
+      signal: AbortSignal.timeout(120000),
     });
+    if (!res.ok) return null;
 
-    const processed = await fs.readFile(tmpOut);
-    await fs.unlink(tmpIn).catch(()=>{});
-    await fs.unlink(tmpOut).catch(()=>{});
-    await fs.unlink(tmpLogo).catch(()=>{});
+    const buf = new Uint8Array(await res.arrayBuffer());
+    if (buf.length === 0) return null;
 
-    // 4) Upload processed MP4 to R2 via worker upload endpoint
     const upload = await fetch(WORKER_URL + "/stage-video-upload", {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },
-      body: JSON.stringify({ base64: Buffer.from(processed).toString("base64"), contentType: "video/mp4" }),
+      body: JSON.stringify({ base64: Buffer.from(buf).toString("base64"), contentType: "video/mp4" }),
       signal: AbortSignal.timeout(150000),
     });
     if (!upload.ok) return null;
     const data = await upload.json() as any;
     return data.success ? { url: data.url, key: data.key } : null;
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error("[stageVideoInR2]", msg);
+    console.error("[stageVideoInR2]", err instanceof Error ? err.message : String(err));
     return null;
   }
 }
@@ -151,7 +99,7 @@ async function waitForIGContainer(containerId: string, token: string): Promise<v
       if (status === "FINISHED") return;
       if (status === "ERROR" || status === "EXPIRED") throw new Error(`IG container failed: ${status}`);
     } catch (err: any) {
-      if (err.message.includes("failed:")) throw err;
+      if (err.message?.includes("failed:")) throw err;
     }
   }
 }
@@ -190,7 +138,6 @@ async function postReelToIG(
     const published = await publishRes.json() as any;
     if (!publishRes.ok || published.error) throw new Error(published?.error?.message ?? "IG publish failed");
 
-    // Hashtags as first comment
     if (published.id) {
       await sleep(2000);
       await fetch(`${GRAPH_API}/${published.id}/comments`, {
@@ -244,30 +191,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Social credentials not configured" }, { status: 500 });
   }
 
-  // Fetch from all 20+ sources
   const allVideos = await fetchAllVideoSources();
-
   if (allVideos.length === 0) {
     return NextResponse.json({ posted: 0, message: "No videos found from any source" });
   }
 
-  // Find first unseen video
   let target: VideoItem | null = null;
   for (const video of allVideos) {
-    if (!(await isVideoSeen(video.id))) {
-      target = video;
-      break;
-    }
+    if (!(await isVideoSeen(video.id))) { target = video; break; }
   }
 
   if (!target) {
     return NextResponse.json({ posted: 0, message: "All recent videos already posted" });
   }
 
-  // Mark seen immediately to prevent race conditions
   await markVideoSeen(target.id);
 
-  // Resolve direct video URL
   const videoUrlToResolve = target.directVideoUrl || target.url;
   const resolved = await resolveVideoUrl(videoUrlToResolve).catch(() => null);
   const directUrl = resolved?.url || (target.directVideoUrl ?? null);
@@ -276,13 +215,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ posted: 0, error: "Could not resolve video URL", source: target.sourceName });
   }
 
-  // Stage in R2
   const staged = await stageVideoInR2(directUrl);
   if (!staged) {
     return NextResponse.json({ posted: 0, error: "Video staging failed", source: target.sourceName });
   }
 
-  // Build article for AI (proxy thumbnail through worker to avoid CORS/blocked fetches)
   const thumbRaw = target.thumbnail || "";
   const thumbUrl = thumbRaw ? `${WORKER_URL}/img?url=${encodeURIComponent(thumbRaw)}` : "";
   const article: Article = {
@@ -299,7 +236,6 @@ export async function POST(req: NextRequest) {
     videoUrl: target.url,
   };
 
-  // Generate AI caption
   const ai = await generateAIContent(article).catch(() => ({
     clickbaitTitle: target!.title.toUpperCase(),
     caption: `${target!.title}\n\nTag someone who needs to see this.`,
@@ -310,13 +246,13 @@ export async function POST(req: NextRequest) {
   const caption = `${ai.caption}\n\n${
     target.sourceType === "direct-mp4" && target.url.includes("tiktok.com")
       ? (() => {
-          const acct = TIKTOK_ACCOUNTS.find(a => target.url.includes(a.username));
+          const acct = TIKTOK_ACCOUNTS.find(a => target!.url.includes(a.username));
           return acct ? buildAttribution(acct, target.url) : `Credit: ${target.sourceName} | ${target.url}`;
         })()
       : `Credit: ${target.sourceName} | ${target.url}`
   }`;
 
-  // Generate branded cover image
+  // Generate branded PPP TV cover image and stage it to R2
   let coverUrl: string | undefined;
   try {
     const imageBuffer = await generateImage(article, { isBreaking: false });
@@ -332,20 +268,17 @@ export async function POST(req: NextRequest) {
     }
   } catch { /* cover is optional */ }
 
-  // Post to both platforms
   const [igResult, fbResult] = await Promise.all([
     postReelToIG(staged.url, caption, coverUrl, igToken, igAccountId),
     postVideoToFB(staged.url, caption, fbToken, fbPageId),
   ]);
 
-  // Cleanup
   fetch(WORKER_URL + "/delete-video", {
     method: "POST",
     headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },
     body: JSON.stringify({ key: staged.key }),
   }).catch(() => {});
 
-  // Log
   if (igResult.success || fbResult.success) {
     await fetch(WORKER_URL + "/post-log", {
       method: "POST",

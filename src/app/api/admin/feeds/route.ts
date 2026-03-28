@@ -1,4 +1,5 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { fetchAllVideoSources } from "@/lib/video-sources";
 
 const PPPTV_NEWS_API = "https://ppptv-v2.vercel.app/api/news";
 
@@ -20,5 +21,15 @@ export async function GET() {
     });
   } catch (e: any) {
     return NextResponse.json({ error: e.message, articles: [], categories: {} });
+  }
+}
+
+// POST — scrape all video sources and return the list for the composer UI
+export async function POST(_req: NextRequest) {
+  try {
+    const videos = await fetchAllVideoSources();
+    return NextResponse.json({ videos, total: videos.length, fetchedAt: new Date().toISOString() });
+  } catch (e: any) {
+    return NextResponse.json({ error: e.message, videos: [] }, { status: 500 });
   }
 }

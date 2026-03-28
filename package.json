@@ -21,7 +21,6 @@
         "cheerio": "^1.2.0",
         "clsx": "^2.1.1",
         "date-fns": "^3.3.1",
-        "ffmpeg-static": "^5.2.0",
         "formdata-node": "^4.4.1",
         "framer-motion": "^12.38.0",
         "lucide-react": "^0.330.0",
@@ -42,9 +41,5 @@
         "@types/react": "^18.2.55",
         "@types/react-dom": "^18.2.19",
         "typescript": "^5.3.3"
-    },
-    "optionalDependencies": {
-        "@ffmpeg-installer/linux-arm64": "4.1.4",
-        "@ffmpeg-installer/linux-x64": "4.1.0"
     }
 }

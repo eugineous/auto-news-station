@@ -4,37 +4,12 @@ import { generateImage } from "@/lib/image-gen";
 import { resolveVideoUrl } from "@/lib/video-downloader";
 import { Article } from "@/lib/types";
 import { createHash } from "crypto";
-import ffmpegStatic from "ffmpeg-static";
-import { existsSync } from "fs";
-
-const loadOptional = (id: string) => {
-  try { return eval("require")(id); } catch { return null; }
-};
-const ffmpegLinuxArm = loadOptional("@ffmpeg-installer/linux-arm64");
-const ffmpegLinuxX64 = loadOptional("@ffmpeg-installer/linux-x64");
-import fs from "fs/promises";
-import { tmpdir } from "os";
-import path from "path";
-import { spawn } from "child_process";
 
 export const maxDuration = 180;
 
 const GRAPH_API = "https://graph.facebook.com/v19.0";
 const WORKER_URL = process.env.CLOUDFLARE_WORKER_URL || "https://auto-ppp-tv.euginemicah.workers.dev";
 const WORKER_SECRET = process.env.WORKER_SECRET || "ppptvWorker2024";
-const LOGO_PATH = path.join(process.cwd(), "public", "ppp-logo.png");
-const MAX_BYTES = 400 * 1024 * 1024; // allow up to ~400MB
-const FFMPEG_BIN = (() => {
-  const candidates = [
-    ffmpegStatic as string | null,
-    ffmpegLinuxArm?.path as string | undefined,
-    ffmpegLinuxX64?.path as string | undefined,
-    "/usr/bin/ffmpeg",
-    "ffmpeg",
-  ].filter(Boolean) as string[];
-  // prefer the first available path; don't over-filter because serverless packs ffmpeg-static
-  return candidates[0] || "ffmpeg";
-})();
 
 async function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)); }
 
@@ -53,7 +28,6 @@ async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
 }
 
 async function logPost(entry: object): Promise<void> {
-  if (!WORKER_SECRET) return;
   try {
     await fetch(WORKER_URL + "/post-log", {
       method: "POST",
@@ -64,58 +38,39 @@ async function logPost(entry: object): Promise<void> {
   } catch {}
 }
 
-// Stage video via Cloudflare Worker → R2 → returns public URL
+/**
+ * Resolve the source URL to a direct MP4, then upload it to R2 via the
+ * Cloudflare Worker. No ffmpeg — no binary dependency, no ENOENT.
+ */
 async function stageVideo(sourceUrl: string): Promise<{ url: string; key: string }> {
-  // Resolve platform URLs to direct MP4 first
+  // 1. Resolve platform URL → direct MP4
   const resolved = await resolveVideoUrl(sourceUrl).catch(() => null);
   const fetchUrl = resolved?.url || sourceUrl;
 
-  // Download video
-  const resp = await fetch(fetchUrl, { signal: AbortSignal.timeout(120000) });
-  if (!resp.ok) throw new Error(`Download failed: ${resp.status}`);
-  const arr = new Uint8Array(await resp.arrayBuffer());
-  if (arr.length > MAX_BYTES) throw new Error("Video too large to process (>400MB)");
-
-  // Write temp files
-  const tmpIn = path.join(tmpdir(), `ppp-in-${Date.now()}.mp4`);
-  const tmpOut = path.join(tmpdir(), `ppp-out-${Date.now()}.mp4`);
-  await fs.writeFile(tmpIn, arr);
-
-  // Ensure logo exists
-  const logoBuf = await fs.readFile(LOGO_PATH);
-  const tmpLogo = path.join(tmpdir(), `ppp-logo-${Date.now()}.png`);
-  await fs.writeFile(tmpLogo, logoBuf);
-
-  // ffmpeg overlay bottom-left with 24px margin, copy audio, keep size
-  await new Promise<void>((resolve, reject) => {
-    const ff = spawn(FFMPEG_BIN, [
-      "-i", tmpIn,
-      "-i", tmpLogo,
-      "-filter_complex", "overlay=24:24",
-      "-c:a", "copy",
-      "-c:v", "libx264",
-      "-preset", "veryfast",
-      "-movflags", "+faststart",
-      tmpOut
-    ], { stdio: "ignore" });
-    ff.on("error", reject);
-    ff.on("close", (code) => code === 0 ? resolve() : reject(new Error(`ffmpeg exit ${code}`)));
+  // 2. Stream video bytes
+  const resp = await fetch(fetchUrl, {
+    headers: { "User-Agent": "Mozilla/5.0 (compatible; PPPTVBot/1.0)" },
+    signal: AbortSignal.timeout(120000),
   });
+  if (!resp.ok) throw new Error(`Video download failed: ${resp.status} ${resp.statusText}`);
 
-  const processed = await fs.readFile(tmpOut);
-  await fs.unlink(tmpIn).catch(()=>{});
-  await fs.unlink(tmpOut).catch(()=>{});
-  await fs.unlink(tmpLogo).catch(()=>{});
+  const videoBytes = new Uint8Array(await resp.arrayBuffer());
+  if (videoBytes.length === 0) throw new Error("Downloaded video is empty");
 
+  // 3. Upload to R2 via worker (base64 encoded)
   const res = await fetch(WORKER_URL + "/stage-video-upload", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       "Authorization": "Bearer " + WORKER_SECRET,
     },
-    body: JSON.stringify({ base64: Buffer.from(processed).toString("base64"), contentType: "video/mp4" }),
+    body: JSON.stringify({
+      base64: Buffer.from(videoBytes).toString("base64"),
+      contentType: "video/mp4",
+    }),
     signal: AbortSignal.timeout(150000),
   });
+
   const data = await res.json() as any;
   if (!res.ok || !data.success) throw new Error(data.error ?? `Stage failed: HTTP ${res.status}`);
   return { url: data.url, key: data.key };
@@ -132,7 +87,7 @@ async function waitForIGContainer(containerId: string, token: string): Promise<v
       if (status === "FINISHED") return;
       if (status === "ERROR" || status === "EXPIRED") throw new Error(`IG container failed: ${status}`);
     } catch (err: any) {
-      if (err.message.includes("failed:")) throw err;
+      if (err.message?.includes("failed:")) throw err;
     }
   }
 }
@@ -168,16 +123,30 @@ export async function POST(req: NextRequest) {
       publishedAt: new Date(),
     };
 
-    // Generate branded thumbnail
+    // Generate branded PPP TV thumbnail (used as IG Reel cover)
     const imageBuffer = await generateImage(article, { isBreaking: false });
 
-    // Stage video on R2 via Cloudflare Worker
+    // Stage video on R2 (no ffmpeg — direct stream)
     const { url: stagedVideoUrl, key: stagedKey } = await stageVideo(url);
 
-    // Upload thumbnail to FB to get a hosted cover URL for IG Reels
+    // Stage the branded thumbnail to R2 so IG can fetch it as cover_url
     let coverImageUrl: string | undefined;
     try {
-      if (fbToken && fbPageId) {
+      const stageImgRes = await fetch(WORKER_URL + "/stage-image", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },
+        body: JSON.stringify({ imageBuffer: imageBuffer.toString("base64") }),
+        signal: AbortSignal.timeout(15000),
+      });
+      if (stageImgRes.ok) {
+        const d = await stageImgRes.json() as any;
+        coverImageUrl = d?.url;
+      }
+    } catch { /* cover is optional — post still works without it */ }
+
+    // Fallback: upload thumbnail via FB Photos API to get a hosted URL
+    if (!coverImageUrl && fbToken && fbPageId) {
+      try {
         const blob = new Blob(
           [imageBuffer.buffer.slice(imageBuffer.byteOffset, imageBuffer.byteOffset + imageBuffer.byteLength) as ArrayBuffer],
           { type: "image/jpeg" }
@@ -194,8 +163,8 @@ export async function POST(req: NextRequest) {
           const pd = await pr.json() as any;
           coverImageUrl = pd.images?.[0]?.source;
         }
-      }
-    } catch {}
+      } catch {}
+    }
 
     // ── Post to Instagram as Reel ─────────────────────────────────────────────
     let igResult: { success: boolean; postId?: string; error?: string } = { success: false, error: "skipped" };
@@ -260,7 +229,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Delete staged video after posting (don't await — fire and forget)
+    // Cleanup staged video (fire and forget)
     if (stagedKey) {
       fetch(WORKER_URL + "/delete-video", {
         method: "POST",
