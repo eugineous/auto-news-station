@@ -146,7 +146,7 @@ function CockpitTab({ onCompose }: { onCompose: (url: string) => void }) {
 }
 
 // ── Compose Tab — paste URL, preview, post ────────────────────────────────────
-function ComposeTab({ initialUrl, onSuccess }: { initialUrl?: string; onSuccess: () => void }) {
+function ComposeTab({ initialUrl, onSuccess, onProgress }: { initialUrl?: string; onSuccess: () => void; onProgress: (pct: number, step: string) => void }) {
   const [url, setUrl] = useState(initialUrl || "");
   const [headline, setHeadline] = useState("");
   const [caption, setCaption] = useState("");
@@ -231,15 +231,41 @@ function ComposeTab({ initialUrl, onSuccess }: { initialUrl?: string; onSuccess:
 
   async function handlePost() {
     if (!url.trim() || !headline.trim() || !caption.trim() || status === "posting" || status === "resolving") return;
-    setStatus("resolving"); setResult(null);
+    setStatus("posting"); setResult(null);
     try {
-      setStatus("posting");
-      const r = await fetch("/api/post-video", { ...FETCH_OPTS, method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: url.trim(), headline: headline.trim(), caption: caption.trim() + `\n\nSource: ${url.trim()}`, category }) });
-      const d = await r.json() as any;
-      setResult(d);
-      setStatus(d.instagram?.success || d.facebook?.success ? "success" : "error");
-      if (d.instagram?.success || d.facebook?.success) {
-        setTimeout(() => { setUrl(""); setHeadline(""); setCaption(""); setThumbUrl(""); setThumbSrc(null); setResolvedVideoUrl(""); setStatus("idle"); setShowPlayer(false); onSuccess(); }, 2500);
+      const resp = await fetch("/api/post-video", {
+        ...FETCH_OPTS, method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: url.trim(), headline: headline.trim(), caption: caption.trim() + `\n\nSource: ${url.trim()}`, category }),
+      });
+
+      if (!resp.ok || !resp.body) throw new Error("Post request failed");
+
+      // Read SSE stream
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop() || "";
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const evt = JSON.parse(line.slice(6));
+            onProgress(evt.pct, evt.step);
+            if (evt.done) {
+              setResult(evt);
+              setStatus(evt.success ? "success" : "error");
+              if (evt.success) {
+                setTimeout(() => { setUrl(""); setHeadline(""); setCaption(""); setThumbUrl(""); setThumbSrc(null); setResolvedVideoUrl(""); setStatus("idle"); setShowPlayer(false); onSuccess(); }, 3000);
+              }
+            }
+          } catch {}
+        }
       }
     } catch (e: any) { setResult({ error: e.message }); setStatus("error"); }
   }
@@ -354,7 +380,62 @@ function ComposeTab({ initialUrl, onSuccess }: { initialUrl?: string; onSuccess:
   );
 }
 
-// ── Sources Tab — live video feed from all scraped sources ────────────────────
+// ── Floating Progress Panel ───────────────────────────────────────────────────
+function ProgressPanel({ pct, step, onDismiss }: { pct: number; step: string; onDismiss: () => void }) {
+  const done = pct >= 100;
+  const isErr = step.toLowerCase().startsWith("error");
+  const color = isErr ? RED : done ? GREEN : PINK;
+
+  const STEPS = [
+    { label: "Scraping metadata", range: [0, 15] },
+    { label: "Generating thumbnail", range: [15, 25] },
+    { label: "Downloading video", range: [25, 50] },
+    { label: "Staging to R2", range: [50, 60] },
+    { label: "Staging cover image", range: [60, 65] },
+    { label: "Instagram processing", range: [65, 90] },
+    { label: "Facebook upload", range: [90, 97] },
+    { label: "Done", range: [97, 100] },
+  ];
+
+  return (
+    <div style={{ position: "fixed" as const, bottom: 80, right: 16, width: 280, background: "#0d0d0d", border: `1px solid ${color}44`, borderRadius: 10, padding: "14px 16px", zIndex: 1000, boxShadow: `0 4px 24px rgba(0,0,0,.6)` }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+          {!done && <Spin size={11} />}
+          <span style={{ fontSize: 11, fontWeight: 800, color, letterSpacing: 1, textTransform: "uppercase" as const }}>
+            {done ? (isErr ? "Failed" : "Posted ✓") : "Posting…"}
+          </span>
+        </div>
+        {done && <button onClick={onDismiss} style={{ background: "none", border: "none", color: "#444", cursor: "pointer", fontSize: 14, lineHeight: 1 }}>×</button>}
+      </div>
+
+      {/* Progress bar */}
+      <div style={{ height: 4, background: "#1a1a1a", borderRadius: 2, marginBottom: 10, overflow: "hidden" }}>
+        <div style={{ height: "100%", width: `${pct}%`, background: color, borderRadius: 2, transition: "width .4s ease" }} />
+      </div>
+
+      {/* Step list */}
+      <div style={{ display: "flex", flexDirection: "column" as const, gap: 4 }}>
+        {STEPS.map((s, i) => {
+          const active = pct >= s.range[0] && pct < s.range[1];
+          const complete = pct >= s.range[1];
+          return (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 7, opacity: complete || active ? 1 : 0.3 }}>
+              <span style={{ width: 14, height: 14, borderRadius: "50%", background: complete ? GREEN : active ? PINK : "#1a1a1a", border: `1px solid ${complete ? GREEN : active ? PINK : "#333"}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: 8 }}>
+                {complete ? "✓" : active ? "" : ""}
+              </span>
+              <span style={{ fontSize: 10, color: complete ? GREEN : active ? "#fff" : "#444" }}>{s.label}</span>
+              {active && <span style={{ fontSize: 9, color: PINK, marginLeft: "auto" }}>{pct}%</span>}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Current step message */}
+      <div style={{ marginTop: 8, fontSize: 10, color: "#555", borderTop: "1px solid #1a1a1a", paddingTop: 8 }}>{step}</div>
+    </div>
+  );
+}
 function SourcesTab({ onCompose }: { onCompose: (url: string) => void }) {
   const [videos, setVideos] = useState<any[]>([]);
   const [feedStatus, setFeedStatus] = useState<any[]>([]);
@@ -586,10 +667,15 @@ export default function ComposerPage() {
   const [tab, setTab] = useState<Tab>("cockpit");
   const [composeUrl, setComposeUrl] = useState<string | undefined>();
   const [refreshKey, setRefreshKey] = useState(0);
+  const [progress, setProgress] = useState<{ pct: number; step: string } | null>(null);
 
   function goCompose(url: string) {
     setComposeUrl(url);
     setTab("compose");
+  }
+
+  function handleProgress(pct: number, step: string) {
+    setProgress({ pct, step });
   }
 
   const TABS: [Tab, string][] = [
@@ -624,10 +710,19 @@ export default function ComposerPage() {
         </div>
 
         {tab === "cockpit" && <CockpitTab key={`cockpit-${refreshKey}`} onCompose={goCompose} />}
-        {tab === "compose" && <ComposeTab key={composeUrl} initialUrl={composeUrl} onSuccess={() => { setRefreshKey(k => k + 1); setTab("cockpit"); }} />}
+        {tab === "compose" && <ComposeTab key={composeUrl} initialUrl={composeUrl} onSuccess={() => { setRefreshKey(k => k + 1); setTab("cockpit"); }} onProgress={handleProgress} />}
         {tab === "sources" && <SourcesTab key={`sources-${refreshKey}`} onCompose={goCompose} />}
         {tab === "history" && <HistoryTab key={`history-${refreshKey}`} onCompose={goCompose} />}
       </div>
+
+      {/* Floating progress panel — visible from any tab */}
+      {progress && (
+        <ProgressPanel
+          pct={progress.pct}
+          step={progress.step}
+          onDismiss={() => setProgress(null)}
+        />
+      )}
     </Shell>
   );
 }

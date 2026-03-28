@@ -39,18 +39,10 @@ async function logPost(entry: object): Promise<void> {
   } catch {}
 }
 
-/**
- * Resolve the source URL to a direct MP4, download it, and upload to R2.
- * No ffmpeg — no binary dependency, no ENOENT.
- */
 async function stageVideo(sourceUrl: string): Promise<{ url: string; key: string }> {
-  // 1. Resolve platform URL → direct MP4
   const resolved = await resolveVideoUrl(sourceUrl).catch(() => null);
   const fetchUrl = resolved?.url || sourceUrl;
 
-  console.log(`[stage] resolved: ${fetchUrl.slice(0, 80)}`);
-
-  // 2. Download video bytes — retry once on failure
   let videoBytes: Uint8Array | null = null;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
@@ -63,33 +55,20 @@ async function stageVideo(sourceUrl: string): Promise<{ url: string; key: string
         signal: AbortSignal.timeout(120000),
       });
       if (!resp.ok) throw new Error(`Download failed: ${resp.status} ${resp.statusText}`);
-
       const contentType = resp.headers.get("content-type") || "";
       const bytes = new Uint8Array(await resp.arrayBuffer());
-
-      // Reject if we got HTML (error page) instead of video
-      if (contentType.includes("text/html") || (bytes.length > 4 && bytes[0] === 0x3c)) {
+      if (contentType.includes("text/html") || (bytes.length > 4 && bytes[0] === 0x3c))
         throw new Error("Got HTML instead of video — URL may have expired");
-      }
-      if (bytes.length < 1000) {
-        throw new Error(`Downloaded file too small (${bytes.length} bytes) — likely not a valid video`);
-      }
-
+      if (bytes.length < 1000)
+        throw new Error(`Downloaded file too small (${bytes.length} bytes)`);
       videoBytes = bytes;
       break;
     } catch (err: any) {
       if (attempt === 1) throw err;
-      // On first failure, re-resolve and retry
-      console.warn(`[stage] download attempt ${attempt + 1} failed: ${err.message} — re-resolving`);
       const retry = await resolveVideoUrl(sourceUrl).catch(() => null);
       if (retry?.url && retry.url !== fetchUrl) {
-        // fetchUrl is const so we just use retry.url directly on next iteration
         const retryResp = await fetch(retry.url, {
-          headers: {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Referer": "https://www.tiktok.com/",
-            "Accept": "video/mp4,video/*,*/*",
-          },
+          headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", "Accept": "video/mp4,video/*,*/*" },
           signal: AbortSignal.timeout(120000),
         });
         if (!retryResp.ok) throw new Error(`Retry download failed: ${retryResp.status}`);
@@ -101,46 +80,52 @@ async function stageVideo(sourceUrl: string): Promise<{ url: string; key: string
       throw err;
     }
   }
-
   if (!videoBytes) throw new Error("Could not download video");
 
-  console.log(`[stage] downloaded ${(videoBytes.length / 1024 / 1024).toFixed(1)} MB`);
-
-  // 3. Upload to R2 via worker
   const res = await fetch(WORKER_URL + "/stage-video-upload", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": "Bearer " + WORKER_SECRET,
-    },
-    body: JSON.stringify({
-      base64: Buffer.from(videoBytes).toString("base64"),
-      contentType: "video/mp4",
-    }),
+    headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },
+    body: JSON.stringify({ base64: Buffer.from(videoBytes).toString("base64"), contentType: "video/mp4" }),
     signal: AbortSignal.timeout(150000),
   });
-
   const data = await res.json() as any;
   if (!res.ok || !data.success) throw new Error(data.error ?? `Stage failed: HTTP ${res.status}`);
-  console.log(`[stage] staged to R2: ${data.url}`);
   return { url: data.url, key: data.key };
 }
 
-async function waitForIGContainer(containerId: string, token: string): Promise<void> {
-  // Poll every 3s for up to 90s — IG typically processes in 15-45s
+async function waitForIGContainer(containerId: string, token: string, emit?: (p: number, msg: string) => void): Promise<void> {
   for (let i = 0; i < 30; i++) {
     await sleep(3000);
     try {
       const res = await fetch(`${GRAPH_API}/${containerId}?fields=status_code,status&access_token=${token}`);
       const data = await res.json() as any;
       const status = data.status_code || data.status || "";
-      console.log(`[ig] container ${containerId} status: ${status}`);
+      const pct = 65 + Math.min(i * 1, 20); // 65–85%
+      emit?.(pct, `IG processing… (${status || "IN_PROGRESS"})`);
       if (status === "FINISHED") return;
       if (status === "ERROR" || status === "EXPIRED") throw new Error(`IG container failed: ${status}`);
     } catch (err: any) {
       if (err.message?.includes("failed:")) throw err;
     }
   }
+}
+
+// ── SSE helper ────────────────────────────────────────────────────────────────
+function makeSSE() {
+  const encoder = new TextEncoder();
+  let controller: ReadableStreamDefaultController<Uint8Array>;
+  const stream = new ReadableStream<Uint8Array>({
+    start(c) { controller = c; },
+  });
+
+  function emit(pct: number, step: string, extra?: object) {
+    const data = JSON.stringify({ pct, step, ...extra });
+    controller.enqueue(encoder.encode(`data: ${data}\n\n`));
+  }
+
+  function close() { controller.close(); }
+
+  return { stream, emit, close };
 }
 
 export async function POST(req: NextRequest) {
@@ -157,155 +142,183 @@ export async function POST(req: NextRequest) {
   const fbToken = process.env.FACEBOOK_ACCESS_TOKEN;
   const fbPageId = process.env.FACEBOOK_PAGE_ID;
 
-  try {
-    const scraped = await scrapeUrl(url);
-    const thumbRaw = scraped.videoThumbnailUrl || scraped.imageUrl || "";
-    const thumbnailUrl = thumbRaw ? `${WORKER_URL}/img?url=${encodeURIComponent(thumbRaw)}` : "";
+  const { stream, emit, close } = makeSSE();
 
-    const article: Article = {
-      id: createHash("sha256").update(url).digest("hex").slice(0, 16),
-      title: headline,
-      url: scraped.sourceUrl || url,
-      imageUrl: thumbnailUrl,
-      summary: caption,
-      fullBody: caption,
-      sourceName: scraped.sourceName || "PPP TV",
-      category: category.toUpperCase(),
-      publishedAt: new Date(),
-    };
-
-    // Generate branded PPP TV thumbnail (used as IG Reel cover)
-    const imageBuffer = await generateImage(article, { isBreaking: false });
-
-    // Stage video on R2 (no ffmpeg — direct stream)
-    const { url: stagedVideoUrl, key: stagedKey } = await stageVideo(url);
-
-    // Stage the branded thumbnail to R2 so IG can fetch it as cover_url
-    let coverImageUrl: string | undefined;
+  // Run the pipeline async, stream progress via SSE
+  (async () => {
     try {
-      const stageImgRes = await fetch(WORKER_URL + "/stage-image", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },
-        body: JSON.stringify({ imageBuffer: imageBuffer.toString("base64") }),
-        signal: AbortSignal.timeout(15000),
-      });
-      if (stageImgRes.ok) {
-        const d = await stageImgRes.json() as any;
-        coverImageUrl = d?.url;
-      }
-    } catch { /* cover is optional — post still works without it */ }
+      emit(5, "Scraping metadata…");
+      const scraped = await scrapeUrl(url);
+      const thumbRaw = scraped.videoThumbnailUrl || scraped.imageUrl || "";
+      const thumbnailUrl = thumbRaw ? `${WORKER_URL}/img?url=${encodeURIComponent(thumbRaw)}` : "";
 
-    // Fallback: upload thumbnail via FB Photos API to get a hosted URL
-    if (!coverImageUrl && fbToken && fbPageId) {
+      const article: Article = {
+        id: createHash("sha256").update(url).digest("hex").slice(0, 16),
+        title: headline,
+        url: scraped.sourceUrl || url,
+        imageUrl: thumbnailUrl,
+        summary: caption,
+        fullBody: caption,
+        sourceName: scraped.sourceName || "PPP TV",
+        category: category.toUpperCase(),
+        publishedAt: new Date(),
+      };
+
+      emit(12, "Generating branded thumbnail…");
+      const imageBuffer = await generateImage(article, { isBreaking: false });
+
+      emit(20, "Resolving video URL…");
+      // stageVideo handles resolve + download + upload
+      emit(28, "Downloading video…");
+      const { url: stagedVideoUrl, key: stagedKey } = await stageVideo(url);
+
+      emit(50, "Video staged to R2 ✓");
+
+      // Stage cover image
+      emit(55, "Staging cover image…");
+      let coverImageUrl: string | undefined;
       try {
-        const blob = new Blob(
-          [imageBuffer.buffer.slice(imageBuffer.byteOffset, imageBuffer.byteOffset + imageBuffer.byteLength) as ArrayBuffer],
-          { type: "image/jpeg" }
-        );
-        const form = new FormData();
-        form.append("source", blob, "cover.jpg");
-        form.append("published", "false");
-        form.append("access_token", fbToken);
-        const r = await fetch(`${GRAPH_API}/${fbPageId}/photos`, { method: "POST", body: form });
-        const d = await r.json() as any;
-        if (r.ok && !d.error) {
-          await sleep(3000);
-          const pr = await fetch(`${GRAPH_API}/${d.id}?fields=images&access_token=${fbToken}`);
-          const pd = await pr.json() as any;
-          coverImageUrl = pd.images?.[0]?.source;
-        }
-      } catch {}
-    }
-
-    // ── Post to Instagram as Reel ─────────────────────────────────────────────
-    let igResult: { success: boolean; postId?: string; error?: string } = { success: false, error: "skipped" };
-    if (igToken && igAccountId) {
-      try {
-        const containerRes = await withRetry(() =>
-          fetch(`${GRAPH_API}/${igAccountId}/media`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              media_type: "REELS",
-              video_url: stagedVideoUrl,
-              caption,
-              share_to_feed: true,
-              ...(coverImageUrl ? { cover_url: coverImageUrl } : {}),
-              access_token: igToken,
-            }),
-          })
-        );
-        const container = await containerRes.json() as any;
-        if (!containerRes.ok || container.error) throw new Error(container?.error?.message ?? "IG container failed");
-
-        await waitForIGContainer(container.id, igToken);
-
-        const publishRes = await withRetry(() =>
-          fetch(`${GRAPH_API}/${igAccountId}/media_publish`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ creation_id: container.id, access_token: igToken }),
-          })
-        );
-        const published = await publishRes.json() as any;
-        if (!publishRes.ok || published.error) throw new Error(published?.error?.message ?? "IG publish failed");
-        igResult = { success: true, postId: published.id };
-      } catch (err: any) {
-        igResult = { success: false, error: err.message };
-      }
-    }
-
-    // ── Post to Facebook as video ─────────────────────────────────────────────
-    let fbResult: { success: boolean; postId?: string; error?: string } = { success: false, error: "skipped" };
-    if (fbToken && fbPageId) {
-      try {
-        const fbCaption = caption + "\n\n🔗 " + article.url;
-        const feedRes = await withRetry(() =>
-          fetch(`${GRAPH_API}/${fbPageId}/videos`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              file_url: stagedVideoUrl,
-              description: fbCaption,
-              published: true,
-              access_token: fbToken,
-            }),
-          })
-        );
-        const feedData = await feedRes.json() as any;
-        if (feedRes.ok && !feedData.error) fbResult = { success: true, postId: feedData.id };
-        else fbResult = { success: false, error: feedData?.error?.message ?? "FB video post failed" };
-      } catch (err: any) {
-        fbResult = { success: false, error: err.message };
-      }
-    }
-
-    // Cleanup staged video — wait 10 min before deleting so IG/FB can finish fetching
-    if (stagedKey) {
-      setTimeout(() => {
-        fetch(WORKER_URL + "/delete-video", {
+        const stageImgRes = await fetch(WORKER_URL + "/stage-image", {
           method: "POST",
           headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },
-          body: JSON.stringify({ key: stagedKey }),
-        }).catch(() => {});
-      }, 10 * 60 * 1000);
-    }
+          body: JSON.stringify({ imageBuffer: imageBuffer.toString("base64") }),
+          signal: AbortSignal.timeout(15000),
+        });
+        if (stageImgRes.ok) {
+          const d = await stageImgRes.json() as any;
+          coverImageUrl = d?.url;
+        }
+      } catch {}
 
-    const anySuccess = igResult.success || fbResult.success;
-    if (anySuccess) {
-      // Fire stories unconditionally — no limit
-      publishStories(imageBuffer, WORKER_URL, WORKER_SECRET).catch(() => {});
+      if (!coverImageUrl && fbToken && fbPageId) {
+        try {
+          const blob = new Blob(
+            [imageBuffer.buffer.slice(imageBuffer.byteOffset, imageBuffer.byteOffset + imageBuffer.byteLength) as ArrayBuffer],
+            { type: "image/jpeg" }
+          );
+          const form = new FormData();
+          form.append("source", blob, "cover.jpg");
+          form.append("published", "false");
+          form.append("access_token", fbToken);
+          const r = await fetch(`${GRAPH_API}/${fbPageId}/photos`, { method: "POST", body: form });
+          const d = await r.json() as any;
+          if (r.ok && !d.error) {
+            await sleep(3000);
+            const pr = await fetch(`${GRAPH_API}/${d.id}?fields=images&access_token=${fbToken}`);
+            const pd = await pr.json() as any;
+            coverImageUrl = pd.images?.[0]?.source;
+          }
+        } catch {}
+      }
 
-      await logPost({
-        articleId: article.id, title: headline, url: article.url,
-        category: article.category,
-        instagram: igResult, facebook: fbResult,
-        postedAt: new Date().toISOString(), manualPost: true, postType: "video",
+      // ── Instagram ────────────────────────────────────────────────────────────
+      emit(60, "Submitting to Instagram…");
+      let igResult: { success: boolean; postId?: string; error?: string } = { success: false, error: "skipped" };
+      if (igToken && igAccountId) {
+        try {
+          const containerRes = await withRetry(() =>
+            fetch(`${GRAPH_API}/${igAccountId}/media`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                media_type: "REELS",
+                video_url: stagedVideoUrl,
+                caption,
+                share_to_feed: true,
+                ...(coverImageUrl ? { cover_url: coverImageUrl } : {}),
+                access_token: igToken,
+              }),
+            })
+          );
+          const container = await containerRes.json() as any;
+          if (!containerRes.ok || container.error) throw new Error(container?.error?.message ?? "IG container failed");
+
+          emit(65, "IG container created — waiting for processing…");
+          await waitForIGContainer(container.id, igToken, emit);
+
+          emit(86, "Publishing to Instagram…");
+          const publishRes = await withRetry(() =>
+            fetch(`${GRAPH_API}/${igAccountId}/media_publish`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ creation_id: container.id, access_token: igToken }),
+            })
+          );
+          const published = await publishRes.json() as any;
+          if (!publishRes.ok || published.error) throw new Error(published?.error?.message ?? "IG publish failed");
+          igResult = { success: true, postId: published.id };
+          emit(90, "Instagram ✓ published!");
+        } catch (err: any) {
+          igResult = { success: false, error: err.message };
+          emit(90, `Instagram ✗ ${err.message}`);
+        }
+      }
+
+      // ── Facebook ─────────────────────────────────────────────────────────────
+      emit(92, "Posting to Facebook…");
+      let fbResult: { success: boolean; postId?: string; error?: string } = { success: false, error: "skipped" };
+      if (fbToken && fbPageId) {
+        try {
+          const fbCaption = caption + "\n\n🔗 " + article.url;
+          const feedRes = await withRetry(() =>
+            fetch(`${GRAPH_API}/${fbPageId}/videos`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ file_url: stagedVideoUrl, description: fbCaption, published: true, access_token: fbToken }),
+            })
+          );
+          const feedData = await feedRes.json() as any;
+          if (feedRes.ok && !feedData.error) {
+            fbResult = { success: true, postId: feedData.id };
+            emit(96, "Facebook ✓ published!");
+          } else {
+            fbResult = { success: false, error: feedData?.error?.message ?? "FB video post failed" };
+            emit(96, `Facebook ✗ ${fbResult.error}`);
+          }
+        } catch (err: any) {
+          fbResult = { success: false, error: err.message };
+          emit(96, `Facebook ✗ ${err.message}`);
+        }
+      }
+
+      // Cleanup
+      if (stagedKey) {
+        setTimeout(() => {
+          fetch(WORKER_URL + "/delete-video", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },
+            body: JSON.stringify({ key: stagedKey }),
+          }).catch(() => {});
+        }, 10 * 60 * 1000);
+      }
+
+      const anySuccess = igResult.success || fbResult.success;
+      if (anySuccess) {
+        publishStories(imageBuffer, WORKER_URL, WORKER_SECRET).catch(() => {});
+        await logPost({
+          articleId: article.id, title: headline, url: article.url,
+          category: article.category, instagram: igResult, facebook: fbResult,
+          postedAt: new Date().toISOString(), manualPost: true, postType: "video",
+        });
+      }
+
+      emit(100, anySuccess ? "Done! ✓" : "Completed with errors", {
+        done: true, success: anySuccess,
+        instagram: igResult, facebook: fbResult, thumbnailUrl,
       });
+    } catch (err: any) {
+      emit(100, `Error: ${err.message}`, { done: true, success: false, error: err.message });
+    } finally {
+      close();
     }
+  })();
 
-    return NextResponse.json({ success: anySuccess, thumbnailUrl, instagram: igResult, facebook: fbResult });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
-  }
+  return new NextResponse(stream, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      "Connection": "keep-alive",
+      "X-Accel-Buffering": "no",
+    },
+  });
 }

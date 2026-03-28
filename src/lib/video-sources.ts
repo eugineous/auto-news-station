@@ -380,9 +380,6 @@ function isAccountPostHour(account: TikTokAccount): boolean {
 }
 
 async function fetchTikTokAccountVideos(account: TikTokAccount): Promise<VideoItem[]> {
-  // Only fetch if we're in this account's posting window
-  if (!isAccountPostHour(account)) return [];
-
   try {
     // TikWM user feed API — returns latest videos for a username
     const body = new URLSearchParams({ unique_id: account.username, count: "10", cursor: "0" });
