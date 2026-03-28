@@ -57,6 +57,189 @@ async function resolveYouTube(url: string): Promise<VideoResolution | null> {
   }
 }
 
+// ── YouTube via yt1s/y2mate style API — fallback when ytdl fails ─────────────
+async function resolveYouTubeViaAPI(url: string): Promise<VideoResolution | null> {
+  // Try cobalt first for YouTube as a reliable fallback
+  try {
+    const res = await fetch("https://api.cobalt.tools/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Accept": "application/json" },
+      body: JSON.stringify({ url, videoQuality: "720", downloadMode: "auto" }),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (res.ok) {
+      const data = await res.json() as any;
+      if (data.status !== "error" && (data.url || data.tunnel)) {
+        return { url: data.url || data.tunnel, platform: "youtube" };
+      }
+    }
+  } catch { /* try next */ }
+
+  // Try y2mate-style API
+  try {
+    const videoId = url.match(/(?:v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/)?.[1];
+    if (!videoId) return null;
+    const res = await fetch("https://www.y2mate.com/mates/analyzeV2/ajax", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ k_query: url, k_page: "home", hl: "en", q_auto: "0" }).toString(),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok) return null;
+    const data = await res.json() as any;
+    const links = data?.links?.mp4;
+    if (!links) return null;
+    // Pick 720p or best available
+    const quality = links["720p"] || links["480p"] || links["360p"] || Object.values(links)[0] as any;
+    if (!quality?.k) return null;
+    // Convert key to download URL
+    const dlRes = await fetch("https://www.y2mate.com/mates/convertV2/index", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ vid: videoId, k: quality.k }).toString(),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!dlRes.ok) return null;
+    const dlData = await dlRes.json() as any;
+    if (dlData?.dlink) return { url: dlData.dlink, platform: "youtube" };
+  } catch { /* fall through */ }
+
+  return null;
+}
+
+// ── Instagram via igram.world scrape ─────────────────────────────────────────
+async function resolveViaIgram(url: string): Promise<VideoResolution | null> {
+  try {
+    const pageRes = await fetch("https://igram.world/en1/", {
+      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!pageRes.ok) return null;
+    const html = await pageRes.text();
+    // Extract CSRF token
+    const csrfMatch = html.match(/name="csrfmiddlewaretoken"\s+value="([^"]+)"/);
+    if (!csrfMatch) return null;
+    const csrf = csrfMatch[1];
+
+    const formBody = new URLSearchParams({ url, csrfmiddlewaretoken: csrf });
+    const submitRes = await fetch("https://igram.world/api/convert", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Referer": "https://igram.world/en1/",
+        "X-CSRFToken": csrf,
+      },
+      body: formBody.toString(),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!submitRes.ok) return null;
+    const data = await submitRes.json() as any;
+    // igram returns array of media items
+    const items = Array.isArray(data) ? data : (data.media || data.items || []);
+    const video = items.find((item: any) => item.type === "video" || item.url?.includes(".mp4"));
+    if (video?.url) return { url: video.url, thumbnail: video.thumbnail, platform: "instagram" };
+  } catch (err: any) {
+    console.warn("[igram] error:", err?.message);
+  }
+  return null;
+}
+
+// ── Instagram via SaveIG scrape ───────────────────────────────────────────────
+async function resolveViaSaveIG(url: string): Promise<VideoResolution | null> {
+  try {
+    const pageRes = await fetch("https://saveig.app/en", {
+      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!pageRes.ok) return null;
+    const html = await pageRes.text();
+    const tokenMatch = html.match(/name="token"\s+value="([^"]+)"/);
+    if (!tokenMatch) return null;
+
+    const formBody = new URLSearchParams({ url, token: tokenMatch[1] });
+    const submitRes = await fetch("https://saveig.app/api/ajaxSearch", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Referer": "https://saveig.app/en",
+      },
+      body: formBody.toString(),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!submitRes.ok) return null;
+    const result = await submitRes.text();
+    const mp4Match = result.match(/href="(https?:\/\/[^"]+\.mp4[^"]*)"/i)
+      || result.match(/"(https?:\/\/[^"]*instagram[^"]*\.mp4[^"]*)"/i)
+      || result.match(/data-url="(https?:\/\/[^"]+)"/i);
+    if (mp4Match) return { url: mp4Match[1], platform: "instagram" };
+  } catch (err: any) {
+    console.warn("[saveig] error:", err?.message);
+  }
+  return null;
+}
+
+// ── Twitter/X via twitsave.com ────────────────────────────────────────────────
+async function resolveViaTwitterSave(url: string): Promise<VideoResolution | null> {
+  try {
+    const res = await fetch(`https://twitsave.com/info?url=${encodeURIComponent(url)}`, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept": "text/html,application/xhtml+xml,*/*",
+      },
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok) return null;
+    const html = await res.text();
+    // Extract highest quality MP4 link
+    const mp4Matches = [...html.matchAll(/href="(https?:\/\/[^"]+\.mp4[^"]*)"/gi)];
+    if (mp4Matches.length === 0) return null;
+    // Pick the first (highest quality) match
+    return { url: mp4Matches[0][1], platform: "twitter" };
+  } catch (err: any) {
+    console.warn("[twitsave] error:", err?.message);
+  }
+  return null;
+}
+
+// ── Twitter/X via ssstwitter.com ──────────────────────────────────────────────
+async function resolveViaSSSTwitter(url: string): Promise<VideoResolution | null> {
+  try {
+    const pageRes = await fetch("https://ssstwitter.com/en", {
+      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!pageRes.ok) return null;
+    const html = await pageRes.text();
+    const ttMatch = html.match(/name="tt"\s+value="([^"]+)"/);
+    if (!ttMatch) return null;
+
+    const formBody = new URLSearchParams({ id: url, locale: "en", tt: ttMatch[1] });
+    const submitRes = await fetch("https://ssstwitter.com/abc?url=dl", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Referer": "https://ssstwitter.com/en",
+        "HX-Request": "true",
+        "HX-Target": "target",
+        "HX-Current-URL": "https://ssstwitter.com/en",
+      },
+      body: formBody.toString(),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!submitRes.ok) return null;
+    const result = await submitRes.text();
+    const mp4Match = result.match(/href="(https?:\/\/[^"]+\.mp4[^"]*)"/i)
+      || result.match(/href="(https?:\/\/video\.twimg[^"]+)"/i);
+    if (mp4Match) return { url: mp4Match[1], platform: "twitter" };
+  } catch (err: any) {
+    console.warn("[ssstwitter] error:", err?.message);
+  }
+  return null;
+}
+
 // ── TikWM — primary TikTok resolver (tikwm.com public API, no key needed) ────
 // Returns no-watermark MP4 directly from TikTok CDN
 async function resolveViaTikWM(url: string): Promise<VideoResolution | null> {
@@ -222,15 +405,17 @@ export async function resolveVideoUrl(sourceUrl: string): Promise<VideoResolutio
     return { url: sourceUrl, platform: "direct" };
   }
 
-  // YouTube — use ytdl (most reliable for YT)
+  // YouTube — ytdl first, then API fallback, then Cobalt
   if (isYouTube(sourceUrl)) {
     const yt = await resolveYouTube(sourceUrl);
     if (yt) return yt;
-    // Fall through to Cobalt if ytdl fails
+    console.warn("[video-dl] ytdl failed, trying YouTube API fallback...");
+    const ytApi = await resolveYouTubeViaAPI(sourceUrl);
+    if (ytApi) return ytApi;
     return resolveViaCobalt(sourceUrl);
   }
 
-  // TikTok — try TikWM first (most reliable), then SnapTik, then SSStiK, then Cobalt
+  // TikTok — TikWM → SnapTik → SSStiK → Cobalt
   if (isTikTok(sourceUrl)) {
     const tikwm = await resolveViaTikWM(sourceUrl);
     if (tikwm) return tikwm;
@@ -244,7 +429,29 @@ export async function resolveVideoUrl(sourceUrl: string): Promise<VideoResolutio
     return resolveViaCobalt(sourceUrl);
   }
 
-  // Instagram, Twitter/X, Reddit, Dailymotion, Vimeo, etc. — use Cobalt
+  // Instagram — igram.world → SaveIG → Cobalt
+  if (/instagram\.com/i.test(sourceUrl)) {
+    const igram = await resolveViaIgram(sourceUrl);
+    if (igram) return igram;
+    console.warn("[video-dl] igram failed, trying SaveIG...");
+    const saveig = await resolveViaSaveIG(sourceUrl);
+    if (saveig) return saveig;
+    console.warn("[video-dl] SaveIG failed, trying Cobalt...");
+    return resolveViaCobalt(sourceUrl);
+  }
+
+  // Twitter/X — twitsave → ssstwitter → Cobalt
+  if (/twitter\.com|x\.com/i.test(sourceUrl)) {
+    const twit = await resolveViaTwitterSave(sourceUrl);
+    if (twit) return twit;
+    console.warn("[video-dl] twitsave failed, trying ssstwitter...");
+    const ssst = await resolveViaSSSTwitter(sourceUrl);
+    if (ssst) return ssst;
+    console.warn("[video-dl] ssstwitter failed, trying Cobalt...");
+    return resolveViaCobalt(sourceUrl);
+  }
+
+  // Reddit, Dailymotion, Vimeo, etc. — Cobalt
   if (SUPPORTED.test(sourceUrl)) {
     return resolveViaCobalt(sourceUrl);
   }
