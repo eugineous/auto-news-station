@@ -318,7 +318,7 @@ async function triggerAutomate(env) {
     const nextCount = runCount + 1;
     await env.SEEN_ARTICLES.put("run-count", String(nextCount), { expirationTtl: 24 * 3600 });
 
-    const fireVideo = nextCount % 3 === 0; // video every ~45 min
+    const fireVideo = true; // fire video pipeline every run (was every 3rd)
 
     // Always fire image pipeline (feed post + IG story + FB story)
     const imagePromise = fetch(`${appUrl}/api/automate`, {

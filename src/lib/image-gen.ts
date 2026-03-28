@@ -74,7 +74,10 @@ async function loadFont(): Promise<ArrayBuffer> {
 
 // ── Emoji support via Twemoji SVG ─────────────────────────────────────────────
 // Satori's loadAdditionalAsset fetches emoji SVGs from Twemoji CDN on demand
-const TWEMOJI_BASE = "https://cdnflare.emojipedia.org/twemoji/15.1.0/svg";
+const TWEMOJI_BASES = [
+  "https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg",
+  "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg",
+];
 
 function emojiToCodepoint(emoji: string): string {
   return Array.from(emoji)
@@ -84,14 +87,18 @@ function emojiToCodepoint(emoji: string): string {
 }
 
 async function loadEmojiAsset(_code: string, segment: string): Promise<string | undefined> {
-  try {
-    const cp = emojiToCodepoint(segment);
-    const url = `${TWEMOJI_BASE}/${cp}.svg`;
-    const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
-    if (!res.ok) return undefined;
-    const svg = await res.text();
-    return `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
-  } catch { return undefined; }
+  const cp = emojiToCodepoint(segment);
+  for (const base of TWEMOJI_BASES) {
+    try {
+      const url = `${base}/${cp}.svg`;
+      const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+      if (!res.ok) continue;
+      const svg = await res.text();
+      if (!svg.includes("<svg")) continue;
+      return `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
+    } catch { continue; }
+  }
+  return undefined;
 }
 
 async function fetchImageBuffer(url: string): Promise<Buffer | null> {

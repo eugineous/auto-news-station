@@ -192,6 +192,17 @@ const NEWS_RSS_FEEDS = [
   { url: "https://www.pulselive.co.ke/rss/entertainment",                 name: "Pulse Live Kenya",      cat: "ENTERTAINMENT" },
   { url: "https://www.ghafla.com/ke/feed/",                               name: "Ghafla Kenya",          cat: "CELEBRITY" },
   { url: "https://www.sde.co.ke/feed/",                                   name: "SDE Kenya",             cat: "CELEBRITY" },
+  // International entertainment RSS with video
+  { url: "https://feeds.bbci.co.uk/news/entertainment_and_arts/rss.xml", name: "BBC Entertainment",     cat: "ENTERTAINMENT" },
+  { url: "https://rss.cnn.com/rss/cnn_showbiz.rss",                      name: "CNN Showbiz",           cat: "ENTERTAINMENT" },
+  { url: "https://www.rollingstone.com/music/feed/",                      name: "Rolling Stone Music",   cat: "MUSIC" },
+  { url: "https://variety.com/feed/",                                     name: "Variety",               cat: "TV & FILM" },
+  { url: "https://deadline.com/feed/",                                    name: "Deadline",              cat: "TV & FILM" },
+  { url: "https://www.billboard.com/feed/",                               name: "Billboard",             cat: "MUSIC" },
+  { url: "https://pitchfork.com/rss/news/feed.xml",                       name: "Pitchfork",             cat: "MUSIC" },
+  { url: "https://www.tmz.com/rss.xml",                                   name: "TMZ",                   cat: "CELEBRITY" },
+  { url: "https://pagesix.com/feed/",                                     name: "Page Six",              cat: "CELEBRITY" },
+  { url: "https://www.etonline.com/news/rss",                             name: "ET Online",             cat: "CELEBRITY" },
 ];
 
 async function fetchNewsRSSWithVideo(feedUrl: string, sourceName: string, category: string): Promise<VideoItem[]> {

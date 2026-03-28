@@ -1,541 +1,353 @@
 ﻿"use client";
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useEffect } from "react";
 import Shell from "../shell";
 
 const PINK = "#FF007A";
+const R = "#E50914";
 
-type Tab = "video" | "carousel" | "social-import";
+type Tab = "post" | "import" | "history";
 type Status = "idle" | "loading" | "success" | "error";
-
-// Credentials helper — ensures session cookie is always sent
 const FETCH_OPTS: RequestInit = { credentials: "include" };
 
-function fileToBase64(file: File): Promise<string> {
-  return new Promise((res, rej) => {
-    const r = new FileReader();
-    r.onload = () => res((r.result as string).split(",")[1]);
-    r.onerror = rej;
-    r.readAsDataURL(file);
-  });
+function ago(iso: string) {
+  const m = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+  if (m < 1) return "just now";
+  if (m < 60) return m + "m ago";
+  const h = Math.floor(m / 60);
+  if (h < 24) return h + "h ago";
+  return Math.floor(h / 24) + "d ago";
 }
 
-// ── Branded thumbnail preview ─────────────────────────────────────────────────
-// imageUrl can be a remote URL (video tab) or a base64 string (carousel cover upload)
-function ThumbnailPreview({ headline, category, imageUrl, imageBase64 }: { headline: string; category: string; imageUrl?: string; imageBase64?: string }) {
-  const [src, setSrc] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    if (!headline.trim()) { setSrc(null); return; }
-    if (!imageUrl && !imageBase64) { setSrc(null); return; }
-
-    setLoading(true);
-    setSrc(null);
-
-    if (imageBase64) {
-      // POST with base64 for uploaded files
-      fetch("/api/preview-image", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: headline, category, imageBase64 }),
-      }).then(r => {
-        if (!r.ok) { setLoading(false); return; }
-        return r.blob();
-      }).then(blob => {
-        if (!blob) return;
-        setSrc(URL.createObjectURL(blob));
-        setLoading(false);
-      }).catch(() => setLoading(false));
-    } else if (imageUrl) {
-      // GET with remote URL for video tab
-      const params = new URLSearchParams({ title: headline, category, imageUrl });
-      const url = `/api/preview-image?${params}`;
-      const img = new Image();
-      img.onload = () => { setSrc(url); setLoading(false); };
-      img.onerror = () => { setSrc(null); setLoading(false); };
-      img.src = url;
-    }
-  }, [headline, category, imageUrl, imageBase64]);
-
-  if (!imageUrl && !imageBase64) return null;
-
-  return (
-    <div style={{ width: "100%", maxWidth: 280, aspectRatio: "4/5", background: "#111", borderRadius: 8, overflow: "hidden", position: "relative", border: "1px solid #222" }}>
-      {loading && (
-        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <span style={{ fontSize: 11, color: "#555" }}>Generating...</span>
-        </div>
-      )}
-      {src && <img src={src} alt="thumbnail preview" style={{ width: "100%", height: "100%", objectFit: "cover", display: loading ? "none" : "block" }} />}
-      <div style={{ position: "absolute", top: 8, right: 8, background: "rgba(0,0,0,.7)", borderRadius: 4, padding: "2px 7px", fontSize: 10, color: "#fff" }}>4:5</div>
-    </div>
-  );
+function Spin() {
+  return <span style={{ display: "inline-block", width: 13, height: 13, border: "2px solid rgba(255,255,255,.2)", borderTopColor: "#fff", borderRadius: "50%", animation: "spin .7s linear infinite" }} />;
 }
 
-// ── Video Tab ─────────────────────────────────────────────────────────────────
-function VideoTab() {
+// ── Shared styles ─────────────────────────────────────────────────────────────
+const inp: React.CSSProperties = { width: "100%", background: "#0a0a0a", border: "1px solid #1a1a1a", borderRadius: 6, padding: "11px 13px", color: "#e5e5e5", fontSize: 13, outline: "none", boxSizing: "border-box", fontFamily: "inherit" };
+const lbl: React.CSSProperties = { display: "block", fontSize: 10, fontWeight: 700, letterSpacing: 2, textTransform: "uppercase", color: "#555", marginBottom: 7 };
+const hint: React.CSSProperties = { fontSize: 11, color: "#444", marginTop: 5 };
+
+// ── Post Video Tab ────────────────────────────────────────────────────────────
+function PostVideoTab({ onSuccess }: { onSuccess: () => void }) {
   const [url, setUrl] = useState("");
   const [headline, setHeadline] = useState("");
   const [caption, setCaption] = useState("");
+  const [category, setCategory] = useState("ENTERTAINMENT");
   const [thumbUrl, setThumbUrl] = useState("");
+  const [thumbSrc, setThumbSrc] = useState<string | null>(null);
+  const [thumbLoading, setThumbLoading] = useState(false);
   const [fetching, setFetching] = useState(false);
   const [status, setStatus] = useState<Status>("idle");
   const [result, setResult] = useState<any>(null);
+  const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  async function fetchVideoInfo() {
+  const CATS = ["ENTERTAINMENT", "CELEBRITY", "MUSIC", "TV & FILM", "SPORTS", "NEWS", "COMEDY", "INFLUENCERS", "EAST AFRICA", "GENERAL"];
+
+  // Live thumbnail re-gen
+  useEffect(() => {
+    if (!headline.trim() || !thumbUrl) return;
+    if (debounce.current) clearTimeout(debounce.current);
+    debounce.current = setTimeout(() => {
+      setThumbLoading(true);
+      const params = new URLSearchParams({ title: headline, category, imageUrl: thumbUrl });
+      const src = `/api/preview-image?${params}`;
+      const img = new Image();
+      img.onload = () => { setThumbSrc(src); setThumbLoading(false); };
+      img.onerror = () => setThumbLoading(false);
+      img.src = src;
+    }, 500);
+  }, [headline, category, thumbUrl]);
+
+  async function fetchInfo() {
     if (!url.trim()) return;
     setFetching(true);
     try {
-      const r = await fetch("/api/preview-url", {
-        ...FETCH_OPTS,
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: url.trim() }),
-      });
+      const r = await fetch("/api/preview-url", { ...FETCH_OPTS, method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: url.trim() }) });
       const d = await r.json();
-      const img = d.scraped?.imageUrl || d.scraped?.videoThumbnailUrl || "";
+      const img = d.scraped?.videoThumbnailUrl || d.scraped?.imageUrl || "";
       if (img) setThumbUrl(img);
       if (!headline && d.scraped?.title) setHeadline(d.scraped.title.toUpperCase().slice(0, 100));
+      if (!caption && d.ai?.caption) setCaption(d.ai.caption);
     } catch {}
     setFetching(false);
   }
 
   async function handlePost() {
-    if (!url.trim() || !headline.trim() || !caption.trim()) return;
+    if (!url.trim() || !headline.trim() || !caption.trim() || status === "loading") return;
     setStatus("loading"); setResult(null);
     try {
-      const r = await fetch("/api/post-video", {
-        ...FETCH_OPTS,
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: url.trim(), headline: headline.trim(), caption: caption.trim(), category: "TRENDING" }),
-      });
+      // Resolve video first
+      const resolveRes = await fetch("/api/resolve-video", { ...FETCH_OPTS, method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: url.trim() }) });
+      const resolveData = await resolveRes.json();
+      if (!resolveRes.ok || !resolveData.success || !resolveData.videoUrl) {
+        throw new Error(resolveData.error || "Could not extract video from this URL");
+      }
+      const r = await fetch("/api/post-video", { ...FETCH_OPTS, method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: resolveData.videoUrl, headline: headline.trim(), caption: caption.trim() + `\n\nSource: ${url.trim()}`, category }) });
       const d = await r.json();
       setResult(d);
       setStatus(d.instagram?.success || d.facebook?.success ? "success" : "error");
-    } catch (err: any) { setResult({ error: err.message }); setStatus("error"); }
+      if (d.instagram?.success || d.facebook?.success) { setTimeout(() => { setUrl(""); setHeadline(""); setCaption(""); setThumbUrl(""); setThumbSrc(null); setStatus("idle"); onSuccess(); }, 2000); }
+    } catch (e: any) { setResult({ error: e.message }); setStatus("error"); }
   }
 
   const canPost = url.trim() && headline.trim() && caption.trim() && status !== "loading";
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+      <p style={hint}>Paste a YouTube, TikTok, Instagram, or Twitter/X video URL. We'll extract it, generate a branded thumbnail, and post as a Reel to IG + video to FB.</p>
+
       {/* URL */}
       <div>
-        <label style={labelStyle}>Video URL</label>
+        <label style={lbl}>Video URL</label>
         <div style={{ display: "flex", gap: 8 }}>
-          <input
-            value={url} onChange={e => setUrl(e.target.value)}
-            onBlur={fetchVideoInfo}
-            placeholder="YouTube, TikTok, Instagram, or direct .mp4 URL"
-            style={inputStyle}
-          />
-          <button onClick={fetchVideoInfo} disabled={!url.trim() || fetching} style={ghostBtnStyle}>
-            {fetching ? "..." : "Fetch"}
+          <input value={url} onChange={e => setUrl(e.target.value)} onBlur={fetchInfo} placeholder="YouTube, TikTok, Instagram, Twitter/X, or .mp4 URL" style={{ ...inp, flex: 1 }} />
+          <button onClick={fetchInfo} disabled={!url.trim() || fetching} style={{ background: "#111", border: "1px solid #333", color: "#888", borderRadius: 6, padding: "11px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
+            {fetching ? <Spin /> : "Fetch"}
           </button>
         </div>
-      <p style={hintStyle}>Paste URL → video staged on Cloudflare R2 → posted as Reel to IG + video to FB</p>
       </div>
 
-      {/* Headline */}
+      {/* Category */}
       <div>
-        <label style={labelStyle}>Headline <span style={{ color: "#555", fontWeight: 400 }}>(appears on thumbnail image)</span></label>
-        <input
-          value={headline}
-          onChange={e => setHeadline(e.target.value.toUpperCase())}
-          placeholder="TYPE YOUR HEADLINE IN CAPS"
-          maxLength={120}
-          style={{ ...inputStyle, textTransform: "uppercase", letterSpacing: 1 }}
-        />
-        <p style={hintStyle}>{headline.length}/120 chars</p>
-      </div>
-
-      {/* Live thumbnail preview */}
-      {(thumbUrl || headline) && (
-        <div>
-          <label style={labelStyle}>Thumbnail Preview</label>
-          <ThumbnailPreview headline={headline} category="TRENDING" imageUrl={thumbUrl} />
-          {!thumbUrl && <p style={{ ...hintStyle, color: "#FF007A" }}>Paste a URL above to auto-fetch the thumbnail image</p>}
+        <label style={lbl}>Category</label>
+        <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+          {CATS.map(c => (
+            <button key={c} onClick={() => setCategory(c)} style={{ padding: "4px 10px", borderRadius: 20, fontSize: 10, fontWeight: 600, cursor: "pointer", border: `1px solid ${category === c ? PINK : "#1a1a1a"}`, background: category === c ? PINK : "#0a0a0a", color: category === c ? "#fff" : "#555", transition: "all .15s" }}>{c}</button>
+          ))}
         </div>
-      )}
-
-      {/* Caption */}
-      <div>
-        <label style={labelStyle}>Caption <span style={{ color: "#555", fontWeight: 400 }}>(Instagram & Facebook post text)</span></label>
-        <textarea
-          value={caption} onChange={e => setCaption(e.target.value)}
-          placeholder="Write your caption here..."
-          rows={6}
-          style={{ ...inputStyle, resize: "vertical" as const }}
-        />
       </div>
 
-      <button onClick={handlePost} disabled={!canPost}
-        style={{ width: "100%", padding: "15px 0", fontSize: 13, fontWeight: 800, letterSpacing: 1, textTransform: "uppercase" as const, color: "#fff", background: canPost ? PINK : "#1a1a1a", border: "none", borderRadius: 8, cursor: canPost ? "pointer" : "not-allowed", opacity: canPost ? 1 : 0.5, transition: "opacity .15s" }}>
-        {status === "loading" ? "Posting video... (~60s)" : "Post Video to IG + FB"}
-      </button>
-
-      <PostResult status={status} result={result} />
-    </div>
-  );
-}
-
-// ── Carousel Tab ──────────────────────────────────────────────────────────────
-interface CarouselItem { type: "image"; file: File; base64: string; preview: string; }
-
-function CarouselTab() {
-  const [cover, setCover] = useState<CarouselItem | null>(null);
-  const [slides, setSlides] = useState<CarouselItem[]>([]);
-  const [headline, setHeadline] = useState("");
-  const [caption, setCaption] = useState("");
-  const [status, setStatus] = useState<Status>("idle");
-  const [result, setResult] = useState<any>(null);
-  const coverRef = useRef<HTMLInputElement>(null);
-  const slidesRef = useRef<HTMLInputElement>(null);
-
-  const loadImage = useCallback(async (file: File): Promise<CarouselItem> => {
-    const base64 = await fileToBase64(file);
-    const preview = URL.createObjectURL(file);
-    return { type: "image", file, base64, preview };
-  }, []);
-
-  async function onCoverChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setCover(await loadImage(file));
-  }
-
-  async function onSlidesChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files || []).filter(f => f.type.startsWith("image/"));
-    const loaded = await Promise.all(files.map(loadImage));
-    setSlides(prev => [...prev, ...loaded].slice(0, 9));
-  }
-
-  function removeSlide(i: number) { setSlides(prev => prev.filter((_, idx) => idx !== i)); }
-
-  async function handlePost() {
-    if (!cover || slides.length === 0 || !caption.trim()) return;
-    setStatus("loading"); setResult(null);
-    try {
-      const items = [cover, ...slides].map(item => ({ type: "image", base64: item.base64 }));
-      const r = await fetch("/api/post-carousel", {
-        ...FETCH_OPTS,
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items, caption: caption.trim(), headline: headline.trim() }),
-      });
-      const d = await r.json();
-      setResult(d);
-      setStatus(d.instagram?.success || d.facebook?.success ? "success" : "error");
-    } catch (err: any) { setResult({ error: err.message }); setStatus("error"); }
-  }
-
-  const canPost = cover && slides.length > 0 && caption.trim() && status !== "loading";
-  const totalItems = (cover ? 1 : 0) + slides.length;
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-      <p style={hintStyle}>Cover image = first slide with PPP TV branded overlay. Add up to 9 more images after it.</p>
-
-      {/* Cover */}
-      <div>
-        <label style={labelStyle}>Cover Image <span style={{ color: "#555", fontWeight: 400 }}>(required · gets PPP TV overlay)</span></label>
-        <input ref={coverRef} type="file" accept="image/*" style={{ display: "none" }} onChange={onCoverChange} />
-        {cover ? (
-          <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
-            <div style={{ position: "relative", flexShrink: 0 }}>
-              <img src={cover.preview} alt="cover" style={{ width: 100, height: 125, objectFit: "cover", borderRadius: 6, display: "block" }} />
-              <button onClick={() => setCover(null)}
-                style={{ position: "absolute", top: 4, right: 4, width: 20, height: 20, borderRadius: "50%", background: "rgba(0,0,0,.8)", border: "none", color: "#fff", fontSize: 10, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
-              <span style={{ position: "absolute", bottom: 4, left: 4, background: PINK, color: "#fff", fontSize: 9, fontWeight: 800, letterSpacing: 1, padding: "2px 6px", borderRadius: 3 }}>COVER</span>
-            </div>
-            {headline && (
-              <div style={{ flex: 1 }}>
-                <p style={{ ...hintStyle, marginBottom: 8 }}>Thumbnail preview:</p>
-                <ThumbnailPreview headline={headline} category="TRENDING" imageBase64={cover.base64} />
-              </div>
-            )}
+      {/* Headline + live thumbnail */}
+      <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+        <div style={{ flex: 1 }}>
+          <label style={lbl}>Headline <span style={{ color: "#444", fontWeight: 400 }}>(on thumbnail)</span></label>
+          <input value={headline} onChange={e => setHeadline(e.target.value.toUpperCase())} placeholder="TYPE YOUR HEADLINE IN CAPS" maxLength={120} style={{ ...inp, textTransform: "uppercase", letterSpacing: 1 }} />
+          <p style={hint}>{headline.length}/120</p>
+        </div>
+        {(thumbUrl || thumbSrc) && (
+          <div style={{ flexShrink: 0, width: 90, position: "relative" }}>
+            <label style={{ ...lbl, marginBottom: 6 }}>Thumbnail</label>
+            {thumbLoading && <div style={{ position: "absolute", inset: 0, top: 22, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 6, zIndex: 2 }}><Spin /></div>}
+            <img src={thumbSrc || `/api/preview-image?${new URLSearchParams({ title: headline || "PPP TV", category, imageUrl: thumbUrl })}`} alt="" style={{ width: 90, aspectRatio: "4/5", objectFit: "cover", borderRadius: 6, display: "block", opacity: thumbLoading ? 0.4 : 1 }} />
           </div>
-        ) : (
-          <button onClick={() => coverRef.current?.click()}
-            style={{ width: "100%", padding: "32px 0", background: "#0a0a0a", border: "2px dashed #222", borderRadius: 8, color: "#555", fontSize: 13, cursor: "pointer" }}>
-            + Upload Cover Image
-          </button>
         )}
       </div>
 
-      {/* Headline */}
-      <div>
-        <label style={labelStyle}>Headline <span style={{ color: "#555", fontWeight: 400 }}>(appears on cover thumbnail)</span></label>
-        <input
-          value={headline} onChange={e => setHeadline(e.target.value.toUpperCase())}
-          placeholder="TYPE YOUR HEADLINE IN CAPS"
-          maxLength={120}
-          style={{ ...inputStyle, textTransform: "uppercase" as const, letterSpacing: 1 }}
-        />
-      </div>
-
-      {/* Slides */}
-      <div>
-        <label style={labelStyle}>Slides <span style={{ color: "#555", fontWeight: 400 }}>(slides 2–10 · images only)</span></label>
-        <input ref={slidesRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={onSlidesChange} />
-        <div style={{ display: "flex", flexWrap: "wrap" as const, gap: 8, marginBottom: 8 }}>
-          {slides.map((item, i) => (
-            <div key={i} style={{ position: "relative", width: 80, height: 100, borderRadius: 6, overflow: "hidden", flexShrink: 0 }}>
-              <img src={item.preview} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-              <button onClick={() => removeSlide(i)}
-                style={{ position: "absolute", top: 3, right: 3, width: 18, height: 18, borderRadius: "50%", background: "rgba(0,0,0,.8)", border: "none", color: "#fff", fontSize: 9, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
-              <span style={{ position: "absolute", bottom: 3, left: 3, background: "#111", color: "#aaa", fontSize: 9, fontWeight: 700, padding: "1px 5px", borderRadius: 3 }}>{i + 2}</span>
-            </div>
-          ))}
-          {slides.length < 9 && (
-            <button onClick={() => slidesRef.current?.click()}
-              style={{ width: 80, height: 100, borderRadius: 6, background: "#0a0a0a", border: "2px dashed #222", color: "#555", fontSize: 22, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
-          )}
-        </div>
-        <p style={hintStyle}>{totalItems}/10 items total</p>
-      </div>
-
       {/* Caption */}
       <div>
-        <label style={labelStyle}>Caption</label>
-        <textarea
-          value={caption} onChange={e => setCaption(e.target.value)}
-          placeholder="Write your caption here..."
-          rows={6}
-          style={{ ...inputStyle, resize: "vertical" as const }}
-        />
+        <label style={lbl}>Caption <span style={{ color: "#444", fontWeight: 400 }}>(source credit auto-appended)</span></label>
+        <textarea value={caption} onChange={e => setCaption(e.target.value)} placeholder="Write your caption here..." rows={5} style={{ ...inp, resize: "vertical" as const }} />
       </div>
 
-      <button onClick={handlePost} disabled={!canPost}
-        style={{ width: "100%", padding: "15px 0", fontSize: 13, fontWeight: 800, letterSpacing: 1, textTransform: "uppercase" as const, color: "#fff", background: canPost ? PINK : "#1a1a1a", border: "none", borderRadius: 8, cursor: canPost ? "pointer" : "not-allowed", opacity: canPost ? 1 : 0.5, transition: "opacity .15s" }}>
-        {status === "loading" ? "Posting carousel..." : `Post Carousel (${totalItems} slides) to IG + FB`}
+      <button onClick={handlePost} disabled={!canPost} style={{ width: "100%", padding: "14px 0", fontSize: 13, fontWeight: 800, letterSpacing: 1, textTransform: "uppercase" as const, color: "#fff", background: canPost ? PINK : "#111", border: "none", borderRadius: 8, cursor: canPost ? "pointer" : "not-allowed", opacity: canPost ? 1 : 0.5, transition: "all .15s" }}>
+        {status === "loading" ? <><Spin /> &nbsp;Resolving + posting (~90s)…</> : "🎬 Post Video to IG + FB"}
       </button>
 
-      <PostResult status={status} result={result} />
+      {result && status !== "idle" && status !== "loading" && (
+        <div style={{ borderRadius: 8, padding: "12px 14px", background: status === "success" ? "rgba(16,185,129,.08)" : "rgba(239,68,68,.08)", border: `1px solid ${status === "success" ? "#10b981" : "#ef4444"}` }}>
+          {status === "success" ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+              <span style={{ fontWeight: 700, color: "#4ade80", fontSize: 13 }}>✓ Posted successfully</span>
+              {result.instagram?.success && <span style={{ fontSize: 12, color: "#aaa" }}>Instagram ✓ {result.instagram.postId}</span>}
+              {result.facebook?.success && <span style={{ fontSize: 12, color: "#aaa" }}>Facebook ✓ {result.facebook.postId}</span>}
+              {!result.instagram?.success && <span style={{ fontSize: 12, color: "#f87171" }}>Instagram ✗ {result.instagram?.error}</span>}
+              {!result.facebook?.success && <span style={{ fontSize: 12, color: "#f87171" }}>Facebook ✗ {result.facebook?.error}</span>}
+            </div>
+          ) : <span style={{ color: "#f87171", fontSize: 13 }}>{result.error || "Post failed"}</span>}
+        </div>
+      )}
     </div>
   );
 }
 
-// ── Social Import Tab — paste TikTok/IG/Twitter URL, auto-resolve + post ──────
-function SocialImportTab() {
+// ── Import Tab ────────────────────────────────────────────────────────────────
+function ImportTab({ onSuccess }: { onSuccess: () => void }) {
   const [url, setUrl] = useState("");
   const [resolving, setResolving] = useState(false);
-  const [resolved, setResolved] = useState<{ videoUrl: string; thumbnail?: string; title?: string; platform?: string } | null>(null);
+  const [resolved, setResolved] = useState<any>(null);
   const [headline, setHeadline] = useState("");
   const [caption, setCaption] = useState("");
-  const [generatingCaption, setGeneratingCaption] = useState(false);
   const [status, setStatus] = useState<Status>("idle");
   const [result, setResult] = useState<any>(null);
-  const [resolveError, setResolveError] = useState("");
+  const [err, setErr] = useState("");
 
-  const PLATFORM_LABELS: Record<string, string> = {
-    tiktok: "TikTok", instagram: "Instagram", twitter: "Twitter/X",
-    youtube: "YouTube", reddit: "Reddit", dailymotion: "Dailymotion",
-    vimeo: "Vimeo", direct: "Direct MP4",
-  };
+  const PLATFORM_LABELS: Record<string, string> = { tiktok: "TikTok", instagram: "Instagram", twitter: "Twitter/X", youtube: "YouTube", reddit: "Reddit", direct: "Direct MP4" };
 
   async function handleResolve() {
     if (!url.trim()) return;
-    setResolving(true); setResolved(null); setResolveError(""); setCaption(""); setHeadline("");
+    setResolving(true); setResolved(null); setErr(""); setCaption(""); setHeadline("");
     try {
-      const r = await fetch("/api/resolve-video", {
-        ...FETCH_OPTS,
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: url.trim() }),
-      });
+      const r = await fetch("/api/resolve-video", { ...FETCH_OPTS, method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: url.trim() }) });
       const d = await r.json();
-      if (!r.ok || !d.success) { setResolveError(d.error || "Could not resolve video"); setResolving(false); return; }
+      if (!r.ok || !d.success) { setErr(d.error || "Could not resolve video"); setResolving(false); return; }
       setResolved(d);
       if (d.title) setHeadline(d.title.toUpperCase().slice(0, 100));
       // Auto-generate caption
-      setGeneratingCaption(true);
       try {
-        const cr = await fetch("/api/preview-url", {
-          ...FETCH_OPTS,
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url: url.trim() }),
-        });
+        const cr = await fetch("/api/preview-url", { ...FETCH_OPTS, method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: url.trim() }) });
         const cd = await cr.json();
         if (cd.scraped?.title) setHeadline(cd.scraped.title.toUpperCase().slice(0, 100));
+        if (cd.ai?.caption) setCaption(cd.ai.caption + `\n\nCredit: ${url.trim()}`);
       } catch {}
-      setGeneratingCaption(false);
-    } catch (err: any) { setResolveError(err.message); }
+    } catch (e: any) { setErr(e.message); }
     setResolving(false);
   }
 
   async function handlePost() {
-    if (!resolved || !headline.trim() || !caption.trim()) return;
+    if (!resolved || !headline.trim() || !caption.trim() || status === "loading") return;
     setStatus("loading"); setResult(null);
     try {
-      const r = await fetch("/api/post-video", {
-        ...FETCH_OPTS,
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          url: resolved.videoUrl,
-          headline: headline.trim(),
-          caption: caption.trim(),
-          category: "ENTERTAINMENT",
-        }),
-      });
+      const r = await fetch("/api/post-video", { ...FETCH_OPTS, method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: resolved.videoUrl, headline: headline.trim(), caption: caption.trim(), category: "ENTERTAINMENT" }) });
       const d = await r.json();
       setResult(d);
       setStatus(d.instagram?.success || d.facebook?.success ? "success" : "error");
-    } catch (err: any) { setResult({ error: err.message }); setStatus("error"); }
+      if (d.instagram?.success || d.facebook?.success) { setTimeout(() => { setUrl(""); setResolved(null); setHeadline(""); setCaption(""); setStatus("idle"); onSuccess(); }, 2000); }
+    } catch (e: any) { setResult({ error: e.message }); setStatus("error"); }
   }
 
   const canPost = resolved && headline.trim() && caption.trim() && status !== "loading";
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-      <p style={hintStyle}>Paste any TikTok, Instagram Reel, Twitter/X video, YouTube, or Reddit video URL. We'll extract the video and post it to your socials with source credit.</p>
+    <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+      <p style={hint}>Paste a TikTok, Instagram Reel, Twitter/X, YouTube, or Reddit video URL. We'll extract the direct video and post it with source credit.</p>
 
-      {/* URL input */}
       <div>
-        <label style={labelStyle}>Social Media URL</label>
+        <label style={lbl}>Social Media URL</label>
         <div style={{ display: "flex", gap: 8 }}>
-          <input
-            value={url} onChange={e => { setUrl(e.target.value); setResolved(null); setResolveError(""); }}
-            placeholder="https://tiktok.com/@user/video/... or instagram.com/reel/..."
-            style={inputStyle}
-            onKeyDown={e => e.key === "Enter" && handleResolve()}
-          />
-          <button onClick={handleResolve} disabled={!url.trim() || resolving}
-            style={{ ...ghostBtnStyle, background: url.trim() && !resolving ? "#FF007A" : "#111", color: "#fff", borderColor: "transparent" }}>
-            {resolving ? "..." : "Extract"}
+          <input value={url} onChange={e => { setUrl(e.target.value); setResolved(null); setErr(""); }} placeholder="https://tiktok.com/@user/video/..." style={{ ...inp, flex: 1 }} onKeyDown={e => e.key === "Enter" && handleResolve()} />
+          <button onClick={handleResolve} disabled={!url.trim() || resolving} style={{ background: url.trim() && !resolving ? PINK : "#111", border: "none", color: "#fff", borderRadius: 6, padding: "11px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
+            {resolving ? <Spin /> : "Extract"}
           </button>
         </div>
-        {resolveError && <p style={{ ...hintStyle, color: "#f87171", marginTop: 6 }}>{resolveError}</p>}
+        {err && <p style={{ ...hint, color: "#f87171", marginTop: 6 }}>{err}</p>}
       </div>
 
-      {/* Resolved video info */}
       {resolved && (
-        <div style={{ background: "#0a0a0a", border: "1px solid #1a1a1a", borderRadius: 8, padding: "14px 16px", display: "flex", gap: 14, alignItems: "flex-start" }}>
-          {resolved.thumbnail && (
-            <img src={resolved.thumbnail} alt="" style={{ width: 80, height: 100, objectFit: "cover", borderRadius: 6, flexShrink: 0 }} />
-          )}
+        <div style={{ background: "#0a0a0a", border: "1px solid #1a1a1a", borderRadius: 8, padding: "12px 14px", display: "flex", gap: 12, alignItems: "flex-start" }}>
+          {resolved.thumbnail && <img src={resolved.thumbnail} alt="" style={{ width: 70, height: 88, objectFit: "cover", borderRadius: 5, flexShrink: 0 }} />}
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-              <span style={{ background: "#FF007A", color: "#fff", fontSize: 9, fontWeight: 800, letterSpacing: 1, padding: "2px 8px", borderRadius: 3, textTransform: "uppercase" }}>
-                {PLATFORM_LABELS[resolved.platform || ""] || resolved.platform}
-              </span>
-              <span style={{ color: "#4ade80", fontSize: 11 }}>✓ Video extracted</span>
+            <div style={{ display: "flex", gap: 8, marginBottom: 5 }}>
+              <span style={{ background: PINK, color: "#fff", fontSize: 9, fontWeight: 800, padding: "2px 7px", borderRadius: 3, textTransform: "uppercase" }}>{PLATFORM_LABELS[resolved.platform || ""] || resolved.platform}</span>
+              <span style={{ color: "#4ade80", fontSize: 11 }}>✓ Extracted</span>
             </div>
             {resolved.title && <p style={{ fontSize: 12, color: "#aaa", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{resolved.title}</p>}
-            <p style={{ ...hintStyle, marginTop: 4 }}>Ready to post as Reel to IG + video to FB</p>
           </div>
         </div>
       )}
 
-      {/* Headline */}
-      {resolved && (
+      {resolved && <>
         <div>
-          <label style={labelStyle}>Headline <span style={{ color: "#555", fontWeight: 400 }}>(thumbnail overlay)</span></label>
-          <input
-            value={headline} onChange={e => setHeadline(e.target.value.toUpperCase())}
-            placeholder="TYPE YOUR HEADLINE IN CAPS"
-            maxLength={120}
-            style={{ ...inputStyle, textTransform: "uppercase", letterSpacing: 1 }}
-          />
+          <label style={lbl}>Headline <span style={{ color: "#444", fontWeight: 400 }}>(thumbnail overlay)</span></label>
+          <input value={headline} onChange={e => setHeadline(e.target.value.toUpperCase())} placeholder="TYPE YOUR HEADLINE IN CAPS" maxLength={120} style={{ ...inp, textTransform: "uppercase", letterSpacing: 1 }} />
         </div>
-      )}
-
-      {/* Thumbnail preview */}
-      {resolved?.thumbnail && headline && (
         <div>
-          <label style={labelStyle}>Thumbnail Preview</label>
-          <ThumbnailPreview headline={headline} category="ENTERTAINMENT" imageUrl={resolved.thumbnail} />
+          <label style={lbl}>Caption</label>
+          <textarea value={caption} onChange={e => setCaption(e.target.value)} rows={5} style={{ ...inp, resize: "vertical" as const }} />
         </div>
-      )}
-
-      {/* Caption */}
-      {resolved && (
-        <div>
-          <label style={labelStyle}>
-            Caption
-            {generatingCaption && <span style={{ color: "#555", fontWeight: 400, marginLeft: 8 }}>generating...</span>}
-          </label>
-          <textarea
-            value={caption} onChange={e => setCaption(e.target.value)}
-            placeholder={`Write your caption here...\n\nTip: Always include source credit at the bottom.`}
-            rows={6}
-            style={{ ...inputStyle, resize: "vertical" as const }}
-          />
-          <p style={hintStyle}>Add source credit: "Credit: @username | {url.slice(0, 40)}..."</p>
-        </div>
-      )}
-
-      {resolved && (
-        <button onClick={handlePost} disabled={!canPost}
-          style={{ width: "100%", padding: "15px 0", fontSize: 13, fontWeight: 800, letterSpacing: 1, textTransform: "uppercase" as const, color: "#fff", background: canPost ? "#FF007A" : "#1a1a1a", border: "none", borderRadius: 8, cursor: canPost ? "pointer" : "not-allowed", opacity: canPost ? 1 : 0.5, transition: "opacity .15s" }}>
-          {status === "loading" ? "Posting... (~60s)" : "Post to IG + FB"}
+        <button onClick={handlePost} disabled={!canPost} style={{ width: "100%", padding: "14px 0", fontSize: 13, fontWeight: 800, letterSpacing: 1, textTransform: "uppercase" as const, color: "#fff", background: canPost ? PINK : "#111", border: "none", borderRadius: 8, cursor: canPost ? "pointer" : "not-allowed", opacity: canPost ? 1 : 0.5 }}>
+          {status === "loading" ? <><Spin /> &nbsp;Posting (~90s)…</> : "🎬 Post to IG + FB"}
         </button>
-      )}
-
-      <PostResult status={status} result={result} />
+        {result && status !== "idle" && status !== "loading" && (
+          <div style={{ borderRadius: 8, padding: "12px 14px", background: status === "success" ? "rgba(16,185,129,.08)" : "rgba(239,68,68,.08)", border: `1px solid ${status === "success" ? "#10b981" : "#ef4444"}` }}>
+            {status === "success" ? <span style={{ color: "#4ade80", fontSize: 13, fontWeight: 700 }}>✓ Posted successfully</span> : <span style={{ color: "#f87171", fontSize: 13 }}>{result.error || "Post failed"}</span>}
+          </div>
+        )}
+      </>}
     </div>
   );
 }
 
-// ── Shared result component ───────────────────────────────────────────────────
-function PostResult({ status, result }: { status: Status; result: any }) {
-  if (!result || status === "idle" || status === "loading") return null;
-  const ok = status === "success";
+// ── History Tab ───────────────────────────────────────────────────────────────
+function HistoryTab() {
+  const [posts, setPosts] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch("https://auto-ppp-tv.euginemicah.workers.dev/post-log", { headers: { Authorization: "Bearer ppptvWorker2024" } })
+      .then(r => r.json())
+      .then(d => {
+        const videoPosts = (d.log || []).filter((p: any) => p.postType === "video" || p.manualPost);
+        setPosts(videoPosts.sort((a: any, b: any) => new Date(b.postedAt).getTime() - new Date(a.postedAt).getTime()));
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const igOk = posts.filter(p => p.instagram?.success).length;
+  const fbOk = posts.filter(p => p.facebook?.success).length;
+  const both = posts.filter(p => p.instagram?.success && p.facebook?.success).length;
+
   return (
-    <div style={{ borderRadius: 8, padding: "14px 16px", background: ok ? "rgba(16,185,129,.08)" : "rgba(239,68,68,.08)", border: `1px solid ${ok ? "#10b981" : "#ef4444"}` }}>
-      {ok ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <span style={{ fontWeight: 700, color: "#4ade80", fontSize: 13 }}>Posted successfully</span>
-          {result.instagram?.success && <span style={{ fontSize: 12, color: "#aaa" }}>Instagram ✓ {result.instagram.postId}</span>}
-          {result.facebook?.success && <span style={{ fontSize: 12, color: "#aaa" }}>Facebook ✓ {result.facebook.postId}</span>}
-          {!result.instagram?.success && <span style={{ fontSize: 12, color: "#f87171" }}>Instagram ✗ {result.instagram?.error}</span>}
-          {!result.facebook?.success && <span style={{ fontSize: 12, color: "#f87171" }}>Facebook ✗ {result.facebook?.error}</span>}
-        </div>
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {/* Stats */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
+        {[{ label: "Total", value: posts.length, color: "#fff" }, { label: "Both", value: both, color: "#a855f7" }, { label: "IG ✓", value: igOk, color: "#E1306C" }, { label: "FB ✓", value: fbOk, color: "#1877f2" }].map(s => (
+          <div key={s.label} style={{ background: "#0a0a0a", border: "1px solid #1a1a1a", borderRadius: 8, padding: "12px 10px", textAlign: "center" }}>
+            <div style={{ fontFamily: "Bebas Neue, sans-serif", fontSize: 28, color: s.color, lineHeight: 1 }}>{s.value}</div>
+            <div style={{ fontSize: 9, color: "#444", letterSpacing: 2, textTransform: "uppercase", marginTop: 3 }}>{s.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {loading ? <div style={{ textAlign: "center", padding: 40, color: "#333" }}>Loading…</div> : posts.length === 0 ? (
+        <div style={{ textAlign: "center", padding: 40, color: "#333" }}>No video posts yet</div>
       ) : (
-        <span style={{ color: "#f87171", fontSize: 13 }}>{result.error || "Post failed"}</span>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {posts.map((p, i) => (
+            <div key={i} style={{ background: "#0a0a0a", border: "1px solid #1a1a1a", borderRadius: 8, padding: "11px 13px" }}>
+              <div style={{ display: "flex", gap: 8, alignItems: "flex-start", justifyContent: "space-between" }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", gap: 6, marginBottom: 5, flexWrap: "wrap", alignItems: "center" }}>
+                    <span style={{ background: p.postType === "video" ? "#a855f7" : "#1a1a1a", color: p.postType === "video" ? "#fff" : "#555", fontSize: 9, fontWeight: 800, padding: "2px 7px", borderRadius: 3, textTransform: "uppercase" }}>{p.postType === "video" ? "🎬 VIDEO" : "MANUAL"}</span>
+                    <span style={{ fontSize: 10, color: "#444" }}>{ago(p.postedAt)}</span>
+                    {p.sourceName && <span style={{ fontSize: 10, color: "#555" }}>via {p.sourceName}</span>}
+                  </div>
+                  <div style={{ fontSize: 12, color: "#ccc", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.title}</div>
+                  {p.url && <a href={p.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 10, color: "#444", textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block", marginTop: 3 }}>{p.url.slice(0, 60)}…</a>}
+                </div>
+                <div style={{ display: "flex", gap: 5, flexShrink: 0 }}>
+                  <span style={{ fontSize: 10, color: p.instagram?.success ? "#4ade80" : "#f87171", fontWeight: 700 }}>IG{p.instagram?.success ? "✓" : "✗"}</span>
+                  <span style={{ fontSize: 10, color: p.facebook?.success ? "#4ade80" : "#f87171", fontWeight: 700 }}>FB{p.facebook?.success ? "✓" : "✗"}</span>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );
 }
-
-// ── Shared styles ─────────────────────────────────────────────────────────────
-const labelStyle: React.CSSProperties = { display: "block", fontSize: 10, fontWeight: 700, letterSpacing: 2, textTransform: "uppercase", color: "#666", marginBottom: 8 };
-const inputStyle: React.CSSProperties = { width: "100%", background: "#0a0a0a", border: "1px solid #222", borderRadius: 6, padding: "12px 14px", color: "#fff", fontSize: 14, outline: "none", boxSizing: "border-box" };
-const hintStyle: React.CSSProperties = { fontSize: 11, color: "#444", marginTop: 5 };
-const ghostBtnStyle: React.CSSProperties = { background: "#111", border: "1px solid #333", color: "#888", borderRadius: 6, padding: "12px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" };
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function ComposerPage() {
-  const [tab, setTab] = useState<Tab>("video");
+  const [tab, setTab] = useState<Tab>("post");
+  const [refreshKey, setRefreshKey] = useState(0);
 
   return (
     <Shell>
-      <div style={{ maxWidth: 600, margin: "0 auto", padding: "32px 24px 80px" }}>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+      <div style={{ maxWidth: 620, margin: "0 auto", padding: "28px 20px 80px" }}>
         {/* Header */}
-        <div style={{ marginBottom: 28 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
             <div style={{ width: 8, height: 8, borderRadius: "50%", background: PINK }} />
-            <span style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 28, letterSpacing: 2 }}>
-              COMPOSER
-            </span>
+            <span style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 26, letterSpacing: 2 }}>VIDEO COMPOSER</span>
           </div>
-          <p style={{ fontSize: 12, color: "#555" }}>Manually post a video, carousel, or import from TikTok/IG/Twitter to Instagram & Facebook</p>
+          <p style={{ fontSize: 12, color: "#444" }}>Post videos to Instagram Reels + Facebook. Thumbnail auto-generated with PPP TV branding.</p>
         </div>
 
         {/* Tabs */}
-        <div style={{ display: "flex", gap: 4, marginBottom: 28, padding: 4, background: "#1a1a1a", borderRadius: 8, border: "1px solid #2a2a2a" }}>
-          {([["video", "🎬  Video"], ["carousel", "🖼  Carousel"], ["social-import", "📲  Import"]] as [Tab, string][]).map(([t, label]) => (
-            <button key={t} onClick={() => setTab(t)}
-              style={{ flex: 1, padding: "10px 0", fontSize: 12, fontWeight: 800, letterSpacing: 1, textTransform: "uppercase", border: "none", borderRadius: 6, cursor: "pointer", transition: "all .15s", background: tab === t ? PINK : "transparent", color: tab === t ? "#fff" : "#555" }}>
+        <div style={{ display: "flex", gap: 4, marginBottom: 24, padding: 4, background: "#111", borderRadius: 8, border: "1px solid #1a1a1a" }}>
+          {([["post", "🎬 Post Video"], ["import", "📲 Import"], ["history", "📋 History"]] as [Tab, string][]).map(([t, label]) => (
+            <button key={t} onClick={() => setTab(t)} style={{ flex: 1, padding: "9px 0", fontSize: 11, fontWeight: 800, letterSpacing: 1, textTransform: "uppercase", border: "none", borderRadius: 6, cursor: "pointer", transition: "all .15s", background: tab === t ? PINK : "transparent", color: tab === t ? "#fff" : "#555" }}>
               {label}
             </button>
           ))}
         </div>
 
-        {tab === "video" ? <VideoTab /> : tab === "carousel" ? <CarouselTab /> : <SocialImportTab />}
+        {tab === "post" && <PostVideoTab onSuccess={() => { setRefreshKey(k => k + 1); setTab("history"); }} />}
+        {tab === "import" && <ImportTab onSuccess={() => { setRefreshKey(k => k + 1); setTab("history"); }} />}
+        {tab === "history" && <HistoryTab key={refreshKey} />}
       </div>
     </Shell>
   );
