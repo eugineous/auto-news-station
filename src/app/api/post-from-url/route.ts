@@ -92,10 +92,8 @@ export async function POST(req: NextRequest) {
       };
     }
 
-    // Require image — reject if none found
-    if (!article.imageUrl || article.imageUrl.trim() === "") {
-      return NextResponse.json({ error: "No image found for this URL — cannot generate thumbnail" }, { status: 422 });
-    }
+    // If no image, generate with solid color background (don't reject)
+    // generateImage now handles missing imageUrl gracefully
 
     const ai = await generateAIContent(article, { isVideo, videoType });
     const articleWithAITitle = { ...article, title: ai.clickbaitTitle };

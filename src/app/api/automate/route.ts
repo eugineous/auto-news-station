@@ -59,7 +59,6 @@ function isKenyaRelevant(a: Article): boolean {
 // ── Quality gate ──────────────────────────────────────────────────────────────
 function hasMinimumContent(a: Article): boolean {
   if (!a.title || a.title.trim().length < 10) return false;
-  if (!a.imageUrl || a.imageUrl.trim() === "") return false; // image required — no fallback
   if (!a.summary || a.summary.trim().length < 30) return false;
   return true;
 }
@@ -400,18 +399,27 @@ export async function POST(req: NextRequest) {
     // 2. Quality gate
     const quality = kenya.filter(hasMinimumContent);
 
-    // 3. Dedup
+    // 3. Dedup via KV
     const unseen = await filterUnseen(quality);
-    response.skipped = quality.length - unseen.length; // articles deduped
+    response.skipped = quality.length - unseen.length;
 
-    if (unseen.length === 0) {
+    // Extra in-memory title dedup — catches same article with different URL variants
+    const seenTitles = new Set<string>();
+    const dedupedUnseen = unseen.filter(a => {
+      const fp = a.title.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 50);
+      if (seenTitles.has(fp)) return false;
+      seenTitles.add(fp);
+      return true;
+    });
+
+    if (dedupedUnseen.length === 0) {
       return NextResponse.json({ ...response, message: "No new Kenya articles to post" });
     }
 
-    // 4. Category rotation — prefer different category from last post
-    let candidates = unseen;
+    // 4. Category rotation
+    let candidates = dedupedUnseen;
     if (lastCategory) {
-      const different = unseen.filter(a => a.category !== lastCategory);
+      const different = dedupedUnseen.filter(a => a.category !== lastCategory);
       if (different.length > 0) candidates = different;
     }
 
@@ -436,6 +444,10 @@ export async function POST(req: NextRequest) {
         const result = await postOneArticle(article, isBreaking);
         if (result.success) {
           response.posted++;
+          // Respect IG rate limits — wait 8s between posts
+          if (toPost.indexOf(article) < toPost.length - 1) {
+            await new Promise(r => setTimeout(r, 8000));
+          }
         } else {
           response.errors.push({ articleId: article.id, message: result.error || "Unknown error" });
         }

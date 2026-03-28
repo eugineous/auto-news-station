@@ -48,20 +48,19 @@ function getCatColor(category: string): { bg: string; text: string } {
 let _fontCache: ArrayBuffer | null = null;
 async function loadFont(): Promise<ArrayBuffer> {
   if (_fontCache) return _fontCache;
-  // Try multiple CDN sources in parallel, take the first that responds
+  // Only use woff (not woff2) — satori doesn't support woff2
   const sources = [
     "https://cdn.jsdelivr.net/npm/@fontsource/bebas-neue@5.0.8/files/bebas-neue-latin-400-normal.woff",
-    "https://fonts.gstatic.com/s/bebasneue/v14/JTUSjIg69CK48gW7PXoo9WdhyyTh89ZNpQ.woff2",
     "https://cdn.jsdelivr.net/npm/@fontsource/oswald@5.0.8/files/oswald-latin-700-normal.woff",
+    "https://cdn.jsdelivr.net/npm/@fontsource/inter@5.0.8/files/inter-latin-700-normal.woff",
   ];
-  const result = await Promise.any(
-    sources.map(url =>
-      fetch(url, { signal: AbortSignal.timeout(10000) })
-        .then(r => { if (!r.ok) throw new Error("not ok"); return r.arrayBuffer(); })
-    )
-  );
-  _fontCache = result;
-  return _fontCache;
+  for (const url of sources) {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
+      if (res.ok) { _fontCache = await res.arrayBuffer(); return _fontCache; }
+    } catch { /* try next */ }
+  }
+  throw new Error("Could not load font");
 }
 
 async function fetchImageBuffer(url: string): Promise<Buffer | null> {
@@ -98,28 +97,21 @@ export interface ImageOptions {
 }
 
 export async function generateImage(article: Article, opts: ImageOptions = {}): Promise<Buffer> {
-  if (!article.imageUrl || article.imageUrl.trim() === "") {
-    throw new Error("NO_IMAGE: article has no imageUrl — skipping");
-  }
-
   const [fontData, rawBg] = await Promise.all([
     loadFont(),
-    fetchImageBuffer(article.imageUrl),
+    article.imageUrl?.trim() ? fetchImageBuffer(article.imageUrl) : Promise.resolve(null),
   ]);
 
-  if (!rawBg) throw new Error("NO_IMAGE: could not fetch imageUrl — skipping");
-
-  // Smart crop: use 'attention' for general images, but try face-aware centering
-  // sharp's 'attention' strategy finds the most visually interesting region
   let bgBase64: string | null = null;
-  try {
-    // First pass: try attention-based crop (finds faces/subjects automatically)
-    const resized = await sharp(rawBg)
-      .resize(W, H, { fit: "cover", position: "attention" })
-      .jpeg({ quality: 88 })
-      .toBuffer();
-    bgBase64 = `data:image/jpeg;base64,${resized.toString("base64")}`;
-  } catch { bgBase64 = null; }
+  if (rawBg) {
+    try {
+      const resized = await sharp(rawBg)
+        .resize(W, H, { fit: "cover", position: "attention" })
+        .jpeg({ quality: 88 })
+        .toBuffer();
+      bgBase64 = `data:image/jpeg;base64,${resized.toString("base64")}`;
+    } catch { bgBase64 = null; }
+  }
 
   const category = article.category.toUpperCase();
   const { bg: catBg, text: catText } = getCatColor(category);
