@@ -192,6 +192,16 @@ const NEWS_RSS_FEEDS = [
   { url: "https://www.pulselive.co.ke/rss/entertainment",                 name: "Pulse Live Kenya",      cat: "ENTERTAINMENT" },
   { url: "https://www.ghafla.com/ke/feed/",                               name: "Ghafla Kenya",          cat: "CELEBRITY" },
   { url: "https://www.sde.co.ke/feed/",                                   name: "SDE Kenya",             cat: "CELEBRITY" },
+  { url: "https://citizen.digital/feed",                                  name: "Citizen Digital",       cat: "NEWS" },
+  { url: "https://www.the-star.co.ke/authors/sasa/feed/",                 name: "The Star Sasa",         cat: "ENTERTAINMENT" },
+  { url: "https://www.the-star.co.ke/authors/sports/feed/",               name: "The Star Sports",       cat: "SPORTS" },
+  { url: "https://www.k24tv.co.ke/feed/",                                 name: "K24 TV",                cat: "NEWS" },
+  { url: "https://www.kbc.co.ke/feed/",                                   name: "KBC",                   cat: "NEWS" },
+  { url: "https://www.switchtv.ke/rss",                                   name: "Switch TV",             cat: "ENTERTAINMENT" },
+  { url: "https://www.standardmedia.co.ke/rss/sports",                    name: "Standard Sports",       cat: "SPORTS" },
+  { url: "https://www.goal.com/feeds/en/news",                            name: "Goal Football",         cat: "SPORTS" },
+  { url: "https://www.skysports.com/rss/12040",                           name: "Sky Sports Football",   cat: "SPORTS" },
+  { url: "https://www.citizen.digital/sports/feed",                       name: "Citizen Sports",        cat: "SPORTS" },
   // International entertainment RSS with video
   { url: "https://feeds.bbci.co.uk/news/entertainment_and_arts/rss.xml", name: "BBC Entertainment",     cat: "ENTERTAINMENT" },
   { url: "https://rss.cnn.com/rss/cnn_showbiz.rss",                      name: "CNN Showbiz",           cat: "ENTERTAINMENT" },
@@ -204,6 +214,16 @@ const NEWS_RSS_FEEDS = [
   { url: "https://www.tmz.com/rss.xml",                                   name: "TMZ",                   cat: "CELEBRITY" },
   { url: "https://pagesix.com/feed/",                                     name: "Page Six",              cat: "CELEBRITY" },
   { url: "https://www.etonline.com/news/rss",                             name: "ET Online",             cat: "CELEBRITY" },
+  { url: "https://feeds.skynews.com/feeds/rss/world.xml",                 name: "Sky News World",        cat: "NEWS" },
+  { url: "https://feeds.skynews.com/feeds/rss/uk.xml",                    name: "Sky News UK",           cat: "NEWS" },
+  { url: "https://feeds.nbcnews.com/nbcnews/public/entertainment",       name: "NBC Entertainment",     cat: "ENTERTAINMENT" },
+  { url: "https://www.aljazeera.com/xml/rss/all.xml",                     name: "Al Jazeera All",        cat: "NEWS" },
+  { url: "https://rss.nytimes.com/services/xml/rss/nyt/Movies.xml",      name: "NYT Movies",            cat: "TV & FILM" },
+  { url: "https://rss.nytimes.com/services/xml/rss/nyt/Arts.xml",        name: "NYT Arts",              cat: "ENTERTAINMENT" },
+  { url: "https://feeds.feedburner.com/uproxx/filmdrunk",                name: "Uproxx Film",           cat: "TV & FILM" },
+  { url: "https://www.hollywoodreporter.com/t/feed/",                     name: "Hollywood Reporter",    cat: "TV & FILM" },
+  { url: "https://www.espn.com/espn/rss/news",                            name: "ESPN News",             cat: "SPORTS" },
+  { url: "https://www.vice.com/en/rss?locale=en_us",                      name: "Vice",                  cat: "NEWS" },
 ];
 
 async function fetchNewsRSSWithVideo(feedUrl: string, sourceName: string, category: string): Promise<VideoItem[]> {
