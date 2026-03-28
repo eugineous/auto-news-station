@@ -308,24 +308,36 @@ async function triggerAutomate(env) {
   if (!secret) { console.warn("[auto-ppp-tv] AUTOMATE_SECRET not set"); return; }
 
   try {
-    // Alternate between video and image pipelines
-    // Video pipeline runs every 3rd cron tick for variety
+    // Every 15-min burst: fire image pipeline (always) + video pipeline (every 3rd run)
     const runCount = parseInt(await env.SEEN_ARTICLES.get("run-count") || "0");
     const nextCount = runCount + 1;
     await env.SEEN_ARTICLES.put("run-count", String(nextCount), { expirationTtl: 24 * 3600 });
 
-    const useVideoPipeline = nextCount % 3 === 0; // every 3rd run = video
-    const endpoint = useVideoPipeline ? "/api/automate-video" : "/api/automate";
+    const fireVideo = nextCount % 3 === 0; // video every 45 min
 
-    const res = await fetch(`${appUrl}${endpoint}`, {
+    // Always fire image pipeline (feed post + IG story + FB story)
+    const imagePromise = fetch(`${appUrl}/api/automate`, {
       method: "POST",
       headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json" },
       body: "{}",
       signal: AbortSignal.timeout(280000),
-    });
-    const data = await res.json();
-    console.log(`[auto-ppp-tv] ${endpoint} result: posted=${data.posted} errors=${data.errors?.length || 0}`);
-    if (data.errors?.length > 0) console.warn("[auto-ppp-tv] errors:", JSON.stringify(data.errors));
+    }).then(r => r.json()).then(d => {
+      console.log(`[burst] image: posted=${d.posted} errors=${d.errors?.length || 0}`);
+    }).catch(e => console.error("[burst] image failed:", e.message));
+
+    // Fire video pipeline every 3rd run (Reel from YouTube/Reddit/etc.)
+    const videoPromise = fireVideo
+      ? fetch(`${appUrl}/api/automate-video`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json" },
+          body: "{}",
+          signal: AbortSignal.timeout(280000),
+        }).then(r => r.json()).then(d => {
+          console.log(`[burst] video: posted=${d.posted}`);
+        }).catch(e => console.error("[burst] video failed:", e.message))
+      : Promise.resolve();
+
+    await Promise.all([imagePromise, videoPromise]);
   } catch (err) {
     console.error("[auto-ppp-tv] trigger failed:", err.message);
   }

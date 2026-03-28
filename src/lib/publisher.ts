@@ -154,3 +154,83 @@ export async function publish(
   ]);
   return { instagram, facebook };
 }
+
+// ── Story posting ─────────────────────────────────────────────────────────────
+// Stages image in R2 then posts as IG Story + FB Story
+export async function publishStories(
+  imageBuffer: Buffer,
+  workerUrl: string,
+  workerSecret: string
+): Promise<{ igStory: { success: boolean; error?: string }; fbStory: { success: boolean; error?: string } }> {
+  const igToken = process.env.INSTAGRAM_ACCESS_TOKEN;
+  const igAccountId = process.env.INSTAGRAM_ACCOUNT_ID;
+  const fbToken = process.env.FACEBOOK_ACCESS_TOKEN;
+  const fbPageId = process.env.FACEBOOK_PAGE_ID;
+
+  // Stage image in R2 so IG/FB can fetch it
+  let stagedUrl: string | null = null;
+  try {
+    const stageRes = await fetch(workerUrl + "/stage-image", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + workerSecret },
+      body: JSON.stringify({ imageBuffer: imageBuffer.toString("base64") }),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (stageRes.ok) {
+      const d = await stageRes.json() as any;
+      stagedUrl = d?.url || null;
+    }
+  } catch { /* non-fatal */ }
+
+  if (!stagedUrl) {
+    return { igStory: { success: false, error: "Image staging failed" }, fbStory: { success: false, error: "Image staging failed" } };
+  }
+
+  // Post IG Story
+  const igStory = await (async () => {
+    if (!igToken || !igAccountId) return { success: false, error: "IG credentials missing" };
+    try {
+      const createRes = await fetch(`${GRAPH_API}/${igAccountId}/media`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image_url: stagedUrl, media_type: "STORIES", access_token: igToken }),
+        signal: AbortSignal.timeout(30000),
+      });
+      const createData = await createRes.json() as any;
+      if (!createRes.ok || createData.error) throw new Error(createData.error?.message || "IG story container failed");
+      await sleep(3000);
+      const publishRes = await fetch(`${GRAPH_API}/${igAccountId}/media_publish`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ creation_id: createData.id, access_token: igToken }),
+        signal: AbortSignal.timeout(30000),
+      });
+      const publishData = await publishRes.json() as any;
+      if (!publishRes.ok || publishData.error) throw new Error(publishData.error?.message || "IG story publish failed");
+      return { success: true, storyId: publishData.id };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  })();
+
+  // Post FB Story
+  const fbStory = await (async () => {
+    if (!fbToken || !fbPageId) return { success: false, error: "FB credentials missing" };
+    try {
+      // FB Stories via photo_stories endpoint
+      const res = await fetch(`${GRAPH_API}/${fbPageId}/photo_stories`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: stagedUrl, access_token: fbToken }),
+        signal: AbortSignal.timeout(30000),
+      });
+      const data = await res.json() as any;
+      if (!res.ok || data.error) throw new Error(data.error?.message || "FB story failed");
+      return { success: true, storyId: data.post_id || data.id };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  })();
+
+  return { igStory, fbStory };
+}

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { fetchArticles } from "@/lib/scraper";
 import { generateAIContent } from "@/lib/gemini";
 import { generateImage } from "@/lib/image-gen";
-import { publish } from "@/lib/publisher";
+import { publish, publishStories } from "@/lib/publisher";
 import { Article, SchedulerResponse } from "@/lib/types";
 
 export const maxDuration = 300;
@@ -312,30 +312,12 @@ async function postOneArticle(article: Article, isBreaking: boolean): Promise<{ 
   const anySuccess = result.facebook.success || result.instagram.success;
 
   if (anySuccess) {
-    // Also post as Instagram Story every 3rd post (Stories bypass algorithm, reach ALL followers)
-    try {
-      const dailyCount = await getDailyCount();
-      if (dailyCount % 3 === 0) {
-        // Stage the thumbnail image for story
-        const stageRes = await fetch(WORKER_URL + "/stage-image", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },
-          body: JSON.stringify({ imageBuffer: imageBuffer.toString("base64") }),
-          signal: AbortSignal.timeout(15000),
-        }).catch(() => null);
-        if (stageRes?.ok) {
-          const stageData = await stageRes.json() as any;
-          if (stageData?.url) {
-            await fetch(WORKER_URL + "/post-story", {
-              method: "POST",
-              headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },
-              body: JSON.stringify({ imageUrl: stageData.url, caption }),
-              signal: AbortSignal.timeout(30000),
-            }).catch(() => {});
-          }
-        }
-      }
-    } catch { /* non-fatal — story is bonus reach */ }
+    // Post as IG Story + FB Story on EVERY run — stories bypass algorithm, reach ALL followers
+    publishStories(imageBuffer, WORKER_URL, WORKER_SECRET).then(stories => {
+      console.log(`[automate] IG story: ${stories.igStory.success ? "✓" : "✗ " + stories.igStory.error}`);
+      console.log(`[automate] FB story: ${stories.fbStory.success ? "✓" : "✗ " + stories.fbStory.error}`);
+    }).catch(() => {});
+
     await Promise.all([
       logPost({
         articleId: article.id, title: clickbaitTitle, url: article.url,
