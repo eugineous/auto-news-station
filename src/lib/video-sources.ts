@@ -5,6 +5,9 @@
  *          Vimeo RSS, public JSON feeds, and direct MP4 RSS feeds.
  */
 
+import rssParser from "rss-parser";
+import { BloomFilter } from "bloom-filters";
+
 export interface VideoItem {
   id: string;           // unique ID for dedup
   title: string;
@@ -19,6 +22,9 @@ export interface VideoItem {
 }
 
 const UA = "Mozilla/5.0 (compatible; PPPTVBot/2.0)";
+const BLOOM_FALSE_POSITIVE = 0.01;
+const BLOOM_CAPACITY = 1000;
+let bloom: BloomFilter | null = null;
 
 async function safeFetch(url: string, timeoutMs = 10000): Promise<string | null> {
   try {
@@ -423,6 +429,9 @@ async function fetchTikTokAccountVideos(account: TikTokAccount): Promise<VideoIt
 }
 
 export async function fetchAllVideoSources(): Promise<VideoItem[]> {
+  // Initialize bloom filter once per cold start
+  if (!bloom) bloom = new BloomFilter(BLOOM_CAPACITY, BLOOM_FALSE_POSITIVE);
+
   const allResults = await Promise.allSettled([
     // YouTube (10 channels)
     ...YOUTUBE_CHANNELS.map(ch => fetchYouTubeChannel(ch.id, ch.name, ch.cat)),
@@ -447,7 +456,9 @@ export async function fetchAllVideoSources(): Promise<VideoItem[]> {
   const seen = new Set<string>();
   const deduped = all.filter(v => {
     if (seen.has(v.id)) return false;
+    if (bloom && bloom.has(v.id)) return false;
     seen.add(v.id);
+    bloom?.add(v.id);
     return true;
   });
 

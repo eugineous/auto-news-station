@@ -17,19 +17,23 @@ interface FeedItem{slug:string;title:string;excerpt:string;category:string;sourc
 interface Preview{scraped:{type:string;title:string;description:string;imageUrl:string;sourceName:string;isVideo?:boolean;videoEmbedUrl?:string|null;videoUrl?:string|null};ai:{clickbaitTitle:string;caption:string};category:string;imageBase64:string;}
 interface Retry{loading:boolean;done?:boolean;error?:string}
 interface SourceStat{src:string;cat:string;ok:number;fail:number;total:number;}
+interface SourceToggle{src:string;enabled:boolean;}
 function ago(iso:string){const m=Math.floor((Date.now()-new Date(iso).getTime())/60000);if(m<1)return"just now";if(m<60)return m+"m ago";const h=Math.floor(m/60);if(h<24)return h+"h ago";return Math.floor(h/24)+"d ago";}
 function Spin(){return <span style={{display:"inline-block",width:13,height:13,border:"2px solid rgba(255,255,255,.2)",borderTopColor:"#fff",borderRadius:"50%",animation:"spin .7s linear infinite"}}/>;}
 function Pill({cat}:{cat:string}){const {bg,text}=cc(cat);return <span style={{background:bg,color:text,fontSize:9,fontWeight:800,padding:"2px 8px",borderRadius:20,letterSpacing:.5,textTransform:"uppercase",whiteSpace:"nowrap"}}>{cat}</span>;}
 
-function SourceHealth({stats}:{stats:SourceStat[]}) {
+function SourceHealth({stats,toggles,onToggle}:{stats:SourceStat[],toggles:Record<string,boolean>,onToggle:(src:string)=>void}) {
   return <div className="kpi-card" style={{flex:1,minWidth:280}}>
     <div style={{fontSize:11,color:"#666",marginBottom:6,letterSpacing:1,textTransform:"uppercase"}}>Source health</div>
     <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:180,overflowY:"auto",paddingRight:4}}>
       {stats.slice(0,12).map((r)=>{
         const {bg,text}=cc(r.cat);
         const rate=r.total?Math.round(r.ok/r.total*100):0;
+        const enabled = toggles[r.src] ?? true;
         return <div key={r.src} style={{display:"flex",alignItems:"center",gap:10}}>
-          <span style={{background:bg,color:text,fontSize:9,fontWeight:800,padding:"2px 6px",borderRadius:14,letterSpacing:.5,minWidth:68,textAlign:"center"}}>{r.cat}</span>
+          <button onClick={()=>onToggle(r.src)} style={{background:bg,color:text,fontSize:9,fontWeight:800,padding:"2px 6px",borderRadius:14,letterSpacing:.5,minWidth:68,textAlign:"center",border:"none",cursor:"pointer",opacity:enabled?1:0.4}}>
+            {enabled?"ON":"OFF"} · {r.cat}
+          </button>
           <div style={{flex:1,minWidth:0}}>
             <div style={{fontSize:12,color:"#ddd",fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{r.src}</div>
             <div style={{fontSize:10,color:"#555"}}>{r.ok}/{r.total} ok</div>
@@ -52,6 +56,7 @@ export default function Dashboard(){
   const [triggering,setTriggering]=useState(false);
   const [clearing,setClearing]=useState(false);
   const [sourceStats,setSourceStats]=useState<SourceStat[]>([]);
+  const [sourceToggles,setSourceToggles]=useState<Record<string,boolean>>({});
 
   const fetchPosts=useCallback(async()=>{
     try{const r=await fetch("/api/post-log");if(r.ok){const d=await r.json();setPosts(d.log||[]);}}
@@ -246,7 +251,7 @@ export default function Dashboard(){
 
           {/* ══ COCKPIT OVERVIEW ══ */}
           {section==="cockpit"&&<CockpitSection posts={sorted} loading={loading} nextIn={nextIn} todayCount={todayCount} igOkToday={igOkToday} fbOkToday={fbOkToday} failCount={failCount} successRate={successRate} retries={retries} onRetry={doRetry} onTrigger={triggerNow} triggering={triggering} onClear={clearCache} clearing={clearing} onPost={()=>{fetchPosts();showToast("Posted!","ok");}} onCompose={()=>setSection("compose")}/>}
-          {section==="feed"&&<FeedSection posts={posts} onPost={()=>{fetchPosts();showToast("Posted!","ok");}}/>}
+          {section==="feed"&&<FeedSection posts={posts} toggles={sourceToggles} onToggle={(src)=>setSourceToggles(s=>({...s,[src]:!(s[src]??true)}))} onPost={()=>{fetchPosts();showToast("Posted!","ok");}}/>}
           {section==="compose"&&<ComposeSection onSuccess={()=>{fetchPosts();setSection("cockpit");showToast("Posted!","ok");}}/>}
           {section==="failures"&&<FailuresSection posts={sorted} onRetry={doRetry} retries={retries}/>}
           {section==="analytics"&&<AnalyticsSection posts={sorted} nextIn={nextIn}/>}
@@ -487,8 +492,8 @@ function PostCard({p,onRetry,retries}:{p:Post;onRetry:(p:Post,pl:"instagram"|"fa
   </div>;
 }
 
-type FeedSectionProps={onPost:()=>void;posts:Post[]};
-function FeedSection({onPost,posts}:FeedSectionProps){
+type FeedSectionProps={onPost:()=>void;posts:Post[];toggles:Record<string,boolean>;onToggle:(src:string)=>void};
+function FeedSection({onPost,posts,toggles,onToggle}:FeedSectionProps){
   const [items,setItems]=useState<FeedItem[]>([]);
   const [loading,setLoading]=useState(true);
   const [posting,setPosting]=useState<string|null>(null);
@@ -520,13 +525,13 @@ function FeedSection({onPost,posts}:FeedSectionProps){
       <h2 style={{fontFamily:"Bebas Neue,sans-serif",fontSize:22,letterSpacing:1,marginBottom:4}}>Live Feed + Source Health</h2>
       <p style={{fontSize:12,color:"#444"}}>Monitor RSS/TikTok intake and post from the live feed.</p>
     </div>
-      <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:14}}>
+    <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:14}}>
         <div className="kpi-card" style={{minWidth:180}}>
           <div style={{fontSize:11,color:"#666",marginBottom:6,letterSpacing:1,textTransform:"uppercase"}}>Overall success</div>
           <div style={{fontSize:26,fontWeight:800,color:overallRate>=99?"#4ade80":"#fbbf24"}}>{overallRate}%</div>
           <div style={{fontSize:11,color:"#444"}}>{posts.length} total posts</div>
         </div>
-        <SourceHealth stats={statRows}/>
+        <SourceHealth stats={statRows} toggles={toggles} onToggle={onToggle}/>
       </div>
     <div style={{marginBottom:16}}><h3 style={{fontFamily:"Bebas Neue,sans-serif",fontSize:18,letterSpacing:1,marginBottom:4}}>Live Feed</h3><p style={{fontSize:12,color:"#444"}}>Latest articles from PPP TV — post any right now.</p></div>
     {loading?<div style={{color:"#333",padding:40,textAlign:"center"}}>Loading feed…</div>:!items.length?<div style={{color:"#333",padding:40,textAlign:"center"}}>No articles in feed</div>:
