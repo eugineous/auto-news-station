@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { scrapeUrl } from "@/lib/url-scraper";
 import { generateImage } from "@/lib/image-gen";
 import { resolveVideoUrl } from "@/lib/video-downloader";
+import { publishStories } from "@/lib/publisher";
 import { Article } from "@/lib/types";
 import { createHash } from "crypto";
 
@@ -240,6 +241,9 @@ export async function POST(req: NextRequest) {
 
     const anySuccess = igResult.success || fbResult.success;
     if (anySuccess) {
+      // Fire stories unconditionally — no limit
+      publishStories(imageBuffer, WORKER_URL, WORKER_SECRET).catch(() => {});
+
       await logPost({
         articleId: article.id, title: headline, url: article.url,
         category: article.category,

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { scrapeUrl } from "@/lib/url-scraper";
 import { generateAIContent } from "@/lib/gemini";
 import { generateImage } from "@/lib/image-gen";
-import { publish } from "@/lib/publisher";
+import { publish, publishStories } from "@/lib/publisher";
 import { Article } from "@/lib/types";
 import { createHash } from "crypto";
 
@@ -145,6 +145,9 @@ export async function POST(req: NextRequest) {
         postedAt: new Date().toISOString(),
         manualPost: true,
       });
+
+      // Fire stories on every successful post — no limit, stories bypass the algorithm
+      publishStories(imageBuffer, WORKER_URL, WORKER_SECRET).catch(() => {});
     }
 
     // Always return detailed per-platform results so the UI can show real errors

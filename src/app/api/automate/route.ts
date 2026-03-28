@@ -351,15 +351,15 @@ async function postOneArticle(article: Article, isBreaking: boolean): Promise<{ 
   const fbPost = { platform: "facebook" as const, caption, articleUrl: article.url, firstComment };
   const result = await publish({ ig: igPost, fb: fbPost }, imageBuffer);
 
+  // Always fire stories — no limit, no gate, stories bypass the feed algorithm
+  publishStories(imageBuffer, WORKER_URL, WORKER_SECRET).then(stories => {
+    console.log(`[automate] IG story: ${stories.igStory.success ? "✓" : "✗ " + stories.igStory.error}`);
+    console.log(`[automate] FB story: ${stories.fbStory.success ? "✓" : "✗ " + stories.fbStory.error}`);
+  }).catch(() => {});
+
   const anySuccess = result.facebook.success || result.instagram.success;
 
   if (anySuccess) {
-    // Post IG Story + FB Story on every run — stories bypass algorithm, reach ALL followers
-    publishStories(imageBuffer, WORKER_URL, WORKER_SECRET).then(stories => {
-      console.log(`[automate] IG story: ${stories.igStory.success ? "✓" : "✗ " + stories.igStory.error}`);
-      console.log(`[automate] FB story: ${stories.fbStory.success ? "✓" : "✗ " + stories.fbStory.error}`);
-    }).catch(() => {});
-
     // Self-comment warmup — post a follow-up comment 3-5 min after publishing
     // This drives early engagement signals that tell the algorithm the post is active
     if (result.instagram.success && result.instagram.postId) {
