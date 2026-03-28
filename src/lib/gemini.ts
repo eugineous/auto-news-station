@@ -57,7 +57,7 @@ async function generateTitleWithGemini(article: Article): Promise<string> {
 
   const client = getGeminiClient(apiKey);
   const prompt =
-    `Write an ALL CAPS thumbnail headline for this article. It will appear on a news image card.\n\n` +
+    `Write an ALL CAPS thumbnail headline for this article. It will appear on a news image card on Instagram and Facebook.\n\n` +
     `TITLE: ${article.title}\n` +
     `CATEGORY: ${article.category}\n` +
     `SUMMARY: ${(article.summary || "").slice(0, 300)}\n\n` +
@@ -65,10 +65,10 @@ async function generateTitleWithGemini(article: Article): Promise<string> {
     `- ALL CAPS only — this is a visual headline on an image\n` +
     `- Max 10 words — shorter is better\n` +
     `- Must be grounded in a real fact from the article (name, number, place, or event)\n` +
-    `- Write it like a front-page newspaper headline — specific, urgent, impossible to ignore\n` +
-    `- Use a curiosity gap or surprising angle when possible\n` +
+    `- Write it like a front-page newspaper headline — specific, factual, direct\n` +
+    `- NO clickbait, NO "SHOCKING", NO "UNBELIEVABLE", NO "YOU WON'T BELIEVE"\n` +
     `- NO emojis, no hashtags, no quotes\n` +
-    `- Do NOT use generic filler: "SHOCKING", "UNBELIEVABLE", "YOU WON'T BELIEVE"\n` +
+    `- Think AP wire headline style — who did what\n` +
     `- Reply with ONLY the headline, nothing else`;
 
   const response = await client.models.generateContent({
@@ -81,36 +81,36 @@ async function generateTitleWithGemini(article: Article): Promise<string> {
 }
 
 // ── Caption system prompt (for NVIDIA) ───────────────────────────────────────
-const CAPTION_SYSTEM = `You are the lead social media writer at PPP TV Kenya — one of Kenya's most-followed entertainment and news pages on Instagram and Facebook, targeting 1 million weekly reach.
+const CAPTION_SYSTEM = `You are the senior news writer at PPP TV Kenya — a verified Kenyan entertainment and news media brand on Instagram and Facebook.
 
-Your captions are studied by other pages. They drive massive shares, saves, and comments because they use proven psychological triggers: curiosity gaps, social proof, FOMO, open loops, and specificity.
+Your captions are written in the style of a professional journalist. They are factual, specific, and compelling without being sensational. Meta's algorithm rewards news pages that write like real journalists and penalizes clickbait.
 
 STRUCTURE (3 parts, blank line between each):
 
-1. HOOK — One sentence that opens a curiosity gap. The reader must feel they are missing something important if they don't read on. Use a surprising fact, a contradiction, a number that shocks, or a "you didn't know this" angle. NEVER start with the person's name or the headline. No emojis here.
+1. LEDE — One sentence stating the most important fact: WHO did WHAT, WHERE, WHEN. Use a real name. Lead with the most newsworthy element. No emojis. No ALL CAPS.
 
-2. BODY — 2-4 sentences of real, specific detail. Names, exact numbers, places, dates, direct quotes. Build tension or stakes. Reveal enough to make the story feel real — but withhold the most satisfying detail so they must click.
+2. BODY — 2-4 sentences of verified detail. Include names, exact figures, locations, dates, direct quotes where available. Give the reader enough context to understand the story fully. Write like AP or Reuters style — factual, tight, no filler.
 
-3. CTA — One short punchy line. Rotate between: "Full story in the link." / "Details below 👇" / "What do you think about this?" / "Tag someone who needs to see this." / "Share this before it gets taken down."
+3. CLOSE — One sentence that either: (a) states what happens next, (b) gives the reader's stake in the story, or (c) asks a genuine question about the story's implications. End with the source link.
 
-RULES:
-- NEVER start with the article title or headline
-- NEVER use ALL CAPS anywhere in the caption
-- NEVER use emojis in the first line
-- No hashtags
-- Max 1 emoji total (only in CTA if needed)
-- No filler phrases: "the internet is buzzing", "you won't believe", "stay tuned", "here's everything you need to know"
-- Every sentence must contain at least one specific fact (name, number, place, date, or quote)
-- Write like a journalist who also understands virality — factual but impossible to ignore
-- Under 180 words total`;
+RULES — CRITICAL FOR ACCOUNT SAFETY:
+- NEVER use: "you won't believe", "shocking", "breaking", "must see", "find out more", "stay tuned", "the internet is buzzing", "here's everything"
+- NEVER withhold information to create artificial curiosity — Meta penalizes this
+- NEVER use ALL CAPS anywhere in the caption body
+- No hashtags in caption (post them as first comment instead)
+- Max 1 emoji total, only in the close
+- Every sentence must contain at least one verifiable fact
+- Always credit the source: "Source: [publication name]"
+- Write like a journalist, not a marketer
+- Under 200 words total`;
 
 // ── Curiosity hook patterns (injected into prompt for variety) ────────────────
 const HOOK_PATTERNS = [
-  "Start with a number or statistic that surprises (e.g. 'Ksh 4.8 billion left Kenya last month — and most people have no idea where it went.')",
-  "Start with a contradiction or unexpected twist (e.g. 'She was supposed to be celebrating. Instead, she was fired.')",
-  "Start with a consequence before the cause (e.g. 'Three people lost their jobs over a single WhatsApp message.')",
-  "Start with a question that implies the reader is missing something (e.g. 'Did you know this has been happening since January?')",
-  "Start with a specific detail that makes the story feel real and urgent (e.g. 'At exactly 11:47am on Tuesday, everything changed for this Nairobi family.')",
+  "Lead with the most surprising verifiable fact in the story — a specific number, name, or outcome that makes the reader want to know more.",
+  "Lead with the consequence or outcome first, then explain the cause — this creates narrative tension without withholding facts.",
+  "Lead with a direct quote from a key person in the story if one is available.",
+  "Lead with the most specific detail — an exact time, place, or figure that makes the story feel immediate and real.",
+  "Lead with what changed — what is different today compared to yesterday because of this story.",
 ];
 
 // ── Kenya hashtag bank — by category ─────────────────────────────────────────
@@ -128,17 +128,17 @@ const HASHTAG_BANK: Record<string, string[]> = {
   GENERAL:       ["#Kenya", "#Nairobi", "#PPPTVKenya", "#KenyaNews", "#NairobiLife", "#EastAfrica", "#KenyaToday"],
 };
 
-// ── Engagement CTA rotation — proven high-engagement patterns ─────────────────
-// Based on what drives comments/shares on Kenyan social media
+// ── Engagement CTAs — journalist style, no clickbait ─────────────────────────
+// Meta penalizes "curiosity gap" CTAs. These are factual and conversational.
 const ENGAGEMENT_CTAS = [
-  { cta: "Tag someone who needs to see this.", type: "tag" as const },
-  { cta: "What do you think? Drop your thoughts below.", type: "debate" as const },
-  { cta: "Save this — you'll want to come back to it.", type: "save" as const },
-  { cta: "Share this with someone who follows this story.", type: "share" as const },
-  { cta: "Do you agree or disagree? Comment below.", type: "debate" as const },
-  { cta: "Tag a friend who needs to know this.", type: "tag" as const },
-  { cta: "Who saw this coming? Comment below.", type: "debate" as const },
-  { cta: "Share this — not everyone has seen it yet.", type: "share" as const },
+  { cta: "What are your thoughts on this?", type: "debate" as const },
+  { cta: "Share this with someone following this story.", type: "share" as const },
+  { cta: "Tag someone who should know about this.", type: "tag" as const },
+  { cta: "Save this for later.", type: "save" as const },
+  { cta: "Do you agree with this decision?", type: "debate" as const },
+  { cta: "What do you think happens next?", type: "debate" as const },
+  { cta: "Pass this on to someone who needs to see it.", type: "share" as const },
+  { cta: "Let us know your take in the comments.", type: "debate" as const },
 ];
 
 function getHashtags(category: string): string {
@@ -165,14 +165,14 @@ export async function generateAIContent(
   const hookPattern = HOOK_PATTERNS[Math.floor(Math.random() * HOOK_PATTERNS.length)];
 
   const captionPrompt =
-    `Write a PPP TV Kenya social media caption for this article. Target: maximum shares, saves, and comments from a Kenyan audience.\n\n` +
+    `Write a PPP TV Kenya news caption for this article. Write like a professional journalist — factual, specific, no clickbait.\n\n` +
     `TITLE: ${article.title}\n` +
     `CATEGORY: ${article.category}\n` +
-    `SOURCE: ${article.sourceName || "unknown"}\n` +
+    `SOURCE: ${article.sourceName || "PPP TV Kenya"}\n` +
     (content ? `ARTICLE:\n${content}\n\n` : "\n") +
-    `HOOK TECHNIQUE TO USE: ${hookPattern}\n\n` +
-    `Write the caption following the system instructions exactly.\n` +
-    `Use ONLY facts from the article. No fabrication. No hashtags.\n` +
+    `LEDE APPROACH: ${hookPattern}\n\n` +
+    `Follow the system instructions exactly. No clickbait. No curiosity gaps. No withholding facts.\n` +
+    `End with: "Source: ${article.sourceName || "PPP TV Kenya"}"\n` +
     `Reply with ONLY the caption text — no labels, no "Caption:", no preamble.`;
 
   // Run title (Gemini) and caption (NVIDIA) in parallel

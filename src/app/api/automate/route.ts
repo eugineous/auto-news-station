@@ -64,13 +64,26 @@ function hasMinimumContent(a: Article): boolean {
   return true;
 }
 
-// ── Best-time scheduler — EAT peak hours only ────────────────────────────────
-// Peak Kenyan scroll times: 7-9am, 12-2pm, 6-8pm, 9-10pm EAT (UTC+3)
+// ── Best-time scheduler — EAT peak hours with weighted probability ────────────
+// Peak Kenyan scroll times: 7-9am, 12-2pm, 6-9pm EAT (UTC+3)
+// Returns true during peak hours, probabilistic during off-peak
 function isPostingHour(): boolean {
   const hourEAT = (new Date().getUTCHours() + 3) % 24;
-  // Post from 6am to 11pm EAT — covers all waking hours
-  // Skips midnight to 6am only (dead zone)
-  return hourEAT >= 6 && hourEAT < 23;
+  // Dead zone: midnight to 5am — never post
+  if (hourEAT >= 0 && hourEAT < 5) return false;
+  // Peak hours: always post
+  if ((hourEAT >= 7 && hourEAT <= 9) ||
+      (hourEAT >= 12 && hourEAT <= 14) ||
+      (hourEAT >= 18 && hourEAT <= 21)) return true;
+  // Off-peak waking hours: post 60% of the time (human-like irregularity)
+  return Math.random() < 0.6;
+}
+
+// ── Random jitter — makes posting pattern look human, not robotic ─────────────
+// Returns true if we should skip this run (adds natural irregularity)
+function shouldSkipForJitter(): boolean {
+  // Skip ~20% of runs randomly — humans don't post at perfectly regular intervals
+  return Math.random() < 0.20;
 }
 
 // ── Daily post cap — max 6 posts per day ─────────────────────────────────────
@@ -312,11 +325,35 @@ async function postOneArticle(article: Article, isBreaking: boolean): Promise<{ 
   const anySuccess = result.facebook.success || result.instagram.success;
 
   if (anySuccess) {
-    // Post as IG Story + FB Story on EVERY run — stories bypass algorithm, reach ALL followers
+    // Post IG Story + FB Story on every run — stories bypass algorithm, reach ALL followers
     publishStories(imageBuffer, WORKER_URL, WORKER_SECRET).then(stories => {
       console.log(`[automate] IG story: ${stories.igStory.success ? "✓" : "✗ " + stories.igStory.error}`);
       console.log(`[automate] FB story: ${stories.fbStory.success ? "✓" : "✗ " + stories.fbStory.error}`);
     }).catch(() => {});
+
+    // Self-comment warmup — post a follow-up comment 3-5 min after publishing
+    // This drives early engagement signals that tell the algorithm the post is active
+    if (result.instagram.success && result.instagram.postId) {
+      const igToken = process.env.INSTAGRAM_ACCESS_TOKEN;
+      if (igToken) {
+        const warmupDelay = (3 + Math.random() * 2) * 60 * 1000; // 3-5 min
+        setTimeout(async () => {
+          const warmupComments = [
+            `Full story: ${article.url}`,
+            `Read the full report at the link in our bio.`,
+            `More details at the link in bio. Follow @ppptvke for updates.`,
+            `Source: ${article.sourceName || "PPP TV Kenya"} | Full story in bio link.`,
+          ];
+          const comment = warmupComments[Math.floor(Math.random() * warmupComments.length)];
+          await fetch(`https://graph.facebook.com/v19.0/${result.instagram.postId}/comments`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ message: comment, access_token: igToken }),
+            signal: AbortSignal.timeout(10000),
+          }).catch(() => {});
+        }, warmupDelay);
+      }
+    }
 
     await Promise.all([
       logPost({
@@ -344,6 +381,22 @@ export async function POST(req: NextRequest) {
   }
 
   const response: SchedulerResponse = { posted: 0, skipped: 0, errors: [] };
+
+  // ── Peak hour check ───────────────────────────────────────────────────────
+  if (!isPostingHour()) {
+    return NextResponse.json({ ...response, message: "Off-peak hours — skipping" });
+  }
+
+  // ── Random jitter — makes pattern look human, not robotic ─────────────────
+  if (shouldSkipForJitter()) {
+    return NextResponse.json({ ...response, message: "Jitter skip — maintaining human-like irregularity" });
+  }
+
+  // ── Daily cap — hard limit at 20 feed posts/day (safe under Meta's 25 limit) ─
+  const dailyCount = await getDailyCount();
+  if (dailyCount >= 20) {
+    return NextResponse.json({ ...response, message: "Daily cap reached (20 posts/day) — protecting account health" });
+  }
 
   // ── Distributed lock — prevent concurrent runs from double-posting ────────
   const lockAcquired = await acquireLock();

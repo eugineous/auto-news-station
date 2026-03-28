@@ -448,45 +448,45 @@ async function runPipeline(env) {
 
 // ── AI CAPTION ────────────────────────────────────────────────────────────────
 const HOOK_PATTERNS = [
-  "Start with a number or statistic that surprises (e.g. 'Ksh 4.8 billion left Kenya last month — and most people have no idea where it went.')",
-  "Start with a consequence before the cause (e.g. 'Three people lost their jobs over a single WhatsApp message.')",
-  "Start with a contradiction or unexpected twist (e.g. 'She was supposed to be celebrating. Instead, she was fired.')",
-  "Start with a specific detail that makes the story feel real and urgent (e.g. 'At exactly 11:47am on Tuesday, everything changed for this Nairobi family.')",
-  "Start with a question that implies the reader is missing something important (e.g. 'Did you know this has been happening since January?')",
+  "Lead with the most newsworthy verifiable fact — a specific number, name, or outcome.",
+  "Lead with the consequence or outcome first, then explain the cause.",
+  "Lead with a direct quote from a key person in the story if available.",
+  "Lead with the most specific detail — an exact time, place, or figure.",
+  "Lead with what changed — what is different today because of this story.",
 ];
 
-// Engagement CTAs — rotate to drive different types of interaction
+// Engagement CTAs — journalist style, no clickbait (Meta penalizes clickbait CTAs)
 const ENGAGEMENT_CTAS_WORKER = [
-  "Tag someone who needs to see this.",
-  "What do you think? Drop your thoughts below.",
-  "Save this — you'll want to come back to it.",
-  "Do you agree or disagree? Comment below.",
-  "Tag a friend who needs to know this.",
-  "Who saw this coming? Comment below.",
-  "Share this — not everyone has seen it yet.",
+  "What are your thoughts on this?",
+  "Share this with someone following this story.",
+  "Tag someone who should know about this.",
+  "Do you agree with this decision?",
+  "What do you think happens next?",
+  "Let us know your take in the comments.",
+  "Pass this on to someone who needs to see it.",
+  "Save this for later.",
 ];
 
-const CAPTION_SYSTEM_PROMPT = `You are the lead social media writer at PPP TV Kenya — one of Kenya's most-followed entertainment and news pages, targeting 1 million weekly reach.
+const CAPTION_SYSTEM_PROMPT = `You are the senior news writer at PPP TV Kenya — a verified Kenyan entertainment and news media brand.
 
-Your captions drive massive shares, saves, and comments using proven psychological triggers: curiosity gaps, FOMO, open loops, and specificity.
+Write captions like a professional journalist. Factual, specific, no clickbait. Meta penalizes clickbait and rewards news-style writing.
 
 STRUCTURE (3 parts, blank line between each):
 
-1. HOOK — One sentence that opens a curiosity gap. The reader must feel they are missing something important if they don't read on. NEVER start with the person's name or the headline. No emojis in this line.
+1. LEDE — One sentence: WHO did WHAT, WHERE, WHEN. Lead with the most newsworthy fact. No emojis. No ALL CAPS.
 
-2. BODY — 2-4 sentences of real, specific detail. Names, exact numbers, places, dates, direct quotes. Build tension. Reveal enough to make the story feel real — but withhold the most satisfying detail so they must click.
+2. BODY — 2-4 sentences of verified detail. Names, exact figures, locations, dates, direct quotes. AP/Reuters style — tight and factual.
 
-3. CTA — One short punchy line. Rotate between: "Full story in the link." / "Details below 👇" / "What do you think about this?" / "Tag someone who needs to see this."
+3. CLOSE — What happens next, or the reader's stake in the story. End with source credit.
 
 RULES:
-- NEVER start with the article title or headline
-- NEVER use ALL CAPS anywhere
-- NEVER use emojis in the first line
+- NEVER use: "shocking", "you won't believe", "breaking", "must see", "find out more", "stay tuned", "the internet is buzzing"
+- NEVER withhold facts to create artificial curiosity — Meta penalizes this
+- No ALL CAPS in body
 - No hashtags
-- Max 1 emoji total (CTA only)
-- No filler: "the internet is buzzing", "you won't believe", "stay tuned"
-- Every sentence must contain at least one specific fact
-- Under 180 words total`;
+- Max 1 emoji total
+- Always end with: "Source: [publication name]"
+- Under 200 words`;
 
 async function generateCaption(article, env) {
   const content = (article.excerpt || article.content || "").slice(0, 1500);
@@ -502,11 +502,11 @@ CATEGORY: ${article.category || "GENERAL"}
 SOURCE: ${article.sourceName || "PPP TV Kenya"}
 ${content ? `ARTICLE:\n${content}` : ""}
 
-HOOK TECHNIQUE TO USE: ${hookPattern}
+LEDE APPROACH: ${hookPattern}
 END WITH THIS CTA: ${engagementCTA}
+ALWAYS END WITH: "Source: ${article.sourceName || "PPP TV Kenya"}"
 
-Write the caption following the instructions above. Use ONLY facts from the article. No fabrication. No hashtags.
-End the caption with the CTA above.
+Write the caption following the instructions above. Factual, no clickbait, journalist style.
 Reply with ONLY the caption text — no labels, no preamble.`;
 
   // Try Gemini first
