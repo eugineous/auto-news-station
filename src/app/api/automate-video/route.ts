@@ -218,12 +218,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ posted: 0, error: "Video staging failed", source: target.sourceName });
   }
 
-  // Build article for AI
+  // Build article for AI (proxy thumbnail through worker to avoid CORS/blocked fetches)
+  const thumbRaw = target.thumbnail || "";
+  const thumbUrl = thumbRaw ? `${WORKER_URL}/img?url=${encodeURIComponent(thumbRaw)}` : "";
   const article: Article = {
     id: createHash("sha256").update(target.id).digest("hex").slice(0, 16),
     title: target.title,
     url: target.url,
-    imageUrl: target.thumbnail,
+    imageUrl: thumbUrl,
     summary: target.title,
     fullBody: target.title,
     sourceName: target.sourceName,

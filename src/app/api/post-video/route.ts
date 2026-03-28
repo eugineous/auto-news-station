@@ -91,7 +91,8 @@ export async function POST(req: NextRequest) {
 
   try {
     const scraped = await scrapeUrl(url);
-    const thumbnailUrl = scraped.videoThumbnailUrl || scraped.imageUrl || "";
+    const thumbRaw = scraped.videoThumbnailUrl || scraped.imageUrl || "";
+    const thumbnailUrl = thumbRaw ? `${WORKER_URL}/img?url=${encodeURIComponent(thumbRaw)}` : "";
 
     const article: Article = {
       id: createHash("sha256").update(url).digest("hex").slice(0, 16),
