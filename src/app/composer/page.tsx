@@ -216,7 +216,7 @@ function ComposeTab({ initialUrl, onSuccess }: { initialUrl?: string; onSuccess:
         setResolvedVideoUrl(videoUrl);
       }
       setStatus("posting");
-      const r = await fetch("/api/post-video", { ...FETCH_OPTS, method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: videoUrl, headline: headline.trim(), caption: caption.trim() + `\n\nSource: ${url.trim()}`, category }) });
+      const r = await fetch("/api/post-video", { ...FETCH_OPTS, method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: url.trim(), headline: headline.trim(), caption: caption.trim() + `\n\nSource: ${url.trim()}`, category }) });
       const d = await r.json() as any;
       setResult(d);
       setStatus(d.instagram?.success || d.facebook?.success ? "success" : "error");
@@ -329,11 +329,7 @@ function SourcesTab({ onCompose }: { onCompose: (url: string) => void }) {
   async function quickPost(video: any) {
     setPosting(video.id);
     try {
-      const resolveRes = await fetch("/api/resolve-video", { ...FETCH_OPTS, method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: video.directVideoUrl || video.url }) });
-      const resolved = await resolveRes.json() as any;
-      if (!resolved.success || !resolved.videoUrl) throw new Error(resolved.error || "Could not resolve");
-
-      const r = await fetch("/api/post-video", { ...FETCH_OPTS, method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: resolved.videoUrl, headline: video.title.toUpperCase().slice(0, 100), caption: `${video.title}\n\nCredit: ${video.sourceName} | ${video.url}`, category: video.category || "GENERAL" }) });
+      const r = await fetch("/api/post-video", { ...FETCH_OPTS, method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: video.directVideoUrl || video.url, headline: video.title.toUpperCase().slice(0, 100), caption: `${video.title}\n\nCredit: ${video.sourceName} | ${video.url}`, category: video.category || "GENERAL" }) });
       const d = await r.json() as any;
       setPostResults(prev => ({ ...prev, [video.id]: { ig: !!d.instagram?.success, fb: !!d.facebook?.success, err: d.error } }));
     } catch (e: any) {

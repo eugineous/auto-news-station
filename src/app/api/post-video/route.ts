@@ -40,25 +40,73 @@ async function logPost(entry: object): Promise<void> {
 }
 
 /**
- * Resolve the source URL to a direct MP4, then upload it to R2 via the
- * Cloudflare Worker. No ffmpeg — no binary dependency, no ENOENT.
+ * Resolve the source URL to a direct MP4, download it, and upload to R2.
+ * No ffmpeg — no binary dependency, no ENOENT.
  */
 async function stageVideo(sourceUrl: string): Promise<{ url: string; key: string }> {
   // 1. Resolve platform URL → direct MP4
   const resolved = await resolveVideoUrl(sourceUrl).catch(() => null);
   const fetchUrl = resolved?.url || sourceUrl;
 
-  // 2. Stream video bytes
-  const resp = await fetch(fetchUrl, {
-    headers: { "User-Agent": "Mozilla/5.0 (compatible; PPPTVBot/1.0)" },
-    signal: AbortSignal.timeout(120000),
-  });
-  if (!resp.ok) throw new Error(`Video download failed: ${resp.status} ${resp.statusText}`);
+  console.log(`[stage] resolved: ${fetchUrl.slice(0, 80)}`);
 
-  const videoBytes = new Uint8Array(await resp.arrayBuffer());
-  if (videoBytes.length === 0) throw new Error("Downloaded video is empty");
+  // 2. Download video bytes — retry once on failure
+  let videoBytes: Uint8Array | null = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const resp = await fetch(fetchUrl, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+          "Referer": "https://www.tiktok.com/",
+          "Accept": "video/mp4,video/*,*/*",
+        },
+        signal: AbortSignal.timeout(120000),
+      });
+      if (!resp.ok) throw new Error(`Download failed: ${resp.status} ${resp.statusText}`);
 
-  // 3. Upload to R2 via worker (base64 encoded)
+      const contentType = resp.headers.get("content-type") || "";
+      const bytes = new Uint8Array(await resp.arrayBuffer());
+
+      // Reject if we got HTML (error page) instead of video
+      if (contentType.includes("text/html") || (bytes.length > 4 && bytes[0] === 0x3c)) {
+        throw new Error("Got HTML instead of video — URL may have expired");
+      }
+      if (bytes.length < 1000) {
+        throw new Error(`Downloaded file too small (${bytes.length} bytes) — likely not a valid video`);
+      }
+
+      videoBytes = bytes;
+      break;
+    } catch (err: any) {
+      if (attempt === 1) throw err;
+      // On first failure, re-resolve and retry
+      console.warn(`[stage] download attempt ${attempt + 1} failed: ${err.message} — re-resolving`);
+      const retry = await resolveVideoUrl(sourceUrl).catch(() => null);
+      if (retry?.url && retry.url !== fetchUrl) {
+        // fetchUrl is const so we just use retry.url directly on next iteration
+        const retryResp = await fetch(retry.url, {
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Referer": "https://www.tiktok.com/",
+            "Accept": "video/mp4,video/*,*/*",
+          },
+          signal: AbortSignal.timeout(120000),
+        });
+        if (!retryResp.ok) throw new Error(`Retry download failed: ${retryResp.status}`);
+        const retryBytes = new Uint8Array(await retryResp.arrayBuffer());
+        if (retryBytes.length < 1000) throw new Error("Retry video too small");
+        videoBytes = retryBytes;
+        break;
+      }
+      throw err;
+    }
+  }
+
+  if (!videoBytes) throw new Error("Could not download video");
+
+  console.log(`[stage] downloaded ${(videoBytes.length / 1024 / 1024).toFixed(1)} MB`);
+
+  // 3. Upload to R2 via worker
   const res = await fetch(WORKER_URL + "/stage-video-upload", {
     method: "POST",
     headers: {
@@ -74,6 +122,7 @@ async function stageVideo(sourceUrl: string): Promise<{ url: string; key: string
 
   const data = await res.json() as any;
   if (!res.ok || !data.success) throw new Error(data.error ?? `Stage failed: HTTP ${res.status}`);
+  console.log(`[stage] staged to R2: ${data.url}`);
   return { url: data.url, key: data.key };
 }
 
@@ -230,13 +279,15 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Cleanup staged video (fire and forget)
+    // Cleanup staged video — wait 10 min before deleting so IG/FB can finish fetching
     if (stagedKey) {
-      fetch(WORKER_URL + "/delete-video", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },
-        body: JSON.stringify({ key: stagedKey }),
-      }).catch(() => {});
+      setTimeout(() => {
+        fetch(WORKER_URL + "/delete-video", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },
+          body: JSON.stringify({ key: stagedKey }),
+        }).catch(() => {});
+      }, 10 * 60 * 1000);
     }
 
     const anySuccess = igResult.success || fbResult.success;
