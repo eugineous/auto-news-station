@@ -36,7 +36,7 @@ export default {
     if (event.cron === "0 3 * * *") {
       ctx.waitUntil(cleanupOldLogs(env));
     } else {
-      ctx.waitUntil(triggerAutomate(env));
+      ctx.waitUntil(triggerAutomateWithLock(env));
     }
   },
 
@@ -49,7 +49,7 @@ export default {
 
     // Open trigger — no auth required for manual testing
     if (url.pathname === "/trigger") {
-      triggerAutomate(env).catch(e => console.error("[trigger]", e.message));
+      triggerAutomateWithLock(env).catch(e => console.error("[trigger]", e.message));
       return json({ status: "triggered" });
     }
 
@@ -165,9 +165,141 @@ export default {
       return json({ cleared: list.keys.length });
     }
 
+    // ── /lock/acquire ─────────────────────────────────────────────────────────
+    if (url.pathname === "/lock/acquire" && request.method === "POST") {
+      if (!authed) return new Response("Unauthorized", { status: 401 });
+      try {
+        const { key, ttl = 270 } = await request.json();
+        const existing = await env.SEEN_ARTICLES.get(key);
+        if (existing) return json({ acquired: false });
+        await env.SEEN_ARTICLES.put(key, String(Date.now()), { expirationTtl: ttl });
+        return json({ acquired: true });
+      } catch (err) { return json({ error: err.message }, 500); }
+    }
+
+    // ── /lock/release ─────────────────────────────────────────────────────────
+    if (url.pathname === "/lock/release" && request.method === "POST") {
+      if (!authed) return new Response("Unauthorized", { status: 401 });
+      try {
+        const { key } = await request.json();
+        await env.SEEN_ARTICLES.delete(key);
+        return json({ ok: true });
+      } catch (err) { return json({ error: err.message }, 500); }
+    }
+
+    // ── /stage-video ──────────────────────────────────────────────────────────
+    // Downloads a video URL and stages it in R2, returns public URL
+    if (url.pathname === "/stage-video" && request.method === "POST") {
+      if (!authed) return new Response("Unauthorized", { status: 401 });
+      try {
+        const { videoUrl } = await request.json();
+        if (!videoUrl) return json({ error: "videoUrl required" }, 400);
+
+        const res = await fetch(videoUrl, {
+          headers: { "User-Agent": "Mozilla/5.0 (compatible; PPPTVBot/1.0)" },
+          signal: AbortSignal.timeout(120000),
+        });
+        if (!res.ok) return json({ error: `Video fetch failed: ${res.status}` }, 500);
+
+        const buf = await res.arrayBuffer();
+        const contentType = res.headers.get("content-type") || "video/mp4";
+        const r2Key = `videos/${Date.now()}-staged.mp4`;
+        await env.VIDEOS.put(r2Key, buf, {
+          httpMetadata: { contentType },
+          customMetadata: { uploadedAt: String(Date.now()) },
+        });
+        const publicUrl = `https://pub-8244b5f99b024cda91b74e1131378a14.r2.dev/${r2Key}`;
+        return json({ success: true, url: publicUrl, key: r2Key });
+      } catch (err) { return json({ error: err.message }, 500); }
+    }
+
+    // ── /delete-video ─────────────────────────────────────────────────────────
+    if (url.pathname === "/delete-video" && request.method === "POST") {
+      if (!authed) return new Response("Unauthorized", { status: 401 });
+      try {
+        const { key } = await request.json();
+        if (key) await env.VIDEOS.delete(key);
+        return json({ ok: true });
+      } catch (err) { return json({ error: err.message }, 500); }
+    }
+
+    // ── /stage-image ──────────────────────────────────────────────────────────
+    // Accepts base64 image, stores in R2, returns public URL
+    if (url.pathname === "/stage-image" && request.method === "POST") {
+      if (!authed) return new Response("Unauthorized", { status: 401 });
+      try {
+        const { imageBuffer } = await request.json();
+        if (!imageBuffer) return json({ error: "imageBuffer required" }, 400);
+        const buf = Uint8Array.from(atob(imageBuffer), c => c.charCodeAt(0));
+        const r2Key = `staged/${Date.now()}-story.jpg`;
+        await env.VIDEOS.put(r2Key, buf, { httpMetadata: { contentType: "image/jpeg" } });
+        return json({ success: true, url: `https://pub-8244b5f99b024cda91b74e1131378a14.r2.dev/${r2Key}` });
+      } catch (err) { return json({ error: err.message }, 500); }
+    }
+
+    // ── /post-story ───────────────────────────────────────────────────────────
+    // Posts an image as an Instagram Story (shown to ALL followers, bypasses algorithm)
+    if (url.pathname === "/post-story" && request.method === "POST") {
+      if (!authed) return new Response("Unauthorized", { status: 401 });
+      try {
+        const { imageUrl, caption } = await request.json();
+        const token = env.INSTAGRAM_ACCESS_TOKEN;
+        const accountId = env.INSTAGRAM_ACCOUNT_ID;
+        if (!token || !accountId) return json({ error: "Missing IG credentials" }, 400);
+
+        // Create story container
+        const createRes = await fetch(`https://graph.facebook.com/v19.0/${accountId}/media`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            image_url: imageUrl,
+            media_type: "STORIES",
+            access_token: token,
+          }),
+          signal: AbortSignal.timeout(30000),
+        });
+        const createData = await createRes.json();
+        if (!createRes.ok || createData.error) return json({ error: createData.error?.message || "Story container failed" }, 500);
+
+        await sleep(3000);
+
+        // Publish story
+        const publishRes = await fetch(`https://graph.facebook.com/v19.0/${accountId}/media_publish`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ creation_id: createData.id, access_token: token }),
+          signal: AbortSignal.timeout(30000),
+        });
+        const publishData = await publishRes.json();
+        if (!publishRes.ok || publishData.error) return json({ error: publishData.error?.message || "Story publish failed" }, 500);
+
+        return json({ success: true, storyId: publishData.id });
+      } catch (err) { return json({ error: err.message }, 500); }
+    }
+
     return new Response("Not found", { status: 404 });
   },
 };
+
+// ── Distributed lock — prevents concurrent cron runs from double-posting ─────
+const LOCK_KEY = "pipeline:lock";
+const LOCK_TTL = 270; // 4.5 minutes — safely under the 10-min cron interval
+
+async function triggerAutomateWithLock(env) {
+  // Try to acquire lock: only proceed if key doesn't exist
+  const existing = await env.SEEN_ARTICLES.get(LOCK_KEY);
+  if (existing) {
+    console.log("[lock] Another run is in progress — skipping this cron tick");
+    return;
+  }
+  // Set lock with TTL so it auto-releases even if the run crashes
+  await env.SEEN_ARTICLES.put(LOCK_KEY, String(Date.now()), { expirationTtl: LOCK_TTL });
+  try {
+    await triggerAutomate(env);
+  } finally {
+    await env.SEEN_ARTICLES.delete(LOCK_KEY).catch(() => {});
+  }
+}
 
 // ── Trigger Next.js automate endpoint (Vercel handles the full pipeline) ──────
 async function triggerAutomate(env) {
@@ -176,14 +308,23 @@ async function triggerAutomate(env) {
   if (!secret) { console.warn("[auto-ppp-tv] AUTOMATE_SECRET not set"); return; }
 
   try {
-    const res = await fetch(`${appUrl}/api/automate`, {
+    // Alternate between video and image pipelines
+    // Video pipeline runs every 3rd cron tick for variety
+    const runCount = parseInt(await env.SEEN_ARTICLES.get("run-count") || "0");
+    const nextCount = runCount + 1;
+    await env.SEEN_ARTICLES.put("run-count", String(nextCount), { expirationTtl: 24 * 3600 });
+
+    const useVideoPipeline = nextCount % 3 === 0; // every 3rd run = video
+    const endpoint = useVideoPipeline ? "/api/automate-video" : "/api/automate";
+
+    const res = await fetch(`${appUrl}${endpoint}`, {
       method: "POST",
       headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json" },
       body: "{}",
       signal: AbortSignal.timeout(280000),
     });
     const data = await res.json();
-    console.log(`[auto-ppp-tv] result: posted=${data.posted} skipped=${data.skipped} errors=${data.errors?.length || 0}`);
+    console.log(`[auto-ppp-tv] ${endpoint} result: posted=${data.posted} errors=${data.errors?.length || 0}`);
     if (data.errors?.length > 0) console.warn("[auto-ppp-tv] errors:", JSON.stringify(data.errors));
   } catch (err) {
     console.error("[auto-ppp-tv] trigger failed:", err.message);
@@ -269,7 +410,7 @@ async function runPipeline(env) {
   }
 
   // 6. Post to Instagram
-  const igResult = await postToInstagram(imageUrl, caption, env);
+  const igResult = await postToInstagram(imageUrl, caption, env, (article.category || "GENERAL").toUpperCase());
   console.log(`[PPP TV] IG: ${igResult.success ? "✓ " + igResult.postId : "✗ " + igResult.error}`);
 
   // 7. Post to Facebook
@@ -294,22 +435,67 @@ async function runPipeline(env) {
 }
 
 // ── AI CAPTION ────────────────────────────────────────────────────────────────
+const HOOK_PATTERNS = [
+  "Start with a number or statistic that surprises (e.g. 'Ksh 4.8 billion left Kenya last month — and most people have no idea where it went.')",
+  "Start with a consequence before the cause (e.g. 'Three people lost their jobs over a single WhatsApp message.')",
+  "Start with a contradiction or unexpected twist (e.g. 'She was supposed to be celebrating. Instead, she was fired.')",
+  "Start with a specific detail that makes the story feel real and urgent (e.g. 'At exactly 11:47am on Tuesday, everything changed for this Nairobi family.')",
+  "Start with a question that implies the reader is missing something important (e.g. 'Did you know this has been happening since January?')",
+];
+
+// Engagement CTAs — rotate to drive different types of interaction
+const ENGAGEMENT_CTAS_WORKER = [
+  "Tag someone who needs to see this.",
+  "What do you think? Drop your thoughts below.",
+  "Save this — you'll want to come back to it.",
+  "Do you agree or disagree? Comment below.",
+  "Tag a friend who needs to know this.",
+  "Who saw this coming? Comment below.",
+  "Share this — not everyone has seen it yet.",
+];
+
+const CAPTION_SYSTEM_PROMPT = `You are the lead social media writer at PPP TV Kenya — one of Kenya's most-followed entertainment and news pages, targeting 1 million weekly reach.
+
+Your captions drive massive shares, saves, and comments using proven psychological triggers: curiosity gaps, FOMO, open loops, and specificity.
+
+STRUCTURE (3 parts, blank line between each):
+
+1. HOOK — One sentence that opens a curiosity gap. The reader must feel they are missing something important if they don't read on. NEVER start with the person's name or the headline. No emojis in this line.
+
+2. BODY — 2-4 sentences of real, specific detail. Names, exact numbers, places, dates, direct quotes. Build tension. Reveal enough to make the story feel real — but withhold the most satisfying detail so they must click.
+
+3. CTA — One short punchy line. Rotate between: "Full story in the link." / "Details below 👇" / "What do you think about this?" / "Tag someone who needs to see this."
+
+RULES:
+- NEVER start with the article title or headline
+- NEVER use ALL CAPS anywhere
+- NEVER use emojis in the first line
+- No hashtags
+- Max 1 emoji total (CTA only)
+- No filler: "the internet is buzzing", "you won't believe", "stay tuned"
+- Every sentence must contain at least one specific fact
+- Under 180 words total`;
+
 async function generateCaption(article, env) {
   const content = (article.excerpt || article.content || "").slice(0, 1500);
-  const prompt = `Write a PPP TV Kenya Instagram/Facebook caption for this article.
+  const hookPattern = HOOK_PATTERNS[Math.floor(Math.random() * HOOK_PATTERNS.length)];
+  const engagementCTA = ENGAGEMENT_CTAS_WORKER[Math.floor(Math.random() * ENGAGEMENT_CTAS_WORKER.length)];
+  const sourceCredit = article.sourceName ? `\n\nSource: ${article.sourceName}` : "";
 
+  const prompt = `${CAPTION_SYSTEM_PROMPT}
+
+---
 TITLE: ${article.title}
 CATEGORY: ${article.category || "GENERAL"}
 SOURCE: ${article.sourceName || "PPP TV Kenya"}
 ${content ? `ARTICLE:\n${content}` : ""}
 
-Structure:
-1. One punchy lede sentence (WHO did WHAT, WHERE — real name required)
-2. 2-3 sentences of real detail (names, numbers, places, dates)
-3. One engaging question + 👇
+HOOK TECHNIQUE TO USE: ${hookPattern}
+END WITH THIS CTA: ${engagementCTA}
 
-Rules: No hashtags. No ALL CAPS in body. Max 2 emojis. No filler phrases.
-Reply with ONLY the caption text.`;
+Write the caption following the instructions above. Use ONLY facts from the article. No fabrication. No hashtags.
+End the caption with the CTA above.
+Reply with ONLY the caption text — no labels, no preamble.`;
 
   // Try Gemini first
   if (env.GEMINI_API_KEY) {
@@ -317,7 +503,7 @@ Reply with ONLY the caption text.`;
       const res = await fetch(`${GEMINI_URL}?key=${env.GEMINI_API_KEY}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.7, maxOutputTokens: 600 } }),
+        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.8, maxOutputTokens: 800 } }),
         signal: AbortSignal.timeout(20000),
       });
       if (res.ok) {
@@ -346,11 +532,39 @@ Reply with ONLY the caption text.`;
   }
 
   // Fallback: use excerpt
-  return (article.excerpt || article.title) + "\n\nWhat do you think? 👇";
+  return (article.excerpt || article.title) + sourceCredit + "\n\n" + engagementCTA;
 }
 
 // ── INSTAGRAM POSTING ─────────────────────────────────────────────────────────
-async function postToInstagram(imageUrl, caption, env) {
+const HASHTAG_BANK_WORKER = {
+  MUSIC:         "#KenyaMusic #AfrobeatKenya #NairobiMusic #KenyanArtist #EastAfricaMusic #PPPTVKenya #MusicKE",
+  CELEBRITY:     "#KenyaCelebrity #NairobiCelebs #KenyanCelebs #PPPTVKenya #NairobiGossip #KenyaEntertainment",
+  ENTERTAINMENT: "#KenyaEntertainment #NairobiEntertainment #PPPTVKenya #KenyaNews #EntertainmentKE",
+  "TV & FILM":   "#KenyaTV #NairobiFilm #KenyanFilm #PPPTVKenya #AfricanFilm #KenyaMovies",
+  MOVIES:        "#KenyaMovies #NairobiCinema #AfricanFilm #PPPTVKenya #MovieNews",
+  SPORTS:        "#KenyaSports #HarambeeStars #KenyaAthletics #PPPTVKenya #SportKE",
+  POLITICS:      "#KenyaPolitics #KenyaNews #NairobiPolitics #PPPTVKenya",
+  BUSINESS:      "#KenyaBusiness #NairobiBusiness #KenyaEconomy #PPPTVKenya",
+  NEWS:          "#KenyaNews #NairobiNews #PPPTVKenya #KenyaToday",
+  GENERAL:       "#Kenya #Nairobi #PPPTVKenya #KenyaNews #NairobiLife #EastAfrica",
+};
+
+function getHashtagsForCategory(category) {
+  return HASHTAG_BANK_WORKER[(category || "GENERAL").toUpperCase()] || HASHTAG_BANK_WORKER.GENERAL;
+}
+
+async function postFirstCommentIG(mediaId, comment, token) {
+  try {
+    await fetch(`https://graph.facebook.com/v19.0/${mediaId}/comments`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: comment, access_token: token }),
+      signal: AbortSignal.timeout(10000),
+    });
+  } catch { /* non-fatal */ }
+}
+
+async function postToInstagram(imageUrl, caption, env, category) {
   const token = env.INSTAGRAM_ACCESS_TOKEN;
   const accountId = env.INSTAGRAM_ACCOUNT_ID;
   if (!token || !accountId) return { success: false, error: "Missing IG credentials" };
@@ -381,6 +595,12 @@ async function postToInstagram(imageUrl, caption, env) {
     });
     const publishData = await publishRes.json();
     if (!publishRes.ok || publishData.error) throw new Error(publishData.error?.message || `Publish failed: ${publishRes.status}`);
+
+    // Post hashtags as first comment (keeps caption clean, boosts discoverability)
+    if (publishData.id) {
+      await sleep(2000);
+      await postFirstCommentIG(publishData.id, getHashtagsForCategory(category), token);
+    }
 
     return { success: true, postId: publishData.id };
   } catch (err) {
@@ -480,7 +700,7 @@ async function runPipelineDebug(env) {
     }
   } catch (err) { step(`Image staging error: ${err.message}`); }
 
-  const igResult = await postToInstagram(imageUrl, caption, env);
+  const igResult = await postToInstagram(imageUrl, caption, env, (article.category || "GENERAL").toUpperCase());
   step(`IG result: ${JSON.stringify(igResult)}`);
 
   const fbResult = await postToFacebook(imageUrl, caption, article.articleUrl || article.sourceUrl, env);

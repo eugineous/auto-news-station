@@ -52,6 +52,18 @@ async function waitForIGContainer(containerId: string, token: string): Promise<v
   console.warn("[ig] container polling timed out — attempting publish anyway");
 }
 
+// ── Post first comment (hashtags) after publish ───────────────────────────────
+async function postFirstComment(mediaId: string, comment: string, token: string): Promise<void> {
+  try {
+    await fetch(`${GRAPH_API}/${mediaId}/comments`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: comment, access_token: token }),
+      signal: AbortSignal.timeout(10000),
+    });
+  } catch { /* non-fatal */ }
+}
+
 // ── Image posting to Instagram ───────────────────────────────────────────────
 async function publishToInstagram(post: SocialPost, imageBuffer: Buffer): Promise<{ success: boolean; postId?: string; error?: string }> {
   const token = process.env.INSTAGRAM_ACCESS_TOKEN;
@@ -89,6 +101,13 @@ async function publishToInstagram(post: SocialPost, imageBuffer: Buffer): Promis
     );
     const published = await publishRes.json() as any;
     if (!publishRes.ok || published.error) throw new Error(published?.error?.message ?? "IG publish failed");
+
+    // Post first comment with hashtags (keeps caption clean, boosts discoverability)
+    if (post.firstComment && published.id) {
+      await sleep(2000); // brief delay before commenting
+      await postFirstComment(published.id, post.firstComment, token);
+    }
+
     return { success: true, postId: published.id };
   } catch (err: any) {
     console.error("[ig] error:", err?.message);

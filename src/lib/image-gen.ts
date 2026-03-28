@@ -5,6 +5,18 @@ import { PPP_LOGO_B64 } from "./ppp-logo-b64";
 
 const W = 1080, H = 1350;
 
+// ── PPP TV Brand Guidelines ───────────────────────────────────────────────────
+// Primary: #E50914 (PPP Red) | Secondary: #FFFFFF | Accent: #FF007A
+// Font: Bebas Neue (headlines) | Always show source credit | No emojis in headlines
+const BRAND = {
+  red: "#E50914",
+  white: "#FFFFFF",
+  black: "#000000",
+  overlayStart: "rgba(0,0,0,0)",
+  overlayEnd: "rgba(0,0,0,1)",
+  followCta: "FOLLOW FOR MORE",
+};
+
 // ── Category colors — exact match to PPP TV site ─────────────────────────────
 const CAT_COLORS: Record<string, { bg: string; text: string }> = {
   CELEBRITY:     { bg: "#FF007A", text: "#FFFFFF" },
@@ -91,9 +103,11 @@ export async function generateImage(article: Article, opts: ImageOptions = {}): 
 
   if (!rawBg) throw new Error("NO_IMAGE: could not fetch imageUrl — skipping");
 
-  // Resize background to full canvas
+  // Smart crop: use 'attention' for general images, but try face-aware centering
+  // sharp's 'attention' strategy finds the most visually interesting region
   let bgBase64: string | null = null;
   try {
+    // First pass: try attention-based crop (finds faces/subjects automatically)
     const resized = await sharp(rawBg)
       .resize(W, H, { fit: "cover", position: "attention" })
       .jpeg({ quality: 88 })
@@ -236,31 +250,61 @@ export async function generateImage(article: Article, opts: ImageOptions = {}): 
                   },
                 },
 
-                // "FOLLOW FOR MORE" pill — same category color
+                // "FOLLOW FOR MORE" pill + source credit row
                 {
                   type: "div",
                   props: {
                     style: {
                       display: "flex",
-                      alignSelf: "flex-start",
-                      backgroundColor: catBg,
-                      paddingLeft: 34, paddingRight: 34,
-                      paddingTop: 16, paddingBottom: 16,
-                      borderRadius: 50,
+                      flexDirection: "row",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      width: "100%",
                     },
-                    children: [{
-                      type: "span",
-                      props: {
-                        style: {
-                          color: catText,
-                          fontSize: 34,
-                          fontWeight: 700,
-                          letterSpacing: 5,
-                          lineHeight: 1,
+                    children: [
+                      // Follow pill
+                      {
+                        type: "div",
+                        props: {
+                          style: {
+                            display: "flex",
+                            backgroundColor: catBg,
+                            paddingLeft: 34, paddingRight: 34,
+                            paddingTop: 16, paddingBottom: 16,
+                            borderRadius: 50,
+                          },
+                          children: [{
+                            type: "span",
+                            props: {
+                              style: {
+                                color: catText,
+                                fontSize: 34,
+                                fontWeight: 700,
+                                letterSpacing: 5,
+                                lineHeight: 1,
+                              },
+                              children: "FOLLOW FOR MORE",
+                            },
+                          }],
                         },
-                        children: "FOLLOW FOR MORE",
                       },
-                    }],
+                      // Source credit — small, right-aligned
+                      article.sourceName
+                        ? {
+                            type: "span",
+                            props: {
+                              style: {
+                                color: "rgba(255,255,255,0.6)",
+                                fontSize: 26,
+                                fontWeight: 400,
+                                letterSpacing: 1,
+                                lineHeight: 1,
+                              },
+                              children: `via ${article.sourceName}`,
+                            },
+                          }
+                        : { type: "span", props: { style: { display: "flex" }, children: "" } },
+                    ],
                   },
                 },
               ],

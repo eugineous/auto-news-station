@@ -151,6 +151,13 @@ function scoreArticle(a: Article, trendingTopics: string[]): number {
   // Has good summary
   if (a.summary && a.summary.length > 100) score += 20;
 
+  // VIDEO BOOST: videos get 3-5x more reach — always prioritize
+  if (a.isVideo && a.videoUrl) score += 80;
+
+  // High-engagement categories on Kenyan social media
+  const hotCategories = ["CELEBRITY", "MUSIC", "ENTERTAINMENT", "TV & FILM", "MOVIES", "SPORTS"];
+  if (hotCategories.includes(a.category.toUpperCase())) score += 30;
+
   return score;
 }
 
@@ -195,6 +202,37 @@ async function logPost(entry: object): Promise<void> {
   } catch { /* non-fatal */ }
 }
 
+// ── Distributed lock via CF KV — prevents concurrent runs double-posting ──────
+const LOCK_KEY = "pipeline:lock";
+const LOCK_TTL = 270; // 4.5 min — safely under the 10-min cron interval
+
+async function acquireLock(): Promise<boolean> {
+  if (!WORKER_SECRET) return true; // no KV, skip lock
+  try {
+    const res = await fetch(WORKER_URL + "/lock/acquire", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },
+      body: JSON.stringify({ key: LOCK_KEY, ttl: LOCK_TTL }),
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return true; // endpoint not yet deployed — fail open
+    const d = await res.json() as { acquired: boolean };
+    return d.acquired !== false;
+  } catch { return true; } // fail open — better a rare dup than never posting
+}
+
+async function releaseLock(): Promise<void> {
+  if (!WORKER_SECRET) return;
+  try {
+    await fetch(WORKER_URL + "/lock/release", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },
+      body: JSON.stringify({ key: LOCK_KEY }),
+      signal: AbortSignal.timeout(5000),
+    });
+  } catch { /* non-fatal */ }
+}
+
 // ── Get current X/Twitter Kenya trending topics ───────────────────────────────
 async function getTrendingTopics(): Promise<string[]> {
   try {
@@ -209,11 +247,13 @@ async function postOneArticle(article: Article, isBreaking: boolean): Promise<{ 
   // Generate AI content — Gemini for headline, NVIDIA for caption
   let clickbaitTitle = article.title;
   let caption = "";
+  let firstComment = "";
 
   try {
     const ai = await generateAIContent(article);
     clickbaitTitle = ai.clickbaitTitle || article.title;
     caption = ai.caption || "";
+    firstComment = ai.firstComment || "";
   } catch (err: any) {
     console.warn("[automate] AI generation failed, using fallback:", err.message);
   }
@@ -234,13 +274,68 @@ async function postOneArticle(article: Article, isBreaking: boolean): Promise<{ 
   const articleWithAITitle = { ...article, title: clickbaitTitle };
   const imageBuffer = await generateImage(articleWithAITitle, { isBreaking });
 
-  const igPost = { platform: "instagram" as const, caption, articleUrl: article.url };
-  const fbPost = { platform: "facebook" as const, caption, articleUrl: article.url };
+  // If article has a video URL, post as Reel (video gets 3-5x more reach than images)
+  if (article.videoUrl && article.isVideo) {
+    try {
+      const videoRes = await fetch(`${process.env.VERCEL_URL ? "https://" + process.env.VERCEL_URL : "http://localhost:3000"}/api/post-video`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: article.videoUrl,
+          headline: clickbaitTitle,
+          caption: caption + (firstComment ? `\n\n${firstComment}` : ""),
+          category: article.category,
+          sourceName: article.sourceName,
+        }),
+        signal: AbortSignal.timeout(240000),
+      });
+      if (videoRes.ok) {
+        const videoData = await videoRes.json() as any;
+        if (videoData.success) {
+          await Promise.all([
+            logPost({ articleId: article.id, title: clickbaitTitle, url: article.url, category: article.category, instagram: videoData.instagram, facebook: videoData.facebook, postedAt: new Date().toISOString(), isBreaking, postType: "video" }),
+            incrementDailyCount(),
+            setLastCategory(article.category),
+          ]);
+          return { success: true };
+        }
+      }
+    } catch (err: any) {
+      console.warn("[automate] video post failed, falling back to image:", err.message);
+    }
+  }
+
+  const igPost = { platform: "instagram" as const, caption, articleUrl: article.url, firstComment };
+  const fbPost = { platform: "facebook" as const, caption, articleUrl: article.url, firstComment };
   const result = await publish({ ig: igPost, fb: fbPost }, imageBuffer);
 
   const anySuccess = result.facebook.success || result.instagram.success;
 
   if (anySuccess) {
+    // Also post as Instagram Story every 3rd post (Stories bypass algorithm, reach ALL followers)
+    try {
+      const dailyCount = await getDailyCount();
+      if (dailyCount % 3 === 0) {
+        // Stage the thumbnail image for story
+        const stageRes = await fetch(WORKER_URL + "/stage-image", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },
+          body: JSON.stringify({ imageBuffer: imageBuffer.toString("base64") }),
+          signal: AbortSignal.timeout(15000),
+        }).catch(() => null);
+        if (stageRes?.ok) {
+          const stageData = await stageRes.json() as any;
+          if (stageData?.url) {
+            await fetch(WORKER_URL + "/post-story", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },
+              body: JSON.stringify({ imageUrl: stageData.url, caption }),
+              signal: AbortSignal.timeout(30000),
+            }).catch(() => {});
+          }
+        }
+      }
+    } catch { /* non-fatal — story is bonus reach */ }
     await Promise.all([
       logPost({
         articleId: article.id, title: clickbaitTitle, url: article.url,
@@ -267,6 +362,12 @@ export async function POST(req: NextRequest) {
   }
 
   const response: SchedulerResponse = { posted: 0, skipped: 0, errors: [] };
+
+  // ── Distributed lock — prevent concurrent runs from double-posting ────────
+  const lockAcquired = await acquireLock();
+  if (!lockAcquired) {
+    return NextResponse.json({ ...response, message: "Another run in progress — skipped" });
+  }
 
   try {
     // Fetch articles + trending topics in parallel
@@ -327,6 +428,8 @@ export async function POST(req: NextRequest) {
     }
   } catch (err: any) {
     response.errors.push({ articleId: "scraper", message: err.message });
+  } finally {
+    await releaseLock();
   }
 
   return NextResponse.json(response);

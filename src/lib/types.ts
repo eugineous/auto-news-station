@@ -9,6 +9,8 @@ export interface Article {
   publishedAt: Date;
   category: string;
   tags?: string[];
+  videoUrl?: string; // direct video URL if article has video
+  isVideo?: boolean; // flag for video articles
 }
 
 export interface SocialPost {
@@ -16,6 +18,7 @@ export interface SocialPost {
   caption: string;
   imageUrl?: string;
   articleUrl: string;
+  firstComment?: string; // posted as first comment after publish — keeps caption clean
 }
 
 export type Platform = "instagram" | "facebook";

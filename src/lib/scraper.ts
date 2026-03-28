@@ -37,6 +37,8 @@ interface WorkerFeedItem {
   twitterCaption: string;
   facebookCaption: string;
   instagramCaption: string;
+  videoUrl?: string;       // direct video URL if present
+  videoEmbedUrl?: string;  // YouTube/Vimeo embed URL
 }
 
 interface WorkerFeedResponse {
@@ -73,6 +75,8 @@ function parseWorkerFeed(data: WorkerFeedResponse): Article[] {
       sourceName: item.sourceName || "PPP TV Kenya",
       category: (item.category || "GENERAL").toUpperCase(),
       publishedAt: item.publishedAt ? new Date(item.publishedAt) : new Date(),
+      videoUrl: item.videoUrl || item.videoEmbedUrl || undefined,
+      isVideo: !!(item.videoUrl || item.videoEmbedUrl),
     });
   }
 

@@ -4,7 +4,7 @@ import Shell from "../shell";
 
 const PINK = "#FF007A";
 
-type Tab = "video" | "carousel";
+type Tab = "video" | "carousel" | "social-import";
 type Status = "idle" | "loading" | "success" | "error";
 
 // Credentials helper — ensures session cookie is always sent
@@ -317,6 +317,169 @@ function CarouselTab() {
   );
 }
 
+// ── Social Import Tab — paste TikTok/IG/Twitter URL, auto-resolve + post ──────
+function SocialImportTab() {
+  const [url, setUrl] = useState("");
+  const [resolving, setResolving] = useState(false);
+  const [resolved, setResolved] = useState<{ videoUrl: string; thumbnail?: string; title?: string; platform?: string } | null>(null);
+  const [headline, setHeadline] = useState("");
+  const [caption, setCaption] = useState("");
+  const [generatingCaption, setGeneratingCaption] = useState(false);
+  const [status, setStatus] = useState<Status>("idle");
+  const [result, setResult] = useState<any>(null);
+  const [resolveError, setResolveError] = useState("");
+
+  const PLATFORM_LABELS: Record<string, string> = {
+    tiktok: "TikTok", instagram: "Instagram", twitter: "Twitter/X",
+    youtube: "YouTube", reddit: "Reddit", dailymotion: "Dailymotion",
+    vimeo: "Vimeo", direct: "Direct MP4",
+  };
+
+  async function handleResolve() {
+    if (!url.trim()) return;
+    setResolving(true); setResolved(null); setResolveError(""); setCaption(""); setHeadline("");
+    try {
+      const r = await fetch("/api/resolve-video", {
+        ...FETCH_OPTS,
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: url.trim() }),
+      });
+      const d = await r.json();
+      if (!r.ok || !d.success) { setResolveError(d.error || "Could not resolve video"); setResolving(false); return; }
+      setResolved(d);
+      if (d.title) setHeadline(d.title.toUpperCase().slice(0, 100));
+      // Auto-generate caption
+      setGeneratingCaption(true);
+      try {
+        const cr = await fetch("/api/preview-url", {
+          ...FETCH_OPTS,
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: url.trim() }),
+        });
+        const cd = await cr.json();
+        if (cd.scraped?.title) setHeadline(cd.scraped.title.toUpperCase().slice(0, 100));
+      } catch {}
+      setGeneratingCaption(false);
+    } catch (err: any) { setResolveError(err.message); }
+    setResolving(false);
+  }
+
+  async function handlePost() {
+    if (!resolved || !headline.trim() || !caption.trim()) return;
+    setStatus("loading"); setResult(null);
+    try {
+      const r = await fetch("/api/post-video", {
+        ...FETCH_OPTS,
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: resolved.videoUrl,
+          headline: headline.trim(),
+          caption: caption.trim(),
+          category: "ENTERTAINMENT",
+        }),
+      });
+      const d = await r.json();
+      setResult(d);
+      setStatus(d.instagram?.success || d.facebook?.success ? "success" : "error");
+    } catch (err: any) { setResult({ error: err.message }); setStatus("error"); }
+  }
+
+  const canPost = resolved && headline.trim() && caption.trim() && status !== "loading";
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      <p style={hintStyle}>Paste any TikTok, Instagram Reel, Twitter/X video, YouTube, or Reddit video URL. We'll extract the video and post it to your socials with source credit.</p>
+
+      {/* URL input */}
+      <div>
+        <label style={labelStyle}>Social Media URL</label>
+        <div style={{ display: "flex", gap: 8 }}>
+          <input
+            value={url} onChange={e => { setUrl(e.target.value); setResolved(null); setResolveError(""); }}
+            placeholder="https://tiktok.com/@user/video/... or instagram.com/reel/..."
+            style={inputStyle}
+            onKeyDown={e => e.key === "Enter" && handleResolve()}
+          />
+          <button onClick={handleResolve} disabled={!url.trim() || resolving}
+            style={{ ...ghostBtnStyle, background: url.trim() && !resolving ? "#FF007A" : "#111", color: "#fff", borderColor: "transparent" }}>
+            {resolving ? "..." : "Extract"}
+          </button>
+        </div>
+        {resolveError && <p style={{ ...hintStyle, color: "#f87171", marginTop: 6 }}>{resolveError}</p>}
+      </div>
+
+      {/* Resolved video info */}
+      {resolved && (
+        <div style={{ background: "#0a0a0a", border: "1px solid #1a1a1a", borderRadius: 8, padding: "14px 16px", display: "flex", gap: 14, alignItems: "flex-start" }}>
+          {resolved.thumbnail && (
+            <img src={resolved.thumbnail} alt="" style={{ width: 80, height: 100, objectFit: "cover", borderRadius: 6, flexShrink: 0 }} />
+          )}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+              <span style={{ background: "#FF007A", color: "#fff", fontSize: 9, fontWeight: 800, letterSpacing: 1, padding: "2px 8px", borderRadius: 3, textTransform: "uppercase" }}>
+                {PLATFORM_LABELS[resolved.platform || ""] || resolved.platform}
+              </span>
+              <span style={{ color: "#4ade80", fontSize: 11 }}>✓ Video extracted</span>
+            </div>
+            {resolved.title && <p style={{ fontSize: 12, color: "#aaa", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{resolved.title}</p>}
+            <p style={{ ...hintStyle, marginTop: 4 }}>Ready to post as Reel to IG + video to FB</p>
+          </div>
+        </div>
+      )}
+
+      {/* Headline */}
+      {resolved && (
+        <div>
+          <label style={labelStyle}>Headline <span style={{ color: "#555", fontWeight: 400 }}>(thumbnail overlay)</span></label>
+          <input
+            value={headline} onChange={e => setHeadline(e.target.value.toUpperCase())}
+            placeholder="TYPE YOUR HEADLINE IN CAPS"
+            maxLength={120}
+            style={{ ...inputStyle, textTransform: "uppercase", letterSpacing: 1 }}
+          />
+        </div>
+      )}
+
+      {/* Thumbnail preview */}
+      {resolved?.thumbnail && headline && (
+        <div>
+          <label style={labelStyle}>Thumbnail Preview</label>
+          <ThumbnailPreview headline={headline} category="ENTERTAINMENT" imageUrl={resolved.thumbnail} />
+        </div>
+      )}
+
+      {/* Caption */}
+      {resolved && (
+        <div>
+          <label style={labelStyle}>
+            Caption
+            {generatingCaption && <span style={{ color: "#555", fontWeight: 400, marginLeft: 8 }}>generating...</span>}
+          </label>
+          <textarea
+            value={caption} onChange={e => setCaption(e.target.value)}
+            placeholder={`Write your caption here...\n\nTip: Always include source credit at the bottom.`}
+            rows={6}
+            style={{ ...inputStyle, resize: "vertical" as const }}
+          />
+          <p style={hintStyle}>Add source credit: "Credit: @username | {url.slice(0, 40)}..."</p>
+        </div>
+      )}
+
+      {resolved && (
+        <button onClick={handlePost} disabled={!canPost}
+          style={{ width: "100%", padding: "15px 0", fontSize: 13, fontWeight: 800, letterSpacing: 1, textTransform: "uppercase" as const, color: "#fff", background: canPost ? "#FF007A" : "#1a1a1a", border: "none", borderRadius: 8, cursor: canPost ? "pointer" : "not-allowed", opacity: canPost ? 1 : 0.5, transition: "opacity .15s" }}>
+          {status === "loading" ? "Posting... (~60s)" : "Post to IG + FB"}
+        </button>
+      )}
+
+      <PostResult status={status} result={result} />
+    </div>
+  );
+}
+
 // ── Shared result component ───────────────────────────────────────────────────
 function PostResult({ status, result }: { status: Status; result: any }) {
   if (!result || status === "idle" || status === "loading") return null;
@@ -359,12 +522,12 @@ export default function ComposerPage() {
               COMPOSER
             </span>
           </div>
-          <p style={{ fontSize: 12, color: "#555" }}>Manually post a video or carousel to Instagram & Facebook</p>
+          <p style={{ fontSize: 12, color: "#555" }}>Manually post a video, carousel, or import from TikTok/IG/Twitter to Instagram & Facebook</p>
         </div>
 
         {/* Tabs */}
         <div style={{ display: "flex", gap: 4, marginBottom: 28, padding: 4, background: "#1a1a1a", borderRadius: 8, border: "1px solid #2a2a2a" }}>
-          {([["video", "🎬  Video Post"], ["carousel", "🖼  Carousel"]] as [Tab, string][]).map(([t, label]) => (
+          {([["video", "🎬  Video"], ["carousel", "🖼  Carousel"], ["social-import", "📲  Import"]] as [Tab, string][]).map(([t, label]) => (
             <button key={t} onClick={() => setTab(t)}
               style={{ flex: 1, padding: "10px 0", fontSize: 12, fontWeight: 800, letterSpacing: 1, textTransform: "uppercase", border: "none", borderRadius: 6, cursor: "pointer", transition: "all .15s", background: tab === t ? PINK : "transparent", color: tab === t ? "#fff" : "#555" }}>
               {label}
@@ -372,7 +535,7 @@ export default function ComposerPage() {
           ))}
         </div>
 
-        {tab === "video" ? <VideoTab /> : <CarouselTab />}
+        {tab === "video" ? <VideoTab /> : tab === "carousel" ? <CarouselTab /> : <SocialImportTab />}
       </div>
     </Shell>
   );
