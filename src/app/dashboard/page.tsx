@@ -14,7 +14,7 @@ const cc=(c:string)=>CAT[c?.toUpperCase()]??{bg:"#E50914",text:"#fff"};
 const CATS=["CELEBRITY","MUSIC","TV & FILM","FASHION","EVENTS","AWARDS","EAST AFRICA","GENERAL","SPORTS","BUSINESS","POLITICS","TECHNOLOGY","HEALTH","SCIENCE","LIFESTYLE","COMEDY","INFLUENCERS"];
 interface Post{articleId:string;title:string;url:string;category:string;manualPost?:boolean;isBreaking?:boolean;instagram:{success:boolean;postId?:string;error?:string};facebook:{success:boolean;postId?:string;error?:string};postedAt:string;}
 interface FeedItem{slug:string;title:string;excerpt:string;category:string;sourceName:string;sourceUrl:string;publishedAt:string;articleUrl:string;imageUrl:string;imageUrlDirect:string;}
-interface Preview{scraped:{type:string;title:string;description:string;imageUrl:string;sourceName:string;isVideo?:boolean;videoEmbedUrl?:string|null};ai:{clickbaitTitle:string;caption:string};category:string;imageBase64:string;}
+interface Preview{scraped:{type:string;title:string;description:string;imageUrl:string;sourceName:string;isVideo?:boolean;videoEmbedUrl?:string|null;videoUrl?:string|null};ai:{clickbaitTitle:string;caption:string};category:string;imageBase64:string;}
 interface Retry{loading:boolean;done?:boolean;error?:string}
 function ago(iso:string){const m=Math.floor((Date.now()-new Date(iso).getTime())/60000);if(m<1)return"just now";if(m<60)return m+"m ago";const h=Math.floor(m/60);if(h<24)return h+"h ago";return Math.floor(h/24)+"d ago";}
 function Spin(){return <span style={{display:"inline-block",width:13,height:13,border:"2px solid rgba(255,255,255,.2)",borderTopColor:"#fff",borderRadius:"50%",animation:"spin .7s linear infinite"}}/>;}
@@ -481,10 +481,17 @@ function ComposeSection({onSuccess}:{onSuccess:()=>void}){
     if(!preview)return;setPosting(true);setErr(null);setOk(null);
     try{
       const title=editTitle||preview.ai.clickbaitTitle;const caption=editCaption||preview.ai.caption;
-      const body:Record<string,string>={url:url.trim(),manualTitle:title,manualCaption:caption,imageBase64:preview.imageBase64};
-      if(cat!=="AUTO")body.category=cat;
-      const r=await fetch("/api/post-from-url-proxy",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
-      const d=await r.json();if(!r.ok||d.error)throw new Error(d.error||"Post failed");
+      const isVideo=preview.scraped.isVideo&&preview.scraped.videoUrl;
+      let r:Response,d:any;
+      if(isVideo){
+        // Post as video (Reel to IG + video to FB)
+        r=await fetch("/api/post-video",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:preview.scraped.videoUrl,headline:title,caption,category:cat!=="AUTO"?cat:(preview.category||"GENERAL")})});
+      }else{
+        const body:Record<string,string>={url:url.trim(),manualTitle:title,manualCaption:caption,imageBase64:preview.imageBase64};
+        if(cat!=="AUTO")body.category=cat;
+        r=await fetch("/api/post-from-url-proxy",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+      }
+      d=await r.json();if(!r.ok||d.error)throw new Error(d.error||"Post failed");
       const ig=d.instagram?.success,fb=d.facebook?.success;
       if(!ig&&!fb)throw new Error(`IG: ${d.instagram?.error||"unknown"} | FB: ${d.facebook?.error||"unknown"}`);
       setOk((ig&&fb)?"✓ Posted to IG + FB":ig?"✓ Posted to IG (FB: "+(d.facebook?.error||"failed")+")":"✓ Posted to FB (IG: "+(d.instagram?.error||"failed")+")");
@@ -511,7 +518,7 @@ function ComposeSection({onSuccess}:{onSuccess:()=>void}){
         {editing?<><input value={editTitle} onChange={e=>setEditTitle(e.target.value)} style={{...inp,marginBottom:8,fontFamily:"Bebas Neue,sans-serif",fontSize:18,letterSpacing:.5}} placeholder="HEADLINE (ALL CAPS)"/><textarea value={editCaption} onChange={e=>setEditCaption(e.target.value)} rows={7} style={{...inp,resize:"vertical",marginBottom:8,lineHeight:1.7}} placeholder="Caption — emojis welcome 😊 No hashtags needed."/><p style={{fontSize:10,color:"#333",marginBottom:10}}>Hashtags go in the first comment automatically.</p><div style={{display:"flex",gap:8,marginBottom:12}}><button onClick={()=>setEditing(false)} style={{background:"#1a1a1a",color:"#888",border:"none",borderRadius:6,padding:"7px 14px",fontSize:12,cursor:"pointer"}}>Done editing</button><button onClick={doRefine} disabled={refining} style={{background:"#0a0a1a",color:"#818cf8",border:"1px solid #1a1a3a",borderRadius:6,padding:"7px 14px",fontSize:12,fontWeight:700,cursor:"pointer",opacity:refining?.5:1}}>{refining?<Spin/>:"✨ AI Refine"}</button></div></>
         :<><div style={{fontFamily:"Bebas Neue,sans-serif",fontSize:20,lineHeight:1.2,marginBottom:8,letterSpacing:.5}}>{editTitle||preview.ai.clickbaitTitle}</div><div style={{fontSize:13,color:"#666",lineHeight:1.65,marginBottom:12,whiteSpace:"pre-line"}}>{editCaption||preview.ai.caption}</div></>}
         <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:14}}><Pill cat={preview.category}/><button onClick={()=>setEditing(e=>!e)} style={{background:"none",border:"1px solid #222",borderRadius:4,padding:"2px 8px",fontSize:10,color:"#888",cursor:"pointer"}}>Edit</button><button onClick={()=>copy(editTitle||preview.ai.clickbaitTitle,"t")} style={{background:"none",border:"1px solid #222",borderRadius:4,padding:"2px 8px",fontSize:10,color:"#888",cursor:"pointer"}}>{copied==="t"?"Copied":"Copy Title"}</button><button onClick={()=>copy(editCaption||preview.ai.caption,"c")} style={{background:"none",border:"1px solid #222",borderRadius:4,padding:"2px 8px",fontSize:10,color:"#888",cursor:"pointer"}}>{copied==="c"?"Copied":"Copy Caption"}</button></div>
-        <button onClick={doPost} disabled={posting} style={{width:"100%",background:R,color:"#fff",border:"none",borderRadius:6,padding:"13px",fontSize:14,fontWeight:700,cursor:"pointer",opacity:posting?.5:1,boxShadow:posting?"none":`0 4px 20px rgba(229,9,20,.3)`}}>{posting?<Spin/>:"Post to Instagram + Facebook"}</button>
+        <button onClick={doPost} disabled={posting} style={{width:"100%",background:R,color:"#fff",border:"none",borderRadius:6,padding:"13px",fontSize:14,fontWeight:700,cursor:"pointer",opacity:posting?.5:1,boxShadow:posting?"none":`0 4px 20px rgba(229,9,20,.3)`}}>{posting?(preview?.scraped?.isVideo&&preview?.scraped?.videoUrl?<><Spin/> Posting video (~60s)…</>:<Spin/>):(preview?.scraped?.isVideo&&preview?.scraped?.videoUrl?"🎬 Post Video to IG + FB":"Post to Instagram + Facebook")}</button>
       </div>
     </div>}
     {lightbox&&preview?.imageBase64&&<div onClick={()=>setLightbox(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.98)",zIndex:500,display:"flex",alignItems:"center",justifyContent:"center",cursor:"zoom-out"}}><img src={preview.imageBase64} alt="" style={{maxWidth:"95vw",maxHeight:"90dvh",borderRadius:8,objectFit:"contain"}}/></div>}

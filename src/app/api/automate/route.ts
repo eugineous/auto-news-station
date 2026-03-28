@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { fetchArticles } from "@/lib/scraper";
 import { generateAIContent } from "@/lib/gemini";
 import { generateImage } from "@/lib/image-gen";
-import { publish, publishStories } from "@/lib/publisher";
+import { publish, publishStories, publishVideo } from "@/lib/publisher";
 import { Article, SchedulerResponse } from "@/lib/types";
 
 export const maxDuration = 300;
@@ -271,36 +271,79 @@ async function postOneArticle(article: Article, isBreaking: boolean): Promise<{ 
   const articleWithAITitle = { ...article, title: clickbaitTitle };
   const imageBuffer = await generateImage(articleWithAITitle, { isBreaking });
 
-  // If article has a video URL, post as Reel
-  if (article.videoUrl && article.isVideo) {
+  // If article has a video URL, stage it and post as Reel
+  if (article.isVideo && article.videoUrl) {
+    let stagedVideoUrl: string | null = null;
+    let stagedKey: string | null = null;
+
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ||
-        (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
-      const videoRes = await fetch(`${baseUrl}/api/post-video`, {
+      const stageRes = await fetch(WORKER_URL + "/stage-video", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          url: article.videoUrl,
-          headline: clickbaitTitle,
-          caption: caption + (firstComment ? `\n\n${firstComment}` : ""),
-          category: article.category,
-          sourceName: article.sourceName,
-        }),
-        signal: AbortSignal.timeout(240000),
+        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },
+        body: JSON.stringify({ videoUrl: article.videoUrl }),
+        signal: AbortSignal.timeout(60000),
       });
-      if (videoRes.ok) {
-        const videoData = await videoRes.json() as any;
-        if (videoData.success) {
+      if (stageRes.ok) {
+        const stageData = await stageRes.json() as { url: string; key: string };
+        stagedVideoUrl = stageData.url;
+        stagedKey = stageData.key;
+      } else {
+        console.warn("[automate] video staging failed, falling back to image post");
+      }
+    } catch (err: any) {
+      console.warn("[automate] video staging error, falling back to image post:", err.message);
+    }
+
+    if (stagedVideoUrl) {
+      const videoCaption = caption + (firstComment ? `\n\n${firstComment}` : "");
+      const igPost = { platform: "instagram" as const, caption: videoCaption, articleUrl: article.url, firstComment };
+      const fbPost = { platform: "facebook" as const, caption: videoCaption, articleUrl: article.url, firstComment };
+
+      // Use the generated thumbnail as cover image for IG Reel
+      const coverImageUrl = imageBuffer
+        ? await (async () => {
+            try {
+              const stageImgRes = await fetch(WORKER_URL + "/stage-image", {
+                method: "POST",
+                headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },
+                body: JSON.stringify({ imageBuffer: imageBuffer.toString("base64") }),
+                signal: AbortSignal.timeout(15000),
+              });
+              if (stageImgRes.ok) {
+                const d = await stageImgRes.json() as any;
+                return d?.url as string | undefined;
+              }
+            } catch { /* non-fatal */ }
+            return undefined;
+          })()
+        : undefined;
+
+      try {
+        const result = await publishVideo({ ig: igPost, fb: fbPost }, stagedVideoUrl, coverImageUrl);
+        const anySuccess = result.instagram.success || result.facebook.success;
+
+        if (anySuccess) {
           await Promise.all([
-            logPost({ articleId: article.id, title: clickbaitTitle, url: article.url, category: article.category, instagram: videoData.instagram, facebook: videoData.facebook, postedAt: new Date().toISOString(), isBreaking, postType: "video" }),
+            logPost({ articleId: article.id, title: clickbaitTitle, url: article.url, category: article.category, instagram: result.instagram, facebook: result.facebook, postedAt: new Date().toISOString(), isBreaking, postType: "video" }),
             incrementDailyCount(),
             setLastCategory(article.category),
           ]);
+
+          // Fire-and-forget: delete staged video from R2
+          if (stagedKey) {
+            fetch(WORKER_URL + "/delete-video", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },
+              body: JSON.stringify({ key: stagedKey }),
+              signal: AbortSignal.timeout(10000),
+            }).catch(() => {});
+          }
+
           return { success: true };
         }
+      } catch (err: any) {
+        console.warn("[automate] publishVideo failed, falling back to image:", err.message);
       }
-    } catch (err: any) {
-      console.warn("[automate] video post failed, falling back to image:", err.message);
     }
   }
 

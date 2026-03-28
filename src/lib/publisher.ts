@@ -176,6 +176,103 @@ async function publishToFacebook(
   }
 }
 
+// ── Instagram video (Reels) post ──────────────────────────────────────────────
+async function publishToInstagramVideo(
+  post: SocialPost,
+  stagedVideoUrl: string,
+  coverImageUrl?: string
+): Promise<{ success: boolean; postId?: string; error?: string }> {
+  const token = process.env.INSTAGRAM_ACCESS_TOKEN;
+  const accountId = process.env.INSTAGRAM_ACCOUNT_ID;
+  if (!token || !accountId) return { success: false, error: "Instagram tokens not configured" };
+
+  try {
+    const payload: Record<string, unknown> = {
+      media_type: "REELS",
+      video_url: stagedVideoUrl,
+      caption: post.caption,
+      share_to_feed: true,
+      access_token: token,
+    };
+    if (coverImageUrl !== undefined) {
+      payload.cover_url = coverImageUrl;
+    }
+
+    const containerRes = await withRetry(() =>
+      fetch(`${GRAPH_API}/${accountId}/media`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(20000),
+      })
+    );
+    const container = await containerRes.json() as any;
+    if (!containerRes.ok || container.error) throw new Error(container?.error?.message ?? "IG video container creation failed");
+
+    await waitForIGContainer(container.id, token);
+
+    const publishRes = await withRetry(() =>
+      fetch(`${GRAPH_API}/${accountId}/media_publish`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ creation_id: container.id, access_token: token }),
+        signal: AbortSignal.timeout(20000),
+      })
+    );
+    const published = await publishRes.json() as any;
+    if (!publishRes.ok || published.error) throw new Error(published?.error?.message ?? "IG video publish failed");
+
+    return { success: true, postId: published.id };
+  } catch (err: any) {
+    console.error("[ig-video] error:", err?.message);
+    return { success: false, error: err?.message ?? "Unknown error" };
+  }
+}
+
+// ── Facebook video post ───────────────────────────────────────────────────────
+async function publishToFacebookVideo(
+  post: SocialPost,
+  stagedVideoUrl: string
+): Promise<{ success: boolean; postId?: string; error?: string }> {
+  const token = process.env.FACEBOOK_ACCESS_TOKEN;
+  const pageId = process.env.FACEBOOK_PAGE_ID;
+  if (!token || !pageId) return { success: false, error: "Facebook tokens not configured" };
+
+  try {
+    const res = await withRetry(() =>
+      fetch(`${GRAPH_API}/${pageId}/videos`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ file_url: stagedVideoUrl, description: post.caption, published: true, access_token: token }),
+        signal: AbortSignal.timeout(30000),
+      })
+    );
+    const data = await res.json() as any;
+    if (!res.ok || data.error) throw new Error(data?.error?.message ?? `HTTP ${res.status}`);
+    return { success: true, postId: data.id };
+  } catch (err: any) {
+    console.error("[fb-video] error:", err?.message);
+    return { success: false, error: err?.message ?? "Unknown error" };
+  }
+}
+
+// ── Video publish orchestrator ────────────────────────────────────────────────
+export async function publishVideo(
+  posts: { ig?: SocialPost; fb?: SocialPost },
+  stagedVideoUrl: string,
+  coverImageUrl?: string
+): Promise<PublishResult> {
+  const [instagram, facebook] = await Promise.all([
+    posts.ig
+      ? publishToInstagramVideo(posts.ig, stagedVideoUrl, coverImageUrl)
+      : Promise.resolve({ success: false, error: "skipped" }),
+    posts.fb
+      ? publishToFacebookVideo(posts.fb, stagedVideoUrl)
+      : Promise.resolve({ success: false, error: "skipped" }),
+  ]);
+  return { instagram, facebook };
+}
+
 // ── Main publish — stages image once, posts to both platforms in parallel ─────
 export async function publish(
   posts: { ig?: SocialPost; fb?: SocialPost },

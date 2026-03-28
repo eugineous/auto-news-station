@@ -39,3 +39,11 @@ export interface SchedulerResponse {
   skipped: number;
   errors: Array<{ articleId: string; message: string }>;
 }
+
+export interface VideoPost {
+  stagedVideoUrl: string; // R2 public URL
+  stagedKey: string; // R2 key for cleanup
+  coverImageUrl?: string; // branded thumbnail URL (optional)
+  caption: string;
+  category: string;
+}
