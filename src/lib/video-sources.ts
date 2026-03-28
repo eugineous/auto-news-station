@@ -317,6 +317,7 @@ const TIKTOK_ACCOUNTS: TikTokAccount[] = [
   { username: "skysportsnews",        displayName: "Sky Sports News",         category: "SPORTS",        postHourEAT: 17, isCreator: false },
   { username: "dailymailsport",       displayName: "Daily Mail Sport",        category: "SPORTS",        postHourEAT: 18, isCreator: false },
   { username: "dylan.page",           displayName: "Dylan Page",              category: "NEWS",          postHourEAT: 19, isCreator: true  },
+  { username: "urbannewsgang",        displayName: "Urban News Gang",         category: "ENTERTAINMENT", postHourEAT: 20, isCreator: false },
 ];
 
 // Content filter — reject promotional/ad content
@@ -400,8 +401,7 @@ async function fetchTikTokAccountVideos(account: TikTokAccount): Promise<VideoIt
   }
 }
 
-export { TIKTOK_ACCOUNTS, buildAttribution };
-
+export async function fetchAllVideoSources(): Promise<VideoItem[]> {
   const allResults = await Promise.allSettled([
     // YouTube (10 channels)
     ...YOUTUBE_CHANNELS.map(ch => fetchYouTubeChannel(ch.id, ch.name, ch.cat)),
@@ -413,7 +413,7 @@ export { TIKTOK_ACCOUNTS, buildAttribution };
     ...NEWS_RSS_FEEDS.map(f => fetchNewsRSSWithVideo(f.url, f.name, f.cat)),
     // Vimeo (2 feeds)
     ...VIMEO_FEEDS.map(f => fetchVimeoFeed(f.url, f.name, f.cat)),
-    // TikTok accounts (13 accounts, 1 video/day each at staggered hours)
+    // TikTok accounts (14 accounts, 1 video/day each at staggered hours)
     ...TIKTOK_ACCOUNTS.map(a => fetchTikTokAccountVideos(a)),
   ]);
 
@@ -435,3 +435,5 @@ export { TIKTOK_ACCOUNTS, buildAttribution };
 
   return deduped;
 }
+
+export { TIKTOK_ACCOUNTS, buildAttribution };
