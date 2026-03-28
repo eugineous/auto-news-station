@@ -193,7 +193,7 @@ async function resolveViaTwitterSave(url: string): Promise<VideoResolution | nul
     if (!res.ok) return null;
     const html = await res.text();
     // Extract highest quality MP4 link
-    const mp4Matches = [...html.matchAll(/href="(https?:\/\/[^"]+\.mp4[^"]*)"/gi)];
+    const mp4Matches = Array.from(html.matchAll(/href="(https?:\/\/[^"]+\.mp4[^"]*)"/gi));
     if (mp4Matches.length === 0) return null;
     // Pick the first (highest quality) match
     return { url: mp4Matches[0][1], platform: "twitter" };

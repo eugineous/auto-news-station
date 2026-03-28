@@ -77,7 +77,7 @@ async function loadFont(): Promise<ArrayBuffer> {
 const TWEMOJI_BASE = "https://cdnflare.emojipedia.org/twemoji/15.1.0/svg";
 
 function emojiToCodepoint(emoji: string): string {
-  return [...emoji]
+  return Array.from(emoji)
     .map(c => c.codePointAt(0)!.toString(16).padStart(4, "0"))
     .filter(cp => cp !== "fe0f") // strip variation selector
     .join("-");
