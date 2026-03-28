@@ -206,7 +206,7 @@ export default function Dashboard(){
 
           {/* ══ COCKPIT OVERVIEW ══ */}
           {section==="cockpit"&&<CockpitSection posts={sorted} loading={loading} nextIn={nextIn} todayCount={todayCount} igOkToday={igOkToday} fbOkToday={fbOkToday} failCount={failCount} successRate={successRate} retries={retries} onRetry={doRetry} onTrigger={triggerNow} triggering={triggering} onClear={clearCache} clearing={clearing} onPost={()=>{fetchPosts();showToast("Posted!","ok");}} onCompose={()=>setSection("compose")}/>}
-          {section==="feed"&&<FeedSection onPost={()=>{fetchPosts();showToast("Posted!","ok");}}/>}
+          {section==="feed"&&<FeedSection posts={posts} onPost={()=>{fetchPosts();showToast("Posted!","ok");}}/>}
           {section==="compose"&&<ComposeSection onSuccess={()=>{fetchPosts();setSection("cockpit");showToast("Posted!","ok");}}/>}
           {section==="failures"&&<FailuresSection posts={sorted} onRetry={doRetry} retries={retries}/>}
           {section==="analytics"&&<AnalyticsSection posts={sorted} nextIn={nextIn}/>}
@@ -447,7 +447,8 @@ function PostCard({p,onRetry,retries}:{p:Post;onRetry:(p:Post,pl:"instagram"|"fa
   </div>;
 }
 
-function FeedSection({onPost}:{onPost:()=>void}){
+type FeedSectionProps={onPost:()=>void;posts:Post[]};
+function FeedSection({onPost,posts}:FeedSectionProps){
   const [items,setItems]=useState<FeedItem[]>([]);
   const [loading,setLoading]=useState(true);
   const [posting,setPosting]=useState<string|null>(null);
@@ -459,7 +460,53 @@ function FeedSection({onPost}:{onPost:()=>void}){
     try{const r=await fetch("/api/post-from-url-proxy",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:item.articleUrl||item.sourceUrl,category:item.category})});const d=await r.json();if(d.instagram?.success||d.facebook?.success){setDone(s=>({...s,[item.slug]:true}));onPost();}else setErrs(s=>({...s,[item.slug]:d.error||"Failed"}));}
     catch(e:any){setErrs(s=>({...s,[item.slug]:e.message}));}finally{setPosting(null);}
   }
-  return <div className="fade"><div style={{marginBottom:16}}><h2 style={{fontFamily:"Bebas Neue,sans-serif",fontSize:22,letterSpacing:1,marginBottom:4}}>Live Feed</h2><p style={{fontSize:12,color:"#444"}}>Latest articles from PPP TV — post any right now.</p></div>
+  // Aggregate success/failure by source
+  const stats=posts.reduce<Record<string,{total:number;ok:number;fail:number}>>((acc,p)=>{
+    const key=`${p.category}|${(p as any).sourceName ?? ""}`;
+    const ok=(p.instagram?.success||p.facebook?.success)?1:0;
+    const fail=ok?0:1;
+    acc[key]=acc[key]||{total:0,ok:0,fail:0};
+    acc[key].total++;acc[key].ok+=ok;acc[key].fail+=fail;
+    return acc;
+  },{});
+  const statRows=Object.entries(stats).map(([k,v])=>{
+    const parts=k.split("|");return {cat:parts[0],src:parts[1]||"Unknown",...v,rate:v.total?Math.round(v.ok/v.total*100):0};
+  }).sort((a,b)=>b.total-a.total).slice(0,12);
+
+  const overallRate=posts.length?Math.round(posts.filter(p=>p.instagram.success||p.facebook.success).length/posts.length*100):0;
+
+  return <div className="fade">
+    <div style={{marginBottom:16}}>
+      <h2 style={{fontFamily:"Bebas Neue,sans-serif",fontSize:22,letterSpacing:1,marginBottom:4}}>Live Feed + Source Health</h2>
+      <p style={{fontSize:12,color:"#444"}}>Monitor RSS/TikTok intake and post from the live feed.</p>
+    </div>
+    <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:14}}>
+      <div className="kpi-card" style={{minWidth:180}}>
+        <div style={{fontSize:11,color:"#666",marginBottom:6,letterSpacing:1,textTransform:"uppercase"}}>Overall success</div>
+        <div style={{fontSize:26,fontWeight:800,color:overallRate>=99?"#4ade80":"#fbbf24"}}>{overallRate}%</div>
+        <div style={{fontSize:11,color:"#444"}}>{posts.length} total posts</div>
+      </div>
+      <div className="kpi-card" style={{flex:1,minWidth:240}}>
+        <div style={{fontSize:11,color:"#666",marginBottom:6,letterSpacing:1,textTransform:"uppercase"}}>Top sources</div>
+        <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+          {statRows.map(r=>{
+            const {bg,text}=cc(r.cat);
+            return <div key={r.src+r.cat} style={{border:"1px solid #1a1a1a",borderRadius:8,padding:"8px 10px",minWidth:140}}>
+              <div style={{fontSize:12,fontWeight:700,color:"#ddd",marginBottom:4,display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+                <span style={{background:bg,color:text,fontSize:9,fontWeight:800,padding:"2px 6px",borderRadius:14,letterSpacing:.5}}>{r.cat}</span>
+                <span style={{color:"#aaa"}}>{r.src}</span>
+              </div>
+              <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#777"}}>
+                <span>{r.ok}/{r.total} ok</span>
+                <span style={{color:r.rate>=99?"#4ade80":"#f97316"}}>{r.rate}%</span>
+              </div>
+            </div>;
+          })}
+          {!statRows.length&&<div style={{fontSize:11,color:"#555"}}>No data yet</div>}
+        </div>
+      </div>
+    </div>
+    <div style={{marginBottom:16}}><h3 style={{fontFamily:"Bebas Neue,sans-serif",fontSize:18,letterSpacing:1,marginBottom:4}}>Live Feed</h3><p style={{fontSize:12,color:"#444"}}>Latest articles from PPP TV — post any right now.</p></div>
     {loading?<div style={{color:"#333",padding:40,textAlign:"center"}}>Loading feed…</div>:!items.length?<div style={{color:"#333",padding:40,textAlign:"center"}}>No articles in feed</div>:
     <div style={{display:"flex",flexDirection:"column",gap:6}}>{items.map(item=>{const {bg,text}=cc(item.category);const isDone=done[item.slug];const isErr=errs[item.slug];return <div key={item.slug} className="post-row">
       {item.imageUrlDirect&&<img src={item.imageUrlDirect} alt="" style={{width:64,height:48,objectFit:"cover",borderRadius:4,flexShrink:0}}/>}
