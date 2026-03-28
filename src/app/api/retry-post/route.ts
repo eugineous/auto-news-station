@@ -6,8 +6,8 @@ import { createHash } from "crypto";
 
 export const maxDuration = 60;
 
-const WORKER_URL = process.env.CLOUDFLARE_WORKER_URL || "https://ppptv-worker.euginemicah.workers.dev";
-const WORKER_SECRET = process.env.WORKER_SECRET || "";
+const WORKER_URL = process.env.CLOUDFLARE_WORKER_URL || "https://auto-ppp-tv.euginemicah.workers.dev";
+const WORKER_SECRET = process.env.WORKER_SECRET || "ppptvWorker2024";
 
 async function updateLog(articleId: string, platform: "instagram" | "facebook", result: { success: boolean; postId?: string; error?: string }) {
   if (!WORKER_SECRET) return;

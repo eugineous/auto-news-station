@@ -9,8 +9,8 @@ import { createHash } from "crypto";
 
 export const maxDuration = 120;
 
-const WORKER_URL = process.env.CLOUDFLARE_WORKER_URL || "https://ppptv-worker.euginemicah.workers.dev";
-const WORKER_SECRET = process.env.WORKER_SECRET || "";
+const WORKER_URL = process.env.CLOUDFLARE_WORKER_URL || "https://auto-ppp-tv.euginemicah.workers.dev";
+const WORKER_SECRET = process.env.WORKER_SECRET || "ppptvWorker2024";
 
 async function logPost(entry: object): Promise<void> {
   if (!WORKER_SECRET) return;
@@ -105,8 +105,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ article, ai, imageBase64: imageBuffer.toString("base64"), message: "Dry run" });
     }
 
-    const igPost = { platform: "instagram" as const, caption: ai.caption, articleUrl: article.url };
-    const fbPost = { platform: "facebook" as const, caption: ai.caption, articleUrl: article.url };
+    const igPost = { platform: "instagram" as const, caption: ai.caption, articleUrl: article.url, firstComment: ai.firstComment };
+    const fbPost = { platform: "facebook" as const, caption: ai.caption, articleUrl: article.url, firstComment: ai.firstComment };
 
     // Download video buffer if this is a video post
     let videoBuffer: Buffer | undefined;
@@ -139,7 +139,20 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    return NextResponse.json({ success: anySuccess, ai: { clickbaitTitle: ai.clickbaitTitle }, instagram: result.instagram, facebook: result.facebook });
+    // Always return detailed per-platform results so the UI can show real errors
+    return NextResponse.json({
+      success: anySuccess,
+      ai: { clickbaitTitle: ai.clickbaitTitle },
+      instagram: result.instagram,
+      facebook: result.facebook,
+      // Surface errors at top level if both failed
+      ...(!anySuccess && {
+        error: [
+          result.instagram.error && `IG: ${result.instagram.error}`,
+          result.facebook.error && `FB: ${result.facebook.error}`,
+        ].filter(Boolean).join(" | "),
+      }),
+    });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }

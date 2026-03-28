@@ -48,17 +48,20 @@ function getCatColor(category: string): { bg: string; text: string } {
 let _fontCache: ArrayBuffer | null = null;
 async function loadFont(): Promise<ArrayBuffer> {
   if (_fontCache) return _fontCache;
+  // Try multiple CDN sources in parallel, take the first that responds
   const sources = [
     "https://cdn.jsdelivr.net/npm/@fontsource/bebas-neue@5.0.8/files/bebas-neue-latin-400-normal.woff",
+    "https://fonts.gstatic.com/s/bebasneue/v14/JTUSjIg69CK48gW7PXoo9WdhyyTh89ZNpQ.woff2",
     "https://cdn.jsdelivr.net/npm/@fontsource/oswald@5.0.8/files/oswald-latin-700-normal.woff",
   ];
-  for (const url of sources) {
-    try {
-      const res = await fetch(url, { signal: AbortSignal.timeout(12000) });
-      if (res.ok) { _fontCache = await res.arrayBuffer(); return _fontCache; }
-    } catch { /* try next */ }
-  }
-  throw new Error("Could not load font");
+  const result = await Promise.any(
+    sources.map(url =>
+      fetch(url, { signal: AbortSignal.timeout(10000) })
+        .then(r => { if (!r.ok) throw new Error("not ok"); return r.arrayBuffer(); })
+    )
+  );
+  _fontCache = result;
+  return _fontCache;
 }
 
 async function fetchImageBuffer(url: string): Promise<Buffer | null> {
@@ -67,7 +70,10 @@ async function fetchImageBuffer(url: string): Promise<Buffer | null> {
       const base64 = url.split(",")[1];
       return Buffer.from(base64, "base64");
     }
-    const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
+    const res = await fetch(url, {
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1)" },
+      signal: AbortSignal.timeout(12000),
+    });
     if (!res.ok) return null;
     return Buffer.from(await res.arrayBuffer());
   } catch { return null; }

@@ -4,8 +4,8 @@ import { createHash } from "crypto";
 export const maxDuration = 180;
 
 const GRAPH_API = "https://graph.facebook.com/v19.0";
-const WORKER_URL = process.env.CLOUDFLARE_WORKER_URL || "https://ppptv-worker.euginemicah.workers.dev";
-const WORKER_SECRET = process.env.WORKER_SECRET || "";
+const WORKER_URL = process.env.CLOUDFLARE_WORKER_URL || "https://auto-ppp-tv.euginemicah.workers.dev";
+const WORKER_SECRET = process.env.WORKER_SECRET || "ppptvWorker2024";
 
 async function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)); }
 

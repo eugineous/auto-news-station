@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const WORKER = process.env.CLOUDFLARE_WORKER_URL || 'https://ppptv-worker.euginemicah.workers.dev';
-const SECRET = process.env.WORKER_SECRET || '';
+const WORKER = process.env.CLOUDFLARE_WORKER_URL || 'https://auto-ppp-tv.euginemicah.workers.dev';
+const SECRET = process.env.WORKER_SECRET || 'ppptvWorker2024';
 
 export async function GET(_req: NextRequest) {
   try {

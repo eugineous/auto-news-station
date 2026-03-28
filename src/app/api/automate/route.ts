@@ -64,26 +64,11 @@ function hasMinimumContent(a: Article): boolean {
   return true;
 }
 
-// ── Best-time scheduler — EAT peak hours with weighted probability ────────────
-// Peak Kenyan scroll times: 7-9am, 12-2pm, 6-9pm EAT (UTC+3)
-// Returns true during peak hours, probabilistic during off-peak
+// ── Best-time scheduler — EAT hours ──────────────────────────────────────────
 function isPostingHour(): boolean {
   const hourEAT = (new Date().getUTCHours() + 3) % 24;
-  // Dead zone: midnight to 5am — never post
-  if (hourEAT >= 0 && hourEAT < 5) return false;
-  // Peak hours: always post
-  if ((hourEAT >= 7 && hourEAT <= 9) ||
-      (hourEAT >= 12 && hourEAT <= 14) ||
-      (hourEAT >= 18 && hourEAT <= 21)) return true;
-  // Off-peak waking hours: post 60% of the time (human-like irregularity)
-  return Math.random() < 0.6;
-}
-
-// ── Random jitter — makes posting pattern look human, not robotic ─────────────
-// Returns true if we should skip this run (adds natural irregularity)
-function shouldSkipForJitter(): boolean {
-  // Skip ~20% of runs randomly — humans don't post at perfectly regular intervals
-  return Math.random() < 0.20;
+  // Only skip true dead zone: 1am–5am EAT
+  return !(hourEAT >= 1 && hourEAT < 5);
 }
 
 // ── Daily post cap — max 6 posts per day ─────────────────────────────────────
@@ -287,10 +272,12 @@ async function postOneArticle(article: Article, isBreaking: boolean): Promise<{ 
   const articleWithAITitle = { ...article, title: clickbaitTitle };
   const imageBuffer = await generateImage(articleWithAITitle, { isBreaking });
 
-  // If article has a video URL, post as Reel (video gets 3-5x more reach than images)
+  // If article has a video URL, post as Reel
   if (article.videoUrl && article.isVideo) {
     try {
-      const videoRes = await fetch(`${process.env.VERCEL_URL ? "https://" + process.env.VERCEL_URL : "http://localhost:3000"}/api/post-video`, {
+      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ||
+        (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
+      const videoRes = await fetch(`${baseUrl}/api/post-video`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -384,15 +371,10 @@ export async function POST(req: NextRequest) {
 
   // ── Peak hour check ───────────────────────────────────────────────────────
   if (!isPostingHour()) {
-    return NextResponse.json({ ...response, message: "Off-peak hours — skipping" });
+    return NextResponse.json({ ...response, message: "Off-peak hours (1-5am EAT) — skipping" });
   }
 
-  // ── Random jitter — makes pattern look human, not robotic ─────────────────
-  if (shouldSkipForJitter()) {
-    return NextResponse.json({ ...response, message: "Jitter skip — maintaining human-like irregularity" });
-  }
-
-  // ── Daily cap — hard limit at 20 feed posts/day (safe under Meta's 25 limit) ─
+  // ── Daily cap ─────────────────────────────────────────────────────────────
   const dailyCount = await getDailyCount();
   if (dailyCount >= 20) {
     return NextResponse.json({ ...response, message: "Daily cap reached (20 posts/day) — protecting account health" });
