@@ -17,6 +17,7 @@ const WORKER_URL = process.env.CLOUDFLARE_WORKER_URL || "https://auto-ppp-tv.eug
 const WORKER_SECRET = process.env.WORKER_SECRET || "ppptvWorker2024";
 const LOGO_PATH = path.join(process.cwd(), "public", "ppp-logo.png");
 const MAX_BYTES = 120 * 1024 * 1024; // 120MB safety
+const FFMPEG_BIN = (ffmpegPath as string | null) || "/usr/bin/ffmpeg";
 
 async function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)); }
 
@@ -70,7 +71,7 @@ async function stageVideo(sourceUrl: string): Promise<{ url: string; key: string
 
   // ffmpeg overlay bottom-left with 24px margin, copy audio, keep size
   await new Promise<void>((resolve, reject) => {
-    const ff = spawn(ffmpegPath as string, [
+    const ff = spawn(FFMPEG_BIN, [
       "-i", tmpIn,
       "-i", tmpLogo,
       "-filter_complex", "overlay=24:24",
