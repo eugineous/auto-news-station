@@ -307,14 +307,27 @@ function ComposeTab({ initialUrl, onSuccess }: { initialUrl?: string; onSuccess:
 // ── Sources Tab — live video feed from all scraped sources ────────────────────
 function SourcesTab({ onCompose }: { onCompose: (url: string) => void }) {
   const [videos, setVideos] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [feedStatus, setFeedStatus] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [statusLoading, setStatusLoading] = useState(true);
   const [posting, setPosting] = useState<string | null>(null);
   const [postResults, setPostResults] = useState<Record<string, { ig: boolean; fb: boolean; err?: string }>>({});
   const [filter, setFilter] = useState("ALL");
+  const [view, setView] = useState<"feeds" | "videos">("feeds");
 
   const PLATFORM_LABELS: Record<string, string> = { tiktok: "TikTok", youtube: "YouTube", instagram: "Instagram", twitter: "Twitter/X", reddit: "Reddit", dailymotion: "Dailymotion", vimeo: "Vimeo", "direct-mp4": "TikTok", direct: "Direct" };
 
-  async function loadSources() {
+  async function loadFeedStatus() {
+    setStatusLoading(true);
+    try {
+      const r = await fetch("/api/admin/feeds/status", { ...FETCH_OPTS });
+      const d = await r.json() as any;
+      setFeedStatus(d.feeds || []);
+    } catch {}
+    setStatusLoading(false);
+  }
+
+  async function loadVideos() {
     setLoading(true);
     try {
       const r = await fetch("/api/admin/feeds", { ...FETCH_OPTS, method: "POST" });
@@ -324,7 +337,7 @@ function SourcesTab({ onCompose }: { onCompose: (url: string) => void }) {
     setLoading(false);
   }
 
-  useEffect(() => { loadSources(); }, []);
+  useEffect(() => { loadFeedStatus(); }, []);
 
   async function quickPost(video: any) {
     setPosting(video.id);
@@ -340,59 +353,118 @@ function SourcesTab({ onCompose }: { onCompose: (url: string) => void }) {
 
   const platforms = ["ALL", ...Array.from(new Set(videos.map((v: any) => v.sourceType || "unknown")))];
   const filtered = filter === "ALL" ? videos : videos.filter((v: any) => v.sourceType === filter);
+  const healthy = feedStatus.filter((f: any) => f.ok).length;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      <div style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "space-between" }}>
-        <span style={{ fontSize: 11, color: "#444" }}>{videos.length} videos from {new Set(videos.map((v: any) => v.sourceName)).size} sources</span>
-        <button onClick={loadSources} style={{ background: "none", border: "1px solid #222", color: "#555", borderRadius: 5, padding: "4px 10px", fontSize: 10, cursor: "pointer" }}>↻ Refresh</button>
-      </div>
-
-      {/* Platform filter */}
-      <div style={{ display: "flex", gap: 4, flexWrap: "wrap" as const }}>
-        {platforms.map(p => (
-          <button key={p} onClick={() => setFilter(p)} style={{ padding: "3px 9px", borderRadius: 20, fontSize: 10, fontWeight: 600, cursor: "pointer", border: `1px solid ${filter === p ? PINK : "#1a1a1a"}`, background: filter === p ? PINK : "#0a0a0a", color: filter === p ? "#fff" : "#555" }}>
-            {PLATFORM_LABELS[p] || p}
+      {/* View toggle */}
+      <div style={{ display: "flex", gap: 3, padding: 3, background: "#0a0a0a", borderRadius: 7, border: "1px solid #1a1a1a" }}>
+        {(["feeds", "videos"] as const).map(v => (
+          <button key={v} onClick={() => { setView(v); if (v === "videos" && videos.length === 0) loadVideos(); }} style={{ flex: 1, padding: "7px 0", fontSize: 10, fontWeight: 800, letterSpacing: 1, textTransform: "uppercase" as const, border: "none", borderRadius: 5, cursor: "pointer", background: view === v ? PINK : "transparent", color: view === v ? "#fff" : "#444" }}>
+            {v === "feeds" ? "📡 Feed Health" : "🎬 Video Queue"}
           </button>
         ))}
       </div>
 
-      {loading ? (
-        <div style={{ textAlign: "center", padding: 40, color: "#333" }}><Spin size={20} /></div>
-      ) : filtered.length === 0 ? (
-        <div style={{ textAlign: "center", padding: 40, color: "#333", fontSize: 12 }}>No videos found. Try refreshing.</div>
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column" as const, gap: 6 }}>
-          {filtered.map((v: any) => {
-            const res = postResults[v.id];
-            const isPosting = posting === v.id;
-            return (
-              <div key={v.id} style={{ background: "#0a0a0a", border: `1px solid ${res ? (res.ig || res.fb ? "#4ade8033" : "#f8717133") : "#111"}`, borderRadius: 8, padding: "10px 12px", display: "flex", gap: 10, alignItems: "flex-start" }}>
-                {v.thumbnail && <img src={v.thumbnail} alt="" style={{ width: 56, height: 70, objectFit: "cover", borderRadius: 5, flexShrink: 0 }} onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />}
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: "flex", gap: 5, marginBottom: 4, flexWrap: "wrap" as const, alignItems: "center" }}>
-                    <Badge label={PLATFORM_LABELS[v.sourceType] || v.sourceType} color={PLATFORM_COLOR[v.sourceType] || "#888"} />
-                    <Badge label={v.category || "VIDEO"} color={PURPLE} />
-                    <span style={{ fontSize: 10, color: "#333" }}>{v.sourceName}</span>
-                  </div>
-                  <div style={{ fontSize: 12, color: "#ccc", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const, marginBottom: 4 }}>{v.title}</div>
-                  <a href={v.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 10, color: "#333", textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const, display: "block" }}>{v.url.slice(0, 60)}…</a>
-                  {res && (
-                    <div style={{ marginTop: 4, fontSize: 10 }}>
-                      {res.err ? <span style={{ color: RED }}>{res.err}</span> : <span style={{ color: GREEN }}>Posted — IG {res.ig ? "✓" : "✗"} FB {res.fb ? "✓" : "✗"}</span>}
+      {view === "feeds" && (
+        <>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <span style={{ width: 7, height: 7, borderRadius: "50%", background: healthy > 15 ? GREEN : ORANGE, display: "inline-block" }} />
+              <span style={{ fontSize: 11, color: "#555" }}>{healthy}/{feedStatus.length} feeds healthy</span>
+            </div>
+            <button onClick={loadFeedStatus} style={{ background: "none", border: "1px solid #222", color: "#555", borderRadius: 5, padding: "4px 10px", fontSize: 10, cursor: "pointer" }}>↻ Check</button>
+          </div>
+
+          {statusLoading ? (
+            <div style={{ textAlign: "center", padding: 30, color: "#333" }}><Spin size={18} /></div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column" as const, gap: 3 }}>
+              {feedStatus.map((f: any, i: number) => (
+                <div key={i} style={{ background: "#0a0a0a", border: `1px solid ${f.ok ? "#1a1a1a" : "#f8717122"}`, borderRadius: 6, padding: "8px 12px", display: "flex", gap: 8, alignItems: "center" }}>
+                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: f.ok ? GREEN : RED, flexShrink: 0, display: "inline-block" }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                      <span style={{ fontSize: 11, color: f.ok ? "#ccc" : "#f87171", fontWeight: 600 }}>{f.name}</span>
+                      <Badge label={f.cat} color={PURPLE} />
                     </div>
-                  )}
+                    {f.ok ? (
+                      <span style={{ fontSize: 10, color: "#444" }}>{f.items} items · {f.latency}ms{f.lastItem ? ` · last: ${ago(f.lastItem)}` : ""}</span>
+                    ) : (
+                      <span style={{ fontSize: 10, color: RED }}>{f.error || `HTTP ${f.status}`}</span>
+                    )}
+                  </div>
+                  <a href={f.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 9, color: "#333", textDecoration: "none", flexShrink: 0 }}>↗</a>
                 </div>
-                <div style={{ display: "flex", flexDirection: "column" as const, gap: 4, flexShrink: 0 }}>
-                  <button onClick={() => quickPost(v)} disabled={isPosting || !!res} style={{ background: res ? (res.ig || res.fb ? GREEN : RED) : PINK, border: "none", color: "#fff", borderRadius: 5, padding: "5px 10px", fontSize: 10, fontWeight: 700, cursor: isPosting || res ? "default" : "pointer", opacity: isPosting ? 0.7 : 1, display: "flex", alignItems: "center", gap: 4 }}>
-                    {isPosting ? <><Spin size={10} /> Posting</> : res ? (res.ig || res.fb ? "✓ Done" : "✗ Failed") : "▶ Post"}
-                  </button>
-                  <button onClick={() => onCompose(v.url)} style={{ background: "none", border: "1px solid #222", color: "#555", borderRadius: 5, padding: "5px 10px", fontSize: 10, cursor: "pointer" }}>Edit</button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {view === "videos" && (
+        <>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "space-between" }}>
+            <span style={{ fontSize: 11, color: "#444" }}>{videos.length} videos from {new Set(videos.map((v: any) => v.sourceName)).size} sources</span>
+            <button onClick={loadVideos} disabled={loading} style={{ background: loading ? "#111" : "none", border: "1px solid #222", color: "#555", borderRadius: 5, padding: "4px 10px", fontSize: 10, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+              {loading ? <><Spin size={10} /> Scraping…</> : "↻ Scrape"}
+            </button>
+          </div>
+
+          {videos.length > 0 && (
+            <div style={{ display: "flex", gap: 4, flexWrap: "wrap" as const }}>
+              {platforms.map(p => (
+                <button key={p} onClick={() => setFilter(p)} style={{ padding: "3px 9px", borderRadius: 20, fontSize: 10, fontWeight: 600, cursor: "pointer", border: `1px solid ${filter === p ? PINK : "#1a1a1a"}`, background: filter === p ? PINK : "#0a0a0a", color: filter === p ? "#fff" : "#555" }}>
+                  {PLATFORM_LABELS[p] || p}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {loading ? (
+            <div style={{ textAlign: "center", padding: 40, color: "#333" }}>
+              <Spin size={20} />
+              <div style={{ marginTop: 10, fontSize: 11, color: "#444" }}>Scraping 50+ sources… (~20s)</div>
+            </div>
+          ) : filtered.length === 0 ? (
+            <div style={{ textAlign: "center", padding: 40, color: "#333", fontSize: 12 }}>
+              {videos.length === 0 ? "Click Scrape to load videos from all sources" : "No videos match this filter"}
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column" as const, gap: 6 }}>
+              {filtered.map((v: any) => {
+                const res = postResults[v.id];
+                const isPosting = posting === v.id;
+                return (
+                  <div key={v.id} style={{ background: "#0a0a0a", border: `1px solid ${res ? (res.ig || res.fb ? "#4ade8033" : "#f8717133") : "#111"}`, borderRadius: 8, padding: "10px 12px", display: "flex", gap: 10, alignItems: "flex-start" }}>
+                    {v.thumbnail && <img src={v.thumbnail} alt="" style={{ width: 56, height: 70, objectFit: "cover", borderRadius: 5, flexShrink: 0 }} onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", gap: 5, marginBottom: 4, flexWrap: "wrap" as const, alignItems: "center" }}>
+                        <Badge label={PLATFORM_LABELS[v.sourceType] || v.sourceType} color={PLATFORM_COLOR[v.sourceType] || "#888"} />
+                        <Badge label={v.category || "VIDEO"} color={PURPLE} />
+                        <span style={{ fontSize: 10, color: "#333" }}>{v.sourceName}</span>
+                        {v.publishedAt && <span style={{ fontSize: 10, color: "#333" }}>· {ago(new Date(v.publishedAt).toISOString())}</span>}
+                      </div>
+                      <div style={{ fontSize: 12, color: "#ccc", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const, marginBottom: 4 }}>{v.title}</div>
+                      <a href={v.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 10, color: "#333", textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const, display: "block" }}>{v.url.slice(0, 60)}…</a>
+                      {res && (
+                        <div style={{ marginTop: 4, fontSize: 10 }}>
+                          {res.err ? <span style={{ color: RED }}>{res.err}</span> : <span style={{ color: GREEN }}>Posted — IG {res.ig ? "✓" : "✗"} FB {res.fb ? "✓" : "✗"}</span>}
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column" as const, gap: 4, flexShrink: 0 }}>
+                      <button onClick={() => quickPost(v)} disabled={isPosting || !!res} style={{ background: res ? (res.ig || res.fb ? GREEN : RED) : PINK, border: "none", color: "#fff", borderRadius: 5, padding: "5px 10px", fontSize: 10, fontWeight: 700, cursor: isPosting || res ? "default" : "pointer", opacity: isPosting ? 0.7 : 1, display: "flex", alignItems: "center", gap: 4 }}>
+                        {isPosting ? <><Spin size={10} /> Posting</> : res ? (res.ig || res.fb ? "✓ Done" : "✗ Failed") : "▶ Post"}
+                      </button>
+                      <button onClick={() => onCompose(v.url)} style={{ background: "none", border: "1px solid #222", color: "#555", borderRadius: 5, padding: "5px 10px", fontSize: 10, cursor: "pointer" }}>Edit</button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
       )}
     </div>
   );

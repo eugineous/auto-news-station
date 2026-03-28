@@ -255,12 +255,16 @@ async function fetchNewsRSSWithVideo(feedUrl: string, sourceName: string, catego
     const ytVideoId = ytMatch?.[1] || ytMatch?.[2] || ytMatch?.[3];
 
     if (!title || !link || !isRecent(pubDate)) continue;
-    if (!isEntertainmentTitle(title) && !ytVideoId && !enclosureUrl) continue;
 
-    const videoUrl = ytVideoId ? `https://www.youtube.com/watch?v=${ytVideoId}` : (enclosureUrl || undefined);
-    const thumbUrl = ytVideoId ? `https://img.youtube.com/vi/${ytVideoId}/maxresdefault.jpg` : thumbnail;
+    // Use YouTube embed if found, else mp4 enclosure, else the article link itself
+    // (post-video can resolve YouTube from article pages via scraping)
+    const videoUrl = ytVideoId
+      ? `https://www.youtube.com/watch?v=${ytVideoId}`
+      : enclosureUrl || link;
 
-    if (!videoUrl) continue; // skip articles without video
+    const thumbUrl = ytVideoId
+      ? `https://img.youtube.com/vi/${ytVideoId}/maxresdefault.jpg`
+      : thumbnail;
 
     items.push({
       id: `rss:${link}`,
@@ -269,12 +273,12 @@ async function fetchNewsRSSWithVideo(feedUrl: string, sourceName: string, catego
       thumbnail: thumbUrl,
       publishedAt: new Date(pubDate),
       sourceName,
-      sourceType: ytVideoId ? "youtube" : "rss-video",
+      sourceType: ytVideoId ? "youtube" : enclosureUrl ? "rss-video" : "youtube",
       category,
       directVideoUrl: enclosureUrl || undefined,
     });
   }
-  return items.slice(0, 3);
+  return items.slice(0, 5);
 }
 
 // ── 5. Vimeo RSS (Africa/Kenya entertainment) ─────────────────────────────────

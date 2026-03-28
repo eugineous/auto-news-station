@@ -90,8 +90,9 @@ async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
 }
 
 async function waitForIGContainer(containerId: string, token: string): Promise<void> {
-  for (let i = 0; i < 24; i++) {
-    await sleep(5000);
+  // Poll every 3s for up to 90s — IG typically processes in 15-45s
+  for (let i = 0; i < 30; i++) {
+    await sleep(3000);
     try {
       const res = await fetch(`${GRAPH_API}/${containerId}?fields=status_code,status&access_token=${token}`);
       const data = await res.json() as any;

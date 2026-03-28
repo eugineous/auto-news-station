@@ -10,21 +10,15 @@ export async function GET() {
     const data = await res.json();
     const articles = data.articles || [];
     const categories: Record<string, number> = {};
-    articles.forEach((a: any) => {
-      categories[a.category] = (categories[a.category] || 0) + 1;
-    });
-    return NextResponse.json({
-      total: articles.length,
-      categories,
-      latest: articles.slice(0, 10),
-      fetchedAt: new Date().toISOString(),
-    });
+    articles.forEach((a: any) => { categories[a.category] = (categories[a.category] || 0) + 1; });
+    return NextResponse.json({ total: articles.length, categories, latest: articles.slice(0, 10), fetchedAt: new Date().toISOString() });
   } catch (e: any) {
     return NextResponse.json({ error: e.message, articles: [], categories: {} });
   }
 }
 
-// POST — scrape all video sources and return the list for the composer UI
+// POST — scrape all video sources (used by Sources tab in composer)
+export const maxDuration = 60;
 export async function POST(_req: NextRequest) {
   try {
     const videos = await fetchAllVideoSources();
