@@ -72,6 +72,28 @@ async function loadFont(): Promise<ArrayBuffer> {
   throw new Error("Could not load font");
 }
 
+// ── Emoji support via Twemoji SVG ─────────────────────────────────────────────
+// Satori's loadAdditionalAsset fetches emoji SVGs from Twemoji CDN on demand
+const TWEMOJI_BASE = "https://cdnflare.emojipedia.org/twemoji/15.1.0/svg";
+
+function emojiToCodepoint(emoji: string): string {
+  return [...emoji]
+    .map(c => c.codePointAt(0)!.toString(16).padStart(4, "0"))
+    .filter(cp => cp !== "fe0f") // strip variation selector
+    .join("-");
+}
+
+async function loadEmojiAsset(_code: string, segment: string): Promise<string | undefined> {
+  try {
+    const cp = emojiToCodepoint(segment);
+    const url = `${TWEMOJI_BASE}/${cp}.svg`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    if (!res.ok) return undefined;
+    const svg = await res.text();
+    return `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
+  } catch { return undefined; }
+}
+
 async function fetchImageBuffer(url: string): Promise<Buffer | null> {
   try {
     if (url.startsWith("data:")) {
@@ -327,6 +349,7 @@ export async function generateImage(article: Article, opts: ImageOptions = {}): 
       width: iW,
       height: iH,
       fonts: [{ name: "BebasNeue", data: fontData, weight: 700, style: "normal" }],
+      loadAdditionalAsset: loadEmojiAsset,
     }
   );
 
