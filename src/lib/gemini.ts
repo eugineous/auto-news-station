@@ -64,18 +64,23 @@ async function generateTitleWithGemini(article: Article): Promise<string> {
     `Rules:\n` +
     `- ALL CAPS only — this is a visual headline on an image\n` +
     `- Max 10 words — shorter is better\n` +
-    `- Must be grounded in a real fact explicitly stated in the title or summary above — do NOT invent any detail\n` +
+    `- Use Google Search to verify any names, titles, or facts before including them\n` +
+    `- Must be grounded in verified facts only — do NOT invent any detail\n` +
     `- Write it like a front-page newspaper headline — specific, factual, direct\n` +
     `- NO clickbait, NO "SHOCKING", NO "UNBELIEVABLE", NO "YOU WON'T BELIEVE"\n` +
     `- NO emojis, no hashtags, no quotes\n` +
     `- Think AP wire headline style — who did what\n` +
-    `- If you are unsure of any fact, use only the exact words from the title above\n` +
+    `- If you cannot verify a fact, use only the exact words from the title above\n` +
     `- Reply with ONLY the headline, nothing else`;
 
   const response = await client.models.generateContent({
     model: "gemini-2.5-flash",
     contents: prompt,
-    config: { temperature: 0.7, maxOutputTokens: 80 },
+    config: {
+      temperature: 0.5,
+      maxOutputTokens: 80,
+      tools: [{ googleSearch: {} }],
+    },
   });
 
   return response.text?.trim().replace(/^["']|["']$/g, "").toUpperCase() ?? "";
@@ -172,17 +177,35 @@ export async function generateAIContent(
     `TITLE: ${article.title}\n` +
     `CATEGORY: ${article.category}\n` +
     `SOURCE: ${article.sourceName || "PPP TV Kenya"}\n` +
+    `SOURCE URL: ${article.url}\n` +
     (content ? `ARTICLE:\n${content}\n\n` : "\n") +
     `LEDE APPROACH: ${hookPattern}\n\n` +
-    `CRITICAL: Only use facts that are explicitly stated in the ARTICLE text above. Do NOT add, invent, or infer any names, dates, statistics, titles, or events that are not directly in the article. If a detail is not in the article, leave it out.\n` +
+    `Use Google Search to verify any names, titles, statistics, or claims before writing. Only include facts confirmed by the article or search results.\n` +
+    `CRITICAL: Do NOT invent, assume, or add any names, dates, statistics, titles, or events that cannot be verified.\n` +
     `Follow the system instructions exactly. No clickbait. No curiosity gaps. No withholding facts.\n` +
     `End with: "Source: ${article.sourceName || "PPP TV Kenya"}"\n` +
     `Reply with ONLY the caption text — no labels, no "Caption:", no preamble.`;
 
-  // Run title (Gemini) and caption (NVIDIA) in parallel
+  // Run title (Gemini+Search) and caption (Gemini+Search) in parallel
+  // NVIDIA is used as fallback for caption only (it has no search capability)
   const results = await Promise.allSettled([
     hasGemini ? generateTitleWithGemini(article) : Promise.reject("no gemini"),
-    hasNvidia ? generateWithNvidia(captionPrompt, CAPTION_SYSTEM) : Promise.reject("no nvidia"),
+    hasGemini ? (async () => {
+      const client = getGeminiClient(process.env.GEMINI_API_KEY!);
+      const response = await client.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: captionPrompt,
+        config: {
+          systemInstruction: CAPTION_SYSTEM,
+          temperature: 0.6,
+          maxOutputTokens: 800,
+          tools: [{ googleSearch: {} }],
+        },
+      });
+      const text = response.text?.trim() ?? "";
+      if (!text || text.length < 40) throw new Error("empty gemini caption");
+      return text;
+    })() : Promise.reject("no gemini"),
   ]);
 
   let clickbaitTitle = "";
@@ -199,12 +222,28 @@ export async function generateAIContent(
   // Strip hashtags from title — they look terrible on thumbnails
   clickbaitTitle = clickbaitTitle.replace(/#\w+/g, "").replace(/\s{2,}/g, " ").trim();
 
-  // Caption — prefer NVIDIA, fall back to Gemini, then excerpt
+  // Caption — prefer Gemini+Search, fall back to NVIDIA, then excerpt
   if (results[1].status === "fulfilled" && results[1].value) {
     caption = results[1].value;
   } else {
-    if (results[1].status === "rejected") console.warn("[nvidia] caption failed:", results[1].reason);
-    if (hasGemini) {
+    if (results[1].status === "rejected") console.warn("[gemini] caption failed:", results[1].reason);
+    // NVIDIA fallback — no search but still useful
+    if (hasNvidia) {
+      try {
+        const nvidiaCaptionPrompt =
+          `Write a PPP TV Kenya news caption for this article.\n\n` +
+          `TITLE: ${article.title}\n` +
+          `CATEGORY: ${article.category}\n` +
+          `SOURCE: ${article.sourceName || "PPP TV Kenya"}\n` +
+          (content ? `ARTICLE:\n${content}\n\n` : "\n") +
+          `LEDE APPROACH: ${hookPattern}\n\n` +
+          `CRITICAL: Only use facts explicitly stated in the ARTICLE text above. Do NOT invent any detail.\n` +
+          `End with: "Source: ${article.sourceName || "PPP TV Kenya"}"\n` +
+          `Reply with ONLY the caption text.`;
+        caption = await generateWithNvidia(nvidiaCaptionPrompt, CAPTION_SYSTEM);
+      } catch (err) { console.warn("[nvidia] caption fallback failed:", err); }
+    }
+    if (!caption && hasGemini) {
       try { caption = await generateCaptionWithGemini(article, content); }
       catch (err) { console.warn("[gemini] caption fallback failed:", err); }
     }
@@ -238,16 +277,23 @@ async function generateCaptionWithGemini(article: Article, content: string): Pro
     `Write a PPP TV Kenya social media caption for maximum engagement.\n\n` +
     `TITLE: ${article.title}\n` +
     `CATEGORY: ${article.category}\n` +
+    `SOURCE URL: ${article.url}\n` +
     (content ? `ARTICLE:\n${content}\n\n` : "\n") +
     `HOOK TECHNIQUE: ${hookPattern}\n\n` +
-    `CRITICAL: Only use facts explicitly stated in the ARTICLE text above. Do NOT invent, assume, or add any detail not in the article.\n` +
+    `Use Google Search to verify any names, titles, statistics, or claims in the article before writing. Only include facts you can confirm are accurate.\n` +
+    `CRITICAL: Do NOT invent, assume, or add any detail not confirmed by the article or search results.\n` +
     `Follow the system instructions. No hashtags. No ALL CAPS. No emojis in first line.\n` +
     `Reply with ONLY the caption text.`;
 
   const response = await client.models.generateContent({
     model: "gemini-2.5-flash",
     contents: prompt,
-    config: { systemInstruction: CAPTION_SYSTEM, temperature: 0.8, maxOutputTokens: 800 },
+    config: {
+      systemInstruction: CAPTION_SYSTEM,
+      temperature: 0.6,
+      maxOutputTokens: 800,
+      tools: [{ googleSearch: {} }],
+    },
   });
   return response.text?.trim() ?? "";
 }
