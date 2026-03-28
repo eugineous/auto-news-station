@@ -195,6 +195,7 @@ const NEWS_RSS_FEEDS = [
   // International entertainment RSS with video
   { url: "https://feeds.bbci.co.uk/news/entertainment_and_arts/rss.xml", name: "BBC Entertainment",     cat: "ENTERTAINMENT" },
   { url: "https://rss.cnn.com/rss/cnn_showbiz.rss",                      name: "CNN Showbiz",           cat: "ENTERTAINMENT" },
+  { url: "https://feeds.reuters.com/reuters/entertainment",              name: "Reuters Entertainment", cat: "ENTERTAINMENT" },
   { url: "https://www.rollingstone.com/music/feed/",                      name: "Rolling Stone Music",   cat: "MUSIC" },
   { url: "https://variety.com/feed/",                                     name: "Variety",               cat: "TV & FILM" },
   { url: "https://deadline.com/feed/",                                    name: "Deadline",              cat: "TV & FILM" },
