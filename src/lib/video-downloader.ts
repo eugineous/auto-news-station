@@ -181,6 +181,43 @@ async function resolveViaSaveIG(url: string): Promise<VideoResolution | null> {
 }
 
 // ── Twitter/X via twitsave.com ────────────────────────────────────────────────
+// ── Twitter/X via savetwt.com ─────────────────────────────────────────────────
+async function resolveViaSaveTwt(url: string): Promise<VideoResolution | null> {
+  try {
+    // savetwt uses a simple GET endpoint that returns JSON with video variants
+    const apiUrl = `https://savetwt.com/api/info?url=${encodeURIComponent(url)}`;
+    const res = await fetch(apiUrl, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept": "application/json, text/html, */*",
+        "Referer": "https://savetwt.com/",
+      },
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok) return null;
+    const contentType = res.headers.get("content-type") || "";
+    if (contentType.includes("application/json")) {
+      const data = await res.json() as any;
+      // Try common response shapes
+      const variants: any[] = data.variants || data.media?.variants || data.urls || [];
+      const mp4s = variants.filter((v: any) => (v.content_type || v.type || "").includes("mp4") || (v.url || "").includes(".mp4"));
+      if (mp4s.length > 0) {
+        // Pick highest bitrate
+        mp4s.sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0));
+        return { url: mp4s[0].url, platform: "twitter" };
+      }
+    }
+    // Fallback: parse HTML response for MP4 links
+    const html = await res.text().catch(() => "");
+    const mp4Match = html.match(/href="(https?:\/\/video\.twimg[^"]+\.mp4[^"]*)"/i)
+      || html.match(/"(https?:\/\/video\.twimg[^"]+\.mp4[^"]*)"/i);
+    if (mp4Match) return { url: mp4Match[1], platform: "twitter" };
+  } catch (err: any) {
+    console.warn("[savetwt] error:", err?.message);
+  }
+  return null;
+}
+
 async function resolveViaTwitterSave(url: string): Promise<VideoResolution | null> {
   try {
     const res = await fetch(`https://twitsave.com/info?url=${encodeURIComponent(url)}`, {
@@ -440,8 +477,11 @@ export async function resolveVideoUrl(sourceUrl: string): Promise<VideoResolutio
     return resolveViaCobalt(sourceUrl);
   }
 
-  // Twitter/X — twitsave → ssstwitter → Cobalt
+  // Twitter/X — savetwt → twitsave → ssstwitter → Cobalt
   if (/twitter\.com|x\.com/i.test(sourceUrl)) {
+    const savetwt = await resolveViaSaveTwt(sourceUrl);
+    if (savetwt) return savetwt;
+    console.warn("[video-dl] savetwt failed, trying twitsave...");
     const twit = await resolveViaTwitterSave(sourceUrl);
     if (twit) return twit;
     console.warn("[video-dl] twitsave failed, trying ssstwitter...");
