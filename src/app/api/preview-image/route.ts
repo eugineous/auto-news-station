@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { generateImage } from "@/lib/image-gen";
+import { generateImage, IMAGE_RATIOS } from "@/lib/image-gen";
 import { Article } from "@/lib/types";
 
-// GET /api/preview-image?title=...&category=...&imageUrl=...&categoryLabel=...
+// GET /api/preview-image?title=...&category=...&imageUrl=...&ratio=...
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
   const imageUrl = searchParams.get("imageUrl") ?? "";
+  const ratio = searchParams.get("ratio") ?? "4:5";
 
   const article: Article = {
     id: "preview",
@@ -20,9 +21,15 @@ export async function GET(req: NextRequest) {
   };
 
   try {
-    const buffer = await generateImage(article, {});
+    const buffer = await generateImage(article, { ratio });
+    const dims = IMAGE_RATIOS[ratio] ?? IMAGE_RATIOS["4:5"];
     return new NextResponse(buffer as unknown as BodyInit, {
-      headers: { "Content-Type": "image/jpeg", "Cache-Control": "no-store" },
+      headers: {
+        "Content-Type": "image/jpeg",
+        "Cache-Control": "no-store",
+        "X-Image-Width": String(dims.w),
+        "X-Image-Height": String(dims.h),
+      },
     });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
@@ -31,13 +38,12 @@ export async function GET(req: NextRequest) {
 
 // POST /api/preview-image — accepts base64 image for carousel cover preview
 export async function POST(req: NextRequest) {
-  let body: { title?: string; category?: string; imageBase64?: string };
+  let body: { title?: string; category?: string; imageBase64?: string; ratio?: string };
   try { body = await req.json(); } catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }); }
 
-  const { title = "PPP TV KENYA NEWS", category = "GENERAL", imageBase64 } = body;
+  const { title = "PPP TV KENYA NEWS", category = "GENERAL", imageBase64, ratio = "4:5" } = body;
   if (!imageBase64) return NextResponse.json({ error: "imageBase64 required" }, { status: 400 });
 
-  // Write base64 to a data URL so generateImage can fetch it
   const dataUrl = `data:image/jpeg;base64,${imageBase64}`;
 
   const article: Article = {
@@ -53,7 +59,7 @@ export async function POST(req: NextRequest) {
   };
 
   try {
-    const buffer = await generateImage(article, {});
+    const buffer = await generateImage(article, { ratio });
     return new NextResponse(buffer as unknown as BodyInit, {
       headers: { "Content-Type": "image/jpeg", "Cache-Control": "no-store" },
     });

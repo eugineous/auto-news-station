@@ -5,6 +5,15 @@ import { PPP_LOGO_B64 } from "./ppp-logo-b64";
 
 const W = 1080, H = 1350;
 
+// Supported output ratios — width × height at 1080px base
+export const IMAGE_RATIOS: Record<string, { w: number; h: number; label: string }> = {
+  "4:5":  { w: 1080, h: 1350, label: "4:5 (IG Feed)" },
+  "1:1":  { w: 1080, h: 1080, label: "1:1 (Square)" },
+  "9:16": { w: 1080, h: 1920, label: "9:16 (Story/Reel)" },
+  "16:9": { w: 1920, h: 1080, label: "16:9 (Landscape)" },
+  "4:3":  { w: 1080, h: 810,  label: "4:3 (Classic)" },
+};
+
 // ── PPP TV Brand Guidelines ───────────────────────────────────────────────────
 // Primary: #E50914 (PPP Red) | Secondary: #FFFFFF | Accent: #FF007A
 // Font: Bebas Neue (headlines) | Always show source credit | No emojis in headlines
@@ -94,9 +103,12 @@ function getHeadlineFontSize(title: string): number {
 export interface ImageOptions {
   isBreaking?: boolean;
   storyFormat?: boolean;
+  ratio?: string; // e.g. "4:5", "1:1", "16:9", "9:16", "4:3"
 }
 
 export async function generateImage(article: Article, opts: ImageOptions = {}): Promise<Buffer> {
+  const dims = (opts.ratio && IMAGE_RATIOS[opts.ratio]) ? IMAGE_RATIOS[opts.ratio] : { w: W, h: H };
+  const iW = dims.w, iH = dims.h;
   const [fontData, rawBg] = await Promise.all([
     loadFont(),
     article.imageUrl?.trim() ? fetchImageBuffer(article.imageUrl) : Promise.resolve(null),
@@ -106,7 +118,7 @@ export async function generateImage(article: Article, opts: ImageOptions = {}): 
   if (rawBg) {
     try {
       const resized = await sharp(rawBg)
-        .resize(W, H, { fit: "cover", position: "attention" })
+        .resize(iW, iH, { fit: "cover", position: "attention" })
         .jpeg({ quality: 88 })
         .toBuffer();
       bgBase64 = `data:image/jpeg;base64,${resized.toString("base64")}`;
@@ -125,8 +137,8 @@ export async function generateImage(article: Article, opts: ImageOptions = {}): 
       props: {
         style: {
           display: "flex",
-          width: W,
-          height: H,
+          width: iW,
+          height: iH,
           position: "relative",
           backgroundColor: "#000",
           overflow: "hidden",
@@ -141,7 +153,7 @@ export async function generateImage(article: Article, opts: ImageOptions = {}): 
                   src: bgBase64,
                   style: {
                     position: "absolute", top: 0, left: 0,
-                    width: W, height: H,
+                    width: iW, height: iH,
                     objectFit: "cover", objectPosition: "center top",
                   },
                 },
@@ -150,7 +162,7 @@ export async function generateImage(article: Article, opts: ImageOptions = {}): 
                 type: "div",
                 props: {
                   style: {
-                    position: "absolute", top: 0, left: 0, width: W, height: H,
+                    position: "absolute", top: 0, left: 0, width: iW, height: iH,
                     background: "#111", display: "flex",
                   },
                   children: [],
@@ -163,7 +175,7 @@ export async function generateImage(article: Article, opts: ImageOptions = {}): 
             props: {
               style: {
                 display: "flex",
-                position: "absolute", left: 0, right: 0, top: 0, height: H,
+                position: "absolute", left: 0, right: 0, top: 0, height: iH,
                 background: "linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 30%, rgba(0,0,0,0.55) 50%, rgba(0,0,0,0.88) 65%, rgba(0,0,0,1) 78%)",
               },
               children: [],
@@ -312,11 +324,11 @@ export async function generateImage(article: Article, opts: ImageOptions = {}): 
       },
     },
     {
-      width: W,
-      height: H,
+      width: iW,
+      height: iH,
       fonts: [{ name: "BebasNeue", data: fontData, weight: 700, style: "normal" }],
     }
   );
 
-  return sharp(Buffer.from(svg)).resize(W, H).jpeg({ quality: 93 }).toBuffer();
+  return sharp(Buffer.from(svg)).resize(iW, iH).jpeg({ quality: 93 }).toBuffer();
 }

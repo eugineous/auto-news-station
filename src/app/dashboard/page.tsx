@@ -473,9 +473,44 @@ function FeedSection({onPost}:{onPost:()=>void}){
 function ComposeSection({onSuccess}:{onSuccess:()=>void}){
   const [url,setUrl]=useState("");const [cat,setCat]=useState("AUTO");const [preview,setPreview]=useState<Preview|null>(null);const [loading,setLoading]=useState(false);const [posting,setPosting]=useState(false);const [refining,setRefining]=useState(false);const [err,setErr]=useState<string|null>(null);const [ok,setOk]=useState<string|null>(null);const [lightbox,setLightbox]=useState(false);const [copied,setCopied]=useState<string|null>(null);const [editTitle,setEditTitle]=useState("");const [editCaption,setEditCaption]=useState("");const [editing,setEditing]=useState(false);
   const [igManual,setIgManual]=useState(false);const [igManualTitle,setIgManualTitle]=useState("");const [igManualCaption,setIgManualCaption]=useState("");
-  useEffect(()=>{setErr(null);setPreview(null);setOk(null);setEditing(false);setIgManual(false);setIgManualTitle("");setIgManualCaption("");},[url]);
-  useEffect(()=>{if(preview){setEditTitle(preview.ai.clickbaitTitle);setEditCaption(preview.ai.caption);}},[preview]);
-  async function doPreview(manualTitle?:string,manualCaption?:string){if(!url.trim())return;setLoading(true);setErr(null);setPreview(null);setOk(null);try{const body:Record<string,string>={url:url.trim()};if(cat!=="AUTO")body.category=cat;if(manualTitle)body.manualTitle=manualTitle;if(manualCaption)body.manualCaption=manualCaption;const r=await fetch("/api/preview-url",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});const d=await r.json();if(d.error==="INSTAGRAM_MANUAL"){setIgManual(true);setLoading(false);return;}if(!r.ok||d.error)throw new Error(d.error||"Preview failed");setIgManual(false);setPreview(d);}catch(e:any){setErr(e.message);}finally{setLoading(false);}}
+  // Live thumbnail state
+  const [ratio,setRatio]=useState("4:5");
+  const [thumbSrc,setThumbSrc]=useState<string|null>(null);
+  const [thumbLoading,setThumbLoading]=useState(false);
+  const thumbDebounce=useRef<ReturnType<typeof setTimeout>|null>(null);
+
+  const RATIOS=[
+    {key:"4:5",label:"4:5",sub:"IG Feed"},
+    {key:"1:1",label:"1:1",sub:"Square"},
+    {key:"9:16",label:"9:16",sub:"Story"},
+    {key:"16:9",label:"16:9",sub:"Wide"},
+    {key:"4:3",label:"4:3",sub:"Classic"},
+  ];
+
+  // Regenerate thumbnail whenever title, category, ratio, or imageUrl changes
+  useEffect(()=>{
+    if(!preview)return;
+    const title=editTitle||preview.ai.clickbaitTitle;
+    const imageUrl=preview.scraped.imageUrl||"";
+    const category=cat!=="AUTO"?cat:preview.category;
+    if(thumbDebounce.current)clearTimeout(thumbDebounce.current);
+    thumbDebounce.current=setTimeout(()=>{
+      setThumbLoading(true);
+      const params=new URLSearchParams({title,category,imageUrl,ratio});
+      const src=`/api/preview-image?${params}`;
+      const img=new Image();
+      img.onload=()=>{setThumbSrc(src);setThumbLoading(false);};
+      img.onerror=()=>{setThumbLoading(false);};
+      img.src=src;
+    },600);
+  },[editTitle,cat,ratio,preview]);
+
+  // Aspect ratio for display
+  const ratioStyle:Record<string,string>={"4:5":"4/5","1:1":"1/1","9:16":"9/16","16:9":"16/9","4:3":"4/3"};
+
+  useEffect(()=>{setErr(null);setPreview(null);setOk(null);setEditing(false);setIgManual(false);setIgManualTitle("");setIgManualCaption("");setThumbSrc(null);},[url]);
+  useEffect(()=>{if(preview){setEditTitle(preview.ai.clickbaitTitle);setEditCaption(preview.ai.caption);setThumbSrc(preview.imageBase64);}},[preview]);
+  async function doPreview(manualTitle?:string,manualCaption?:string){if(!url.trim())return;setLoading(true);setErr(null);setPreview(null);setOk(null);setThumbSrc(null);try{const body:Record<string,string>={url:url.trim()};if(cat!=="AUTO")body.category=cat;if(manualTitle)body.manualTitle=manualTitle;if(manualCaption)body.manualCaption=manualCaption;const r=await fetch("/api/preview-url",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});const d=await r.json();if(d.error==="INSTAGRAM_MANUAL"){setIgManual(true);setLoading(false);return;}if(!r.ok||d.error)throw new Error(d.error||"Preview failed");setIgManual(false);setPreview(d);}catch(e:any){setErr(e.message);}finally{setLoading(false);}}
   async function doRefine(){if(!url.trim()||!preview)return;setRefining(true);try{const body:Record<string,string>={url:url.trim()};if(cat!=="AUTO")body.category=cat;const r=await fetch("/api/preview-url",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});const d=await r.json();if(!r.ok||d.error)throw new Error(d.error||"Refine failed");setEditTitle(d.ai.clickbaitTitle);setEditCaption(d.ai.caption);setPreview(d);}catch(e:any){setErr(e.message);}finally{setRefining(false);}}
   async function doPost(){
     if(!preview)return;setPosting(true);setErr(null);setOk(null);
@@ -484,7 +519,6 @@ function ComposeSection({onSuccess}:{onSuccess:()=>void}){
       const isVideo=preview.scraped.isVideo&&preview.scraped.videoUrl;
       let r:Response,d:any;
       if(isVideo){
-        // Post as video (Reel to IG + video to FB)
         r=await fetch("/api/post-video",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:preview.scraped.videoUrl,headline:title,caption,category:cat!=="AUTO"?cat:(preview.category||"GENERAL")})});
       }else{
         const body:Record<string,string>={url:url.trim(),manualTitle:title,manualCaption:caption,imageBase64:preview.imageBase64};
@@ -513,7 +547,22 @@ function ComposeSection({onSuccess}:{onSuccess:()=>void}){
     {err&&<div style={{background:"#0d0505",border:"1px solid #2a1010",borderRadius:6,padding:"10px 14px",color:"#f87171",fontSize:13,marginBottom:12}}>{err}</div>}
     {ok&&<div style={{background:"#050d05",border:"1px solid #102a10",borderRadius:6,padding:"10px 14px",color:"#4ade80",fontSize:13,marginBottom:12}}>{ok}</div>}
     {preview&&<div style={{background:"#0a0a0a",border:"1px solid #1a1a1a",borderRadius:10,overflow:"hidden"}}>
-      <div style={{cursor:"zoom-in"}} onClick={()=>setLightbox(true)}><img src={preview.imageBase64} alt="" style={{width:"100%",display:"block",aspectRatio:"4/5",objectFit:"cover"}}/></div>
+      {/* Ratio selector */}
+      <div style={{padding:"12px 16px 0",display:"flex",gap:6,alignItems:"center"}}>
+        <span style={{fontSize:10,color:"#444",letterSpacing:2,fontWeight:700,textTransform:"uppercase",marginRight:4}}>Ratio</span>
+        {RATIOS.map(r=>(
+          <button key={r.key} onClick={()=>setRatio(r.key)}
+            style={{padding:"5px 10px",borderRadius:6,fontSize:11,fontWeight:700,cursor:"pointer",border:`1px solid ${ratio===r.key?"#FF007A":"#222"}`,background:ratio===r.key?"#FF007A":"#111",color:ratio===r.key?"#fff":"#555",transition:"all .15s",lineHeight:1}}>
+            <div>{r.label}</div>
+            <div style={{fontSize:9,fontWeight:400,opacity:.7}}>{r.sub}</div>
+          </button>
+        ))}
+      </div>
+      {/* Thumbnail */}
+      <div style={{cursor:"zoom-in",position:"relative",margin:"12px 16px 0"}} onClick={()=>setLightbox(true)}>
+        {thumbLoading&&<div style={{position:"absolute",inset:0,background:"rgba(0,0,0,.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:2,borderRadius:6}}><Spin/></div>}
+        <img src={thumbSrc||preview.imageBase64} alt="" style={{width:"100%",display:"block",aspectRatio:ratioStyle[ratio]||"4/5",objectFit:"cover",borderRadius:6,transition:"opacity .2s",opacity:thumbLoading?.5:1}}/>
+      </div>
       <div style={{padding:16}}>
         {editing?<><input value={editTitle} onChange={e=>setEditTitle(e.target.value)} style={{...inp,marginBottom:8,fontFamily:"Bebas Neue,sans-serif",fontSize:18,letterSpacing:.5}} placeholder="HEADLINE (ALL CAPS)"/><textarea value={editCaption} onChange={e=>setEditCaption(e.target.value)} rows={7} style={{...inp,resize:"vertical",marginBottom:8,lineHeight:1.7}} placeholder="Caption — emojis welcome 😊 No hashtags needed."/><p style={{fontSize:10,color:"#333",marginBottom:10}}>Hashtags go in the first comment automatically.</p><div style={{display:"flex",gap:8,marginBottom:12}}><button onClick={()=>setEditing(false)} style={{background:"#1a1a1a",color:"#888",border:"none",borderRadius:6,padding:"7px 14px",fontSize:12,cursor:"pointer"}}>Done editing</button><button onClick={doRefine} disabled={refining} style={{background:"#0a0a1a",color:"#818cf8",border:"1px solid #1a1a3a",borderRadius:6,padding:"7px 14px",fontSize:12,fontWeight:700,cursor:"pointer",opacity:refining?.5:1}}>{refining?<Spin/>:"✨ AI Refine"}</button></div></>
         :<><div style={{fontFamily:"Bebas Neue,sans-serif",fontSize:20,lineHeight:1.2,marginBottom:8,letterSpacing:.5}}>{editTitle||preview.ai.clickbaitTitle}</div><div style={{fontSize:13,color:"#666",lineHeight:1.65,marginBottom:12,whiteSpace:"pre-line"}}>{editCaption||preview.ai.caption}</div></>}
@@ -521,7 +570,7 @@ function ComposeSection({onSuccess}:{onSuccess:()=>void}){
         <button onClick={doPost} disabled={posting} style={{width:"100%",background:R,color:"#fff",border:"none",borderRadius:6,padding:"13px",fontSize:14,fontWeight:700,cursor:"pointer",opacity:posting?.5:1,boxShadow:posting?"none":`0 4px 20px rgba(229,9,20,.3)`}}>{posting?(preview?.scraped?.isVideo&&preview?.scraped?.videoUrl?<><Spin/> Posting video (~60s)…</>:<Spin/>):(preview?.scraped?.isVideo&&preview?.scraped?.videoUrl?"🎬 Post Video to IG + FB":"Post to Instagram + Facebook")}</button>
       </div>
     </div>}
-    {lightbox&&preview?.imageBase64&&<div onClick={()=>setLightbox(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.98)",zIndex:500,display:"flex",alignItems:"center",justifyContent:"center",cursor:"zoom-out"}}><img src={preview.imageBase64} alt="" style={{maxWidth:"95vw",maxHeight:"90dvh",borderRadius:8,objectFit:"contain"}}/></div>}
+    {lightbox&&(thumbSrc||preview?.imageBase64)&&<div onClick={()=>setLightbox(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.98)",zIndex:500,display:"flex",alignItems:"center",justifyContent:"center",cursor:"zoom-out"}}><img src={thumbSrc||preview?.imageBase64||""} alt="" style={{maxWidth:"95vw",maxHeight:"90dvh",borderRadius:8,objectFit:"contain"}}/></div>}
   </div>;
 }
 
