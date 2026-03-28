@@ -484,7 +484,7 @@ RULES:
 - NEVER withhold facts to create artificial curiosity — Meta penalizes this
 - No ALL CAPS in body
 - No hashtags
-- Max 1 emoji total
+- Emojis are allowed — use 2-4 relevant emojis to make the post feel human and engaging
 - Always end with: "Source: [publication name]"
 - Under 200 words`;
 

@@ -98,7 +98,7 @@ RULES — CRITICAL FOR ACCOUNT SAFETY:
 - NEVER withhold information to create artificial curiosity — Meta penalizes this
 - NEVER use ALL CAPS anywhere in the caption body
 - No hashtags in caption (post them as first comment instead)
-- Max 1 emoji total, only in the close
+- Emojis are allowed and encouraged — use 2-4 relevant emojis to make the post feel human and engaging
 - Every sentence must contain at least one verifiable fact
 - Always credit the source: "Source: [publication name]"
 - Write like a journalist, not a marketer
@@ -191,6 +191,9 @@ export async function generateAIContent(
     if (results[0].status === "rejected") console.warn("[gemini] title failed:", results[0].reason);
     clickbaitTitle = article.title.toUpperCase().slice(0, 100);
   }
+
+  // Strip hashtags from title — they look terrible on thumbnails
+  clickbaitTitle = clickbaitTitle.replace(/#\w+/g, "").replace(/\s{2,}/g, " ").trim();
 
   // Caption — prefer NVIDIA, fall back to Gemini, then excerpt
   if (results[1].status === "fulfilled" && results[1].value) {

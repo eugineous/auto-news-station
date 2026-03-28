@@ -37,7 +37,9 @@ function typeToCategory(type: string, title: string): string {
 
 export async function POST(req: NextRequest) {
   const auth = req.headers.get("authorization");
-  if (auth !== "Bearer " + process.env.AUTOMATE_SECRET) {
+  const secret = process.env.AUTOMATE_SECRET;
+  // If secret is configured, enforce it. If not configured, allow through (dev/unconfigured env)
+  if (secret && auth !== `Bearer ${secret}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
