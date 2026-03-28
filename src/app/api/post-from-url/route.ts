@@ -3,7 +3,6 @@ import { scrapeUrl } from "@/lib/url-scraper";
 import { generateAIContent } from "@/lib/gemini";
 import { generateImage } from "@/lib/image-gen";
 import { publish } from "@/lib/publisher";
-import { resolveVideoUrl } from "@/lib/video-downloader";
 import { Article } from "@/lib/types";
 import { createHash } from "crypto";
 
@@ -51,11 +50,35 @@ export async function POST(req: NextRequest) {
 
   try {
     let article: Article;
-    let videoUrl: string | undefined;
     let isVideo = false;
     let videoType = "";
 
-    if (/instagram\.com/.test(url) && manualTitle && manualCaption) {
+    // If both manualTitle and manualCaption are provided, skip scraping entirely
+    // This is the fast path used by the Compose UI (content already generated at preview time)
+    if (manualTitle && manualCaption && !/instagram\.com/.test(url)) {
+      article = {
+        id: createHash("sha256").update(url).digest("hex").slice(0, 16),
+        title: manualTitle,
+        url,
+        imageUrl: "",
+        summary: manualCaption,
+        fullBody: manualCaption,
+        sourceName: new URL(url).hostname.replace("www.", ""),
+        category: category || "GENERAL",
+        publishedAt: new Date(),
+      };
+      // Try to get image quickly without blocking
+      try {
+        const scraped = await Promise.race([
+          scrapeUrl(url),
+          new Promise<null>((_, reject) => setTimeout(() => reject(new Error("timeout")), 8000)),
+        ]) as any;
+        if (scraped?.imageUrl) article.imageUrl = scraped.imageUrl;
+        if (scraped?.videoThumbnailUrl && !article.imageUrl) article.imageUrl = scraped.videoThumbnailUrl;
+        if (scraped?.isVideo) { isVideo = true; videoType = scraped.type; }
+        if (scraped?.sourceName) article.sourceName = scraped.sourceName;
+      } catch { /* use what we have */ }
+    } else if (/instagram\.com/.test(url) && manualTitle && manualCaption) {
       article = {
         id: createHash("sha256").update(url).digest("hex").slice(0, 16),
         title: manualTitle,
@@ -72,13 +95,6 @@ export async function POST(req: NextRequest) {
       if (!scraped.title) return NextResponse.json({ error: "Could not extract content from URL" }, { status: 422 });
       isVideo = scraped.isVideo;
       videoType = scraped.type;
-      // Re-resolve video URL fresh at post time (CDN URLs expire)
-      if (scraped.isVideo) {
-        const freshResolved = await resolveVideoUrl(url).catch(() => null);
-        videoUrl = freshResolved?.url || scraped.videoUrl;
-      } else {
-        videoUrl = scraped.videoUrl;
-      }
       article = {
         id: createHash("sha256").update(url).digest("hex").slice(0, 16),
         title: manualTitle || scraped.title,
@@ -92,35 +108,23 @@ export async function POST(req: NextRequest) {
       };
     }
 
-    // If no image, generate with solid color background (don't reject)
-    // generateImage now handles missing imageUrl gracefully
-
+    // Generate image (handles missing imageUrl with solid color fallback)
     const ai = await generateAIContent(article, { isVideo, videoType });
-    const articleWithAITitle = { ...article, title: ai.clickbaitTitle };
+    // Use manualTitle as the thumbnail headline if provided (it's the AI-refined title from preview)
+    const thumbnailTitle = manualTitle || ai.clickbaitTitle;
+    const articleWithAITitle = { ...article, title: thumbnailTitle };
     const imageBuffer = await generateImage(articleWithAITitle, { isBreaking: false });
 
     if (dryRun) {
       return NextResponse.json({ article, ai, imageBase64: imageBuffer.toString("base64"), message: "Dry run" });
     }
 
-    const igPost = { platform: "instagram" as const, caption: ai.caption, articleUrl: article.url, firstComment: ai.firstComment };
-    const fbPost = { platform: "facebook" as const, caption: ai.caption, articleUrl: article.url, firstComment: ai.firstComment };
+    // Use manualCaption directly if provided (already AI-generated at preview time)
+    const finalCaption = manualCaption || ai.caption;
+    const igPost = { platform: "instagram" as const, caption: finalCaption, articleUrl: article.url, firstComment: ai.firstComment };
+    const fbPost = { platform: "facebook" as const, caption: finalCaption, articleUrl: article.url, firstComment: ai.firstComment };
 
-    // Download video buffer if this is a video post
-    let videoBuffer: Buffer | undefined;
-    if (videoUrl) {
-      try {
-        const res = await fetch(videoUrl, {
-          headers: { "User-Agent": "Mozilla/5.0 (compatible; PPPTVBot/1.0)" },
-          signal: AbortSignal.timeout(90000),
-        });
-        if (res.ok) videoBuffer = Buffer.from(await res.arrayBuffer());
-      } catch (e: any) {
-        console.warn("[post-from-url] video download failed, skipping video:", e?.message);
-      }
-    }
-
-    const result = await publish({ ig: igPost, fb: fbPost }, imageBuffer, videoBuffer);
+    const result = await publish({ ig: igPost, fb: fbPost }, imageBuffer);
 
     const anySuccess = result.facebook.success || result.instagram.success;
     if (anySuccess) {

@@ -137,7 +137,32 @@ function ComposeSection({onSuccess}:{onSuccess:()=>void}){
   useEffect(()=>{if(preview){setEditTitle(preview.ai.clickbaitTitle);setEditCaption(preview.ai.caption);}},[preview]);
   async function doPreview(manualTitle?:string,manualCaption?:string){if(!url.trim())return;setLoading(true);setErr(null);setPreview(null);setOk(null);try{const body:Record<string,string>={url:url.trim()};if(cat!=="AUTO")body.category=cat;if(manualTitle)body.manualTitle=manualTitle;if(manualCaption)body.manualCaption=manualCaption;const r=await fetch("/api/preview-url",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});const d=await r.json();if(d.error==="INSTAGRAM_MANUAL"){setIgManual(true);setLoading(false);return;}if(!r.ok||d.error)throw new Error(d.error||"Preview failed");setIgManual(false);setPreview(d);}catch(e:any){setErr(e.message);}finally{setLoading(false);}}
   async function doRefine(){if(!url.trim()||!preview)return;setRefining(true);try{const body:Record<string,string>={url:url.trim()};if(cat!=="AUTO")body.category=cat;const r=await fetch("/api/preview-url",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});const d=await r.json();if(!r.ok||d.error)throw new Error(d.error||"Refine failed");setEditTitle(d.ai.clickbaitTitle);setEditCaption(d.ai.caption);setPreview(d);}catch(e:any){setErr(e.message);}finally{setRefining(false);}}
-  async function doPost(){if(!preview)return;setPosting(true);setErr(null);setOk(null);try{const body:Record<string,string>={url:url.trim()};if(cat!=="AUTO")body.category=cat;if(editTitle)body.manualTitle=editTitle;if(editCaption)body.manualCaption=editCaption;const r=await fetch("/api/post-from-url-proxy",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});const d=await r.json();if(!r.ok||d.error)throw new Error(d.error||"Post failed");const ig=d.instagram?.success,fb=d.facebook?.success;if(!ig&&!fb){const igErr=d.instagram?.error||"";const fbErr=d.facebook?.error||"";throw new Error(`IG: ${igErr} | FB: ${fbErr}`);}setOk((ig&&fb)?"✓ Posted to IG + FB":ig?"✓ Posted to IG only (FB failed: "+(d.facebook?.error||"unknown")+")":"✓ Posted to FB only (IG failed: "+(d.instagram?.error||"unknown")+")");if(ig||fb){setUrl("");setPreview(null);setTimeout(onSuccess,1500);}}catch(e:any){setErr(e.message);}finally{setPosting(false);}}
+  async function doPost(){
+    if(!preview)return;
+    setPosting(true);setErr(null);setOk(null);
+    try{
+      // Use the already-generated content from preview — no need to re-scrape
+      const title=editTitle||preview.ai.clickbaitTitle;
+      const caption=editCaption||preview.ai.caption;
+      const body:Record<string,string>={
+        url:url.trim(),
+        manualTitle:title,
+        manualCaption:caption,
+      };
+      if(cat!=="AUTO")body.category=cat;
+      const r=await fetch("/api/post-from-url-proxy",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+      const d=await r.json();
+      if(!r.ok||d.error)throw new Error(d.error||"Post failed");
+      const ig=d.instagram?.success,fb=d.facebook?.success;
+      if(!ig&&!fb){
+        const igErr=d.instagram?.error||"unknown";
+        const fbErr=d.facebook?.error||"unknown";
+        throw new Error(`IG: ${igErr} | FB: ${fbErr}`);
+      }
+      setOk((ig&&fb)?"✓ Posted to IG + FB":ig?"✓ Posted to IG (FB: "+(d.facebook?.error||"failed")+")":"✓ Posted to FB (IG: "+(d.instagram?.error||"failed")+")");
+      if(ig||fb){setUrl("");setPreview(null);setTimeout(onSuccess,1500);}
+    }catch(e:any){setErr(e.message);}finally{setPosting(false);}
+  }
   function copy(text:string,k:string){navigator.clipboard.writeText(text).then(()=>{setCopied(k);setTimeout(()=>setCopied(null),2000);}).catch(()=>{});}
   const inp:React.CSSProperties={width:"100%",background:"#111",border:"1px solid #2a2a2a",borderRadius:6,padding:"10px 12px",color:"#e5e5e5",fontSize:13,outline:"none",fontFamily:"inherit"};
   return <div style={{maxWidth:560}}><div style={{marginBottom:16}}><h2 style={{fontFamily:"Bebas Neue,sans-serif",fontSize:22,letterSpacing:1,marginBottom:4}}>Compose</h2><p style={{fontSize:12,color:"#555"}}>Paste any URL, preview with AI, edit if needed, then post.</p></div>
