@@ -155,14 +155,18 @@ function ComposeTab({ initialUrl, onSuccess }: { initialUrl?: string; onSuccess:
   const [thumbSrc, setThumbSrc] = useState<string | null>(null);
   const [thumbLoading, setThumbLoading] = useState(false);
   const [fetching, setFetching] = useState(false);
+  const [refining, setRefining] = useState(false);
   const [status, setStatus] = useState<PostStatus>("idle");
   const [result, setResult] = useState<any>(null);
   const [resolvedVideoUrl, setResolvedVideoUrl] = useState("");
   const [platform, setPlatform] = useState("");
+  const [showPlayer, setShowPlayer] = useState(false);
+  const [playerError, setPlayerError] = useState(false);
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => { if (initialUrl) { setUrl(initialUrl); fetchInfo(initialUrl); } }, [initialUrl]);
+  useEffect(() => { if (initialUrl) { setUrl(initialUrl); doFetch(initialUrl); } }, [initialUrl]);
 
+  // Regenerate thumbnail when headline/category changes
   useEffect(() => {
     if (!headline.trim() || !thumbUrl) return;
     if (debounce.current) clearTimeout(debounce.current);
@@ -176,12 +180,13 @@ function ComposeTab({ initialUrl, onSuccess }: { initialUrl?: string; onSuccess:
     }, 500);
   }, [headline, category, thumbUrl]);
 
-  async function fetchInfo(u?: string) {
+  async function doFetch(u?: string) {
     const target = (u || url).trim();
     if (!target) return;
     setFetching(true);
-    setResolvedVideoUrl(""); setPlatform("");
+    setResolvedVideoUrl(""); setPlatform(""); setShowPlayer(false); setPlayerError(false);
     try {
+      // Run all three in parallel: scrape+AI, resolve video
       const [previewRes, resolveRes] = await Promise.all([
         fetch("/api/preview-url", { ...FETCH_OPTS, method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: target }) }),
         fetch("/api/resolve-video", { ...FETCH_OPTS, method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: target }) }),
@@ -189,11 +194,21 @@ function ComposeTab({ initialUrl, onSuccess }: { initialUrl?: string; onSuccess:
       const preview = await previewRes.json() as any;
       const resolve = await resolveRes.json() as any;
 
+      // Set thumbnail
       const img = preview.scraped?.videoThumbnailUrl || preview.scraped?.imageUrl || "";
       if (img) setThumbUrl(img);
-      if (!headline && preview.scraped?.title) setHeadline(preview.scraped.title.toUpperCase().slice(0, 100));
-      if (!caption && preview.ai?.caption) setCaption(preview.ai.caption);
 
+      // AI-generated headline — always overwrite on fresh fetch
+      if (preview.ai?.clickbaitTitle) setHeadline(preview.ai.clickbaitTitle.toUpperCase().slice(0, 120));
+      else if (preview.scraped?.title) setHeadline(preview.scraped.title.toUpperCase().slice(0, 120));
+
+      // AI-generated caption — always overwrite on fresh fetch
+      if (preview.ai?.caption) setCaption(preview.ai.caption);
+
+      // Auto-detect category
+      if (preview.category) setCategory(preview.category);
+
+      // Resolved video URL for player
       if (resolve.success && resolve.videoUrl) {
         setResolvedVideoUrl(resolve.videoUrl);
         setPlatform(resolve.platform || "");
@@ -202,26 +217,29 @@ function ComposeTab({ initialUrl, onSuccess }: { initialUrl?: string; onSuccess:
     setFetching(false);
   }
 
+  async function handleRefine() {
+    if (!url.trim() || refining) return;
+    setRefining(true);
+    try {
+      const r = await fetch("/api/preview-url", { ...FETCH_OPTS, method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: url.trim() }) });
+      const d = await r.json() as any;
+      if (d.ai?.clickbaitTitle) setHeadline(d.ai.clickbaitTitle.toUpperCase().slice(0, 120));
+      if (d.ai?.caption) setCaption(d.ai.caption);
+    } catch {}
+    setRefining(false);
+  }
+
   async function handlePost() {
     if (!url.trim() || !headline.trim() || !caption.trim() || status === "posting" || status === "resolving") return;
     setStatus("resolving"); setResult(null);
     try {
-      let videoUrl = resolvedVideoUrl;
-      if (!videoUrl) {
-        const r = await fetch("/api/resolve-video", { ...FETCH_OPTS, method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: url.trim() }) });
-        const d = await r.json() as any;
-        if (!r.ok || !d.success || !d.videoUrl) throw new Error(d.error || "Could not extract video from this URL");
-        videoUrl = d.videoUrl;
-        setPlatform(d.platform || "");
-        setResolvedVideoUrl(videoUrl);
-      }
       setStatus("posting");
       const r = await fetch("/api/post-video", { ...FETCH_OPTS, method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: url.trim(), headline: headline.trim(), caption: caption.trim() + `\n\nSource: ${url.trim()}`, category }) });
       const d = await r.json() as any;
       setResult(d);
       setStatus(d.instagram?.success || d.facebook?.success ? "success" : "error");
       if (d.instagram?.success || d.facebook?.success) {
-        setTimeout(() => { setUrl(""); setHeadline(""); setCaption(""); setThumbUrl(""); setThumbSrc(null); setResolvedVideoUrl(""); setStatus("idle"); onSuccess(); }, 2500);
+        setTimeout(() => { setUrl(""); setHeadline(""); setCaption(""); setThumbUrl(""); setThumbSrc(null); setResolvedVideoUrl(""); setStatus("idle"); setShowPlayer(false); onSuccess(); }, 2500);
       }
     } catch (e: any) { setResult({ error: e.message }); setStatus("error"); }
   }
@@ -229,25 +247,48 @@ function ComposeTab({ initialUrl, onSuccess }: { initialUrl?: string; onSuccess:
   const canPost = url.trim() && headline.trim() && caption.trim() && status !== "posting" && status !== "resolving";
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       {/* URL input */}
       <div>
         <label style={lbl}>Video URL <span style={{ color: "#333", fontWeight: 400, textTransform: "none" as const }}>— TikTok, YouTube, Instagram, Twitter/X, Reddit, .mp4</span></label>
         <div style={{ display: "flex", gap: 8 }}>
-          <input value={url} onChange={e => { setUrl(e.target.value); setResolvedVideoUrl(""); }} onBlur={() => fetchInfo()} placeholder="Paste any video URL…" style={{ ...inp, flex: 1 }} />
-          <button onClick={() => fetchInfo()} disabled={!url.trim() || fetching} style={{ background: url.trim() && !fetching ? PINK : "#111", border: "none", color: "#fff", borderRadius: 6, padding: "11px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" as const }}>
-            {fetching ? <Spin /> : "Fetch"}
+          <input value={url} onChange={e => { setUrl(e.target.value); setResolvedVideoUrl(""); setShowPlayer(false); }} onBlur={() => doFetch()} placeholder="Paste any video URL…" style={{ ...inp, flex: 1 }} />
+          <button onClick={() => doFetch()} disabled={!url.trim() || fetching} style={{ background: url.trim() && !fetching ? PINK : "#111", border: "none", color: "#fff", borderRadius: 6, padding: "11px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" as const, display: "flex", alignItems: "center", gap: 6 }}>
+            {fetching ? <><Spin /> Fetching…</> : "Fetch"}
           </button>
         </div>
-        {resolvedVideoUrl && (
-          <div style={{ marginTop: 6, display: "flex", gap: 6, alignItems: "center" }}>
+
+        {/* Resolved video status + play button */}
+        {resolvedVideoUrl && !fetching && (
+          <div style={{ marginTop: 8, display: "flex", gap: 8, alignItems: "center" }}>
             <span style={{ width: 7, height: 7, borderRadius: "50%", background: GREEN, display: "inline-block" }} />
-            <span style={{ fontSize: 10, color: GREEN }}>Video resolved</span>
+            <span style={{ fontSize: 10, color: GREEN }}>Video ready</span>
             {platform && <Badge label={platform} color={PLATFORM_COLOR[platform] || "#888"} />}
-            <a href={resolvedVideoUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 10, color: "#444", textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const, maxWidth: 200 }}>{resolvedVideoUrl.slice(0, 50)}…</a>
+            <button onClick={() => { setShowPlayer(p => !p); setPlayerError(false); }} style={{ background: showPlayer ? "#222" : PINK, border: "none", color: "#fff", borderRadius: 4, padding: "3px 10px", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
+              {showPlayer ? "▼ Hide" : "▶ Preview"}
+            </button>
           </div>
         )}
       </div>
+
+      {/* Inline video player */}
+      {showPlayer && resolvedVideoUrl && (
+        <div style={{ borderRadius: 8, overflow: "hidden", background: "#000", border: "1px solid #1a1a1a", position: "relative" as const }}>
+          {playerError ? (
+            <div style={{ padding: 20, textAlign: "center", color: "#555", fontSize: 12 }}>
+              Can't play inline — <a href={resolvedVideoUrl} target="_blank" rel="noopener noreferrer" style={{ color: PINK }}>open in new tab ↗</a>
+            </div>
+          ) : (
+            <video
+              src={resolvedVideoUrl}
+              controls
+              style={{ width: "100%", maxHeight: 360, display: "block" }}
+              onError={() => setPlayerError(true)}
+              crossOrigin="anonymous"
+            />
+          )}
+        </div>
+      )}
 
       {/* Category */}
       <div>
@@ -259,31 +300,41 @@ function ComposeTab({ initialUrl, onSuccess }: { initialUrl?: string; onSuccess:
         </div>
       </div>
 
-      {/* Headline + thumbnail preview */}
-      <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+      {/* Headline + thumbnail */}
+      <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
         <div style={{ flex: 1 }}>
-          <label style={lbl}>Headline <span style={{ color: "#333", fontWeight: 400, textTransform: "none" as const }}>(thumbnail overlay)</span></label>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 7 }}>
+            <label style={{ ...lbl, marginBottom: 0 }}>Headline <span style={{ color: "#333", fontWeight: 400, textTransform: "none" as const }}>(thumbnail overlay)</span></label>
+            <button onClick={handleRefine} disabled={!url.trim() || refining} style={{ background: "none", border: `1px solid ${PINK}44`, color: PINK, borderRadius: 4, padding: "2px 8px", fontSize: 9, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+              {refining ? <><Spin size={9} /> Refining…</> : "✨ AI Refine"}
+            </button>
+          </div>
           <input value={headline} onChange={e => setHeadline(e.target.value.toUpperCase())} placeholder="TYPE YOUR HEADLINE IN CAPS" maxLength={120} style={{ ...inp, textTransform: "uppercase" as const, letterSpacing: 1 }} />
           <span style={{ fontSize: 10, color: "#333", marginTop: 4, display: "block" }}>{headline.length}/120</span>
         </div>
         {(thumbUrl || thumbSrc) && (
-          <div style={{ flexShrink: 0, width: 88, position: "relative" as const }}>
-            <label style={{ ...lbl, marginBottom: 5 }}>Preview</label>
+          <div style={{ flexShrink: 0, width: 80, position: "relative" as const }}>
+            <label style={{ ...lbl, marginBottom: 5 }}>Cover</label>
             {thumbLoading && <div style={{ position: "absolute" as const, inset: 0, top: 22, background: "rgba(0,0,0,.7)", display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 6, zIndex: 2 }}><Spin /></div>}
-            <img src={thumbSrc || `/api/preview-image?${new URLSearchParams({ title: headline || "PPP TV", category, imageUrl: thumbUrl })}`} alt="" style={{ width: 88, aspectRatio: "4/5", objectFit: "cover", borderRadius: 6, display: "block", opacity: thumbLoading ? 0.3 : 1 }} />
+            <img src={thumbSrc || `/api/preview-image?${new URLSearchParams({ title: headline || "PPP TV", category, imageUrl: thumbUrl })}`} alt="" style={{ width: 80, aspectRatio: "4/5", objectFit: "cover", borderRadius: 6, display: "block", opacity: thumbLoading ? 0.3 : 1 }} />
           </div>
         )}
       </div>
 
       {/* Caption */}
       <div>
-        <label style={lbl}>Caption</label>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 7 }}>
+          <label style={{ ...lbl, marginBottom: 0 }}>Caption</label>
+          <button onClick={handleRefine} disabled={!url.trim() || refining} style={{ background: "none", border: `1px solid ${PINK}44`, color: PINK, borderRadius: 4, padding: "2px 8px", fontSize: 9, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+            {refining ? <><Spin size={9} /> Refining…</> : "✨ AI Refine"}
+          </button>
+        </div>
         <textarea value={caption} onChange={e => setCaption(e.target.value)} placeholder="Write your caption…" rows={5} style={{ ...inp, resize: "vertical" as const }} />
       </div>
 
       {/* Post button */}
       <button onClick={handlePost} disabled={!canPost} style={{ width: "100%", padding: "14px 0", fontSize: 13, fontWeight: 800, letterSpacing: 1, textTransform: "uppercase" as const, color: "#fff", background: canPost ? PINK : "#111", border: "none", borderRadius: 8, cursor: canPost ? "pointer" : "not-allowed", opacity: canPost ? 1 : 0.5, transition: "all .15s", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-        {status === "resolving" ? <><Spin /> Resolving video…</> : status === "posting" ? <><Spin /> Posting to IG + FB (~60s)…</> : "🎬 Post Video to IG + FB"}
+        {status === "resolving" || status === "posting" ? <><Spin /> {status === "resolving" ? "Resolving…" : "Posting to IG + FB (~60s)…"}</> : "🎬 Post Video to IG + FB"}
       </button>
 
       {/* Result */}
