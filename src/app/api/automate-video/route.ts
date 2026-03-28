@@ -12,6 +12,7 @@ import { fetchAllVideoSources, VideoItem, TIKTOK_ACCOUNTS, buildAttribution } fr
 import { Article } from "@/lib/types";
 import { createHash } from "crypto";
 import ffmpegStatic from "ffmpeg-static";
+import { existsSync } from "fs";
 import fs from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
@@ -24,7 +25,12 @@ const WORKER_URL = process.env.CLOUDFLARE_WORKER_URL || "https://auto-ppp-tv.eug
 const WORKER_SECRET = process.env.WORKER_SECRET || "ppptvWorker2024";
 const LOGO_PATH = path.join(process.cwd(), "public", "ppp-logo.png");
 const MAX_BYTES = 120 * 1024 * 1024; // 120MB safety
-const FFMPEG_BIN = (ffmpegStatic as string | null) || "/usr/bin/ffmpeg" || "ffmpeg";
+const FFMPEG_BIN = (() => {
+  const p = ffmpegStatic as string | null;
+  if (p && existsSync(p)) return p;
+  if (existsSync("/usr/bin/ffmpeg")) return "/usr/bin/ffmpeg";
+  return "ffmpeg";
+})();
 
 async function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)); }
 
