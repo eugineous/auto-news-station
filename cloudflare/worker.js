@@ -9,6 +9,7 @@ const TTL_SECONDS = 30 * 24 * 60 * 60;
 const FEED_URL = "https://ppp-tv-worker.euginemicah.workers.dev/feed?limit=50";
 const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
 const NVIDIA_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
+const PUB_BASE = "https://pub-8244b5f99b024cda91b74e1131378a14.r2.dev";
 
 // Category colors for thumbnail
 const CAT_COLORS = {
@@ -47,20 +48,29 @@ export default {
 
     if (url.pathname === "/") return json({ status: "ok", service: "PPP TV Auto Poster", cron: "*/10 * * * *" });
 
-    // Open trigger — no auth required for manual testing
+    // Trigger (protected)
     if (url.pathname === "/trigger") {
+      if (!authed) return new Response("Unauthorized", { status: 401 });
       triggerAutomateWithLock(env).catch(e => console.error("[trigger]", e.message));
       return json({ status: "triggered" });
     }
 
-    // Debug trigger — runs synchronously and returns result
+    // Debug trigger — runs synchronously and returns result (protected)
     if (url.pathname === "/trigger-debug") {
+      if (!authed) return new Response("Unauthorized", { status: 401 });
       try {
         const result = await runPipelineDebug(env);
         return json(result);
       } catch (err) {
         return json({ error: err.message, stack: err.stack }, 500);
       }
+    }
+
+    // Health
+    if (url.pathname === "/health") {
+      const lock = await env.SEEN_ARTICLES.get("pipeline:lock");
+      const lockAge = lock ? (Date.now() - Number(lock)) / 1000 : null;
+      return json({ status: "ok", lockHeld: !!lock, lockAgeSeconds: lockAge, feedUrl: FEED_URL });
     }
 
     // ── /seen/check ──────────────────────────────────────────────────────────
@@ -304,13 +314,16 @@ const LOCK_KEY = "pipeline:lock";
 const LOCK_TTL = 270; // 4.5 minutes — safely under the 10-min cron interval
 
 async function triggerAutomateWithLock(env) {
-  // Try to acquire lock: only proceed if key doesn't exist
   const existing = await env.SEEN_ARTICLES.get(LOCK_KEY);
   if (existing) {
-    console.log("[lock] Another run is in progress — skipping this cron tick");
-    return;
+    const ageMs = Date.now() - Number(existing);
+    if (ageMs < LOCK_TTL * 1000) {
+      console.log("[lock] Another run is in progress — skipping this cron tick");
+      return;
+    }
+    console.log("[lock] Stale lock detected, releasing");
+    await env.SEEN_ARTICLES.delete(LOCK_KEY);
   }
-  // Set lock with TTL so it auto-releases even if the run crashes
   await env.SEEN_ARTICLES.put(LOCK_KEY, String(Date.now()), { expirationTtl: LOCK_TTL });
   try {
     await triggerAutomate(env);
@@ -437,7 +450,7 @@ async function runPipeline(env) {
         httpMetadata: { contentType },
         customMetadata: { uploadedAt: String(Date.now()) },
       });
-      imageUrl = `https://pub-8244b5f99b024cda91b74e1131378a14.r2.dev/${r2Key}`;
+      imageUrl = `${PUB_BASE}/${r2Key}`;
       console.log(`[PPP TV] Image staged: ${imageUrl}`);
     }
   } catch (err) {
