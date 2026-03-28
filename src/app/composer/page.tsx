@@ -271,7 +271,7 @@ function ComposeTab({ initialUrl, onSuccess }: { initialUrl?: string; onSuccess:
         )}
       </div>
 
-      {/* Inline video player */}
+      {/* Inline video player — proxied to avoid CORS */}
       {showPlayer && resolvedVideoUrl && (
         <div style={{ borderRadius: 8, overflow: "hidden", background: "#000", border: "1px solid #1a1a1a", position: "relative" as const }}>
           {playerError ? (
@@ -280,11 +280,10 @@ function ComposeTab({ initialUrl, onSuccess }: { initialUrl?: string; onSuccess:
             </div>
           ) : (
             <video
-              src={resolvedVideoUrl}
+              src={`/api/proxy-video?url=${encodeURIComponent(resolvedVideoUrl)}`}
               controls
               style={{ width: "100%", maxHeight: 360, display: "block" }}
               onError={() => setPlayerError(true)}
-              crossOrigin="anonymous"
             />
           )}
         </div>
