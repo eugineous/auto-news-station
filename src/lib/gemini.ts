@@ -64,11 +64,12 @@ async function generateTitleWithGemini(article: Article): Promise<string> {
     `Rules:\n` +
     `- ALL CAPS only — this is a visual headline on an image\n` +
     `- Max 10 words — shorter is better\n` +
-    `- Must be grounded in a real fact from the article (name, number, place, or event)\n` +
+    `- Must be grounded in a real fact explicitly stated in the title or summary above — do NOT invent any detail\n` +
     `- Write it like a front-page newspaper headline — specific, factual, direct\n` +
     `- NO clickbait, NO "SHOCKING", NO "UNBELIEVABLE", NO "YOU WON'T BELIEVE"\n` +
     `- NO emojis, no hashtags, no quotes\n` +
     `- Think AP wire headline style — who did what\n` +
+    `- If you are unsure of any fact, use only the exact words from the title above\n` +
     `- Reply with ONLY the headline, nothing else`;
 
   const response = await client.models.generateContent({
@@ -94,12 +95,14 @@ STRUCTURE (3 parts, blank line between each):
 3. CLOSE — One sentence that either: (a) states what happens next, (b) gives the reader's stake in the story, or (c) asks a genuine question about the story's implications. End with the source link.
 
 RULES — CRITICAL FOR ACCOUNT SAFETY:
+- ONLY use facts that are explicitly stated in the article provided. NEVER invent, assume, or infer any fact not directly in the article text.
+- If a detail (date, name, title, location, statistic) is not in the article, DO NOT include it.
 - NEVER use: "you won't believe", "shocking", "breaking", "must see", "find out more", "stay tuned", "the internet is buzzing", "here's everything"
 - NEVER withhold information to create artificial curiosity — Meta penalizes this
 - NEVER use ALL CAPS anywhere in the caption body
 - No hashtags in caption (post them as first comment instead)
 - Emojis are allowed and encouraged — use 2-4 relevant emojis to make the post feel human and engaging
-- Every sentence must contain at least one verifiable fact
+- Every sentence must contain at least one verifiable fact from the article
 - Always credit the source: "Source: [publication name]"
 - Write like a journalist, not a marketer
 - Under 200 words total`;
@@ -171,6 +174,7 @@ export async function generateAIContent(
     `SOURCE: ${article.sourceName || "PPP TV Kenya"}\n` +
     (content ? `ARTICLE:\n${content}\n\n` : "\n") +
     `LEDE APPROACH: ${hookPattern}\n\n` +
+    `CRITICAL: Only use facts that are explicitly stated in the ARTICLE text above. Do NOT add, invent, or infer any names, dates, statistics, titles, or events that are not directly in the article. If a detail is not in the article, leave it out.\n` +
     `Follow the system instructions exactly. No clickbait. No curiosity gaps. No withholding facts.\n` +
     `End with: "Source: ${article.sourceName || "PPP TV Kenya"}"\n` +
     `Reply with ONLY the caption text — no labels, no "Caption:", no preamble.`;
@@ -236,6 +240,7 @@ async function generateCaptionWithGemini(article: Article, content: string): Pro
     `CATEGORY: ${article.category}\n` +
     (content ? `ARTICLE:\n${content}\n\n` : "\n") +
     `HOOK TECHNIQUE: ${hookPattern}\n\n` +
+    `CRITICAL: Only use facts explicitly stated in the ARTICLE text above. Do NOT invent, assume, or add any detail not in the article.\n` +
     `Follow the system instructions. No hashtags. No ALL CAPS. No emojis in first line.\n` +
     `Reply with ONLY the caption text.`;
 

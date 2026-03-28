@@ -480,6 +480,7 @@ STRUCTURE (3 parts, blank line between each):
 3. CLOSE — What happens next, or the reader's stake in the story. End with source credit.
 
 RULES:
+- ONLY use facts explicitly stated in the article provided. NEVER invent, assume, or infer any fact not directly in the article text. If a detail is not in the article, do not include it.
 - NEVER use: "shocking", "you won't believe", "breaking", "must see", "find out more", "stay tuned", "the internet is buzzing"
 - NEVER withhold facts to create artificial curiosity — Meta penalizes this
 - No ALL CAPS in body
@@ -505,6 +506,8 @@ ${content ? `ARTICLE:\n${content}` : ""}
 LEDE APPROACH: ${hookPattern}
 END WITH THIS CTA: ${engagementCTA}
 ALWAYS END WITH: "Source: ${article.sourceName || "PPP TV Kenya"}"
+
+CRITICAL: Only use facts explicitly stated in the ARTICLE text above. Do NOT invent, assume, or add any names, dates, statistics, titles, or events that are not directly in the article. If a detail is not in the article, leave it out.
 
 Write the caption following the instructions above. Factual, no clickbait, journalist style.
 Reply with ONLY the caption text — no labels, no preamble.`;
