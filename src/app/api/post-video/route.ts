@@ -6,6 +6,12 @@ import { Article } from "@/lib/types";
 import { createHash } from "crypto";
 import ffmpegStatic from "ffmpeg-static";
 import { existsSync } from "fs";
+
+const loadOptional = (id: string) => {
+  try { return eval("require")(id); } catch { return null; }
+};
+const ffmpegLinuxArm = loadOptional("@ffmpeg-installer/linux-arm64");
+const ffmpegLinuxX64 = loadOptional("@ffmpeg-installer/linux-x64");
 import fs from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
@@ -17,11 +23,18 @@ const GRAPH_API = "https://graph.facebook.com/v19.0";
 const WORKER_URL = process.env.CLOUDFLARE_WORKER_URL || "https://auto-ppp-tv.euginemicah.workers.dev";
 const WORKER_SECRET = process.env.WORKER_SECRET || "ppptvWorker2024";
 const LOGO_PATH = path.join(process.cwd(), "public", "ppp-logo.png");
-const MAX_BYTES = 120 * 1024 * 1024; // 120MB safety
+const MAX_BYTES = 400 * 1024 * 1024; // allow up to ~400MB
 const FFMPEG_BIN = (() => {
-  const p = ffmpegStatic as string | null;
-  if (p && existsSync(p)) return p;
-  if (existsSync("/usr/bin/ffmpeg")) return "/usr/bin/ffmpeg";
+  const candidates = [
+    ffmpegStatic as string | null,
+    ffmpegLinuxArm?.path as string | undefined,
+    ffmpegLinuxX64?.path as string | undefined,
+    "/usr/bin/ffmpeg",
+    "ffmpeg",
+  ].filter(Boolean) as string[];
+  for (const c of candidates) {
+    if (existsSync(c)) return c;
+  }
   return "ffmpeg";
 })();
 
@@ -63,7 +76,7 @@ async function stageVideo(sourceUrl: string): Promise<{ url: string; key: string
   const resp = await fetch(fetchUrl, { signal: AbortSignal.timeout(120000) });
   if (!resp.ok) throw new Error(`Download failed: ${resp.status}`);
   const arr = new Uint8Array(await resp.arrayBuffer());
-  if (arr.length > MAX_BYTES) throw new Error("Video too large to process (>120MB)");
+  if (arr.length > MAX_BYTES) throw new Error("Video too large to process (>400MB)");
 
   // Write temp files
   const tmpIn = path.join(tmpdir(), `ppp-in-${Date.now()}.mp4`);

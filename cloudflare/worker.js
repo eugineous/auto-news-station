@@ -36,9 +36,10 @@ export default {
   async scheduled(event, env, ctx) {
     if (event.cron === "0 3 * * *") {
       ctx.waitUntil(cleanupOldLogs(env));
-    } else {
-      ctx.waitUntil(triggerAutomateWithLock(env));
-    }
+  } else {
+    ctx.waitUntil(triggerAutomateWithLock(env));
+    ctx.waitUntil(cleanupOldVideos(env)); // keep R2 lean
+  }
   },
 
   async fetch(request, env) {
@@ -691,6 +692,25 @@ async function cleanupOldLogs(env) {
     if (ts && ts < cutoff) { await env.SEEN_ARTICLES.delete(key.name); deleted++; }
   }
   console.log(`[cleanup] Deleted ${deleted} old log entries`);
+}
+
+// ── CLEANUP OLD VIDEOS IN R2 (12h TTL) ────────────────────────────────────────
+async function cleanupOldVideos(env) {
+  const cutoff = Date.now() - (12 * 60 * 60 * 1000);
+  let cursor = undefined;
+  let deleted = 0;
+  do {
+    const page = await env.VIDEOS.list({ cursor, prefix: "" });
+    cursor = page.cursor;
+    for (const obj of page.objects || []) {
+      const ts = obj.uploaded ? new Date(obj.uploaded).getTime() : 0;
+      if (ts && ts < cutoff) {
+        await env.VIDEOS.delete(obj.key);
+        deleted++;
+      }
+    }
+  } while (cursor);
+  if (deleted) console.log(`[cleanup] Deleted ${deleted} old videos (>12h)`);
 }
 
 // ── HELPERS ───────────────────────────────────────────────────────────────────

@@ -42,5 +42,9 @@
         "@types/react": "^18.2.55",
         "@types/react-dom": "^18.2.19",
         "typescript": "^5.3.3"
+    },
+    "optionalDependencies": {
+        "@ffmpeg-installer/linux-arm64": "4.1.4",
+        "@ffmpeg-installer/linux-x64": "4.1.0"
     }
 }
