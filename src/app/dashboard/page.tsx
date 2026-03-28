@@ -141,13 +141,13 @@ function ComposeSection({onSuccess}:{onSuccess:()=>void}){
     if(!preview)return;
     setPosting(true);setErr(null);setOk(null);
     try{
-      // Use the already-generated content from preview — no need to re-scrape
       const title=editTitle||preview.ai.clickbaitTitle;
       const caption=editCaption||preview.ai.caption;
       const body:Record<string,string>={
         url:url.trim(),
         manualTitle:title,
         manualCaption:caption,
+        imageBase64:preview.imageBase64, // reuse preview image — skip regeneration
       };
       if(cat!=="AUTO")body.category=cat;
       const r=await fetch("/api/post-from-url-proxy",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});

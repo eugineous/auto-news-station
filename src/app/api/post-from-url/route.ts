@@ -42,10 +42,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  let body: { url?: string; category?: string; dryRun?: boolean; manualTitle?: string; manualCaption?: string };
+  let body: { url?: string; category?: string; dryRun?: boolean; manualTitle?: string; manualCaption?: string; imageBase64?: string };
   try { body = await req.json(); } catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }); }
 
-  const { url, category, dryRun = false, manualTitle, manualCaption } = body;
+  const { url, category, dryRun = false, manualTitle, manualCaption, imageBase64: previewImageBase64 } = body;
   if (!url) return NextResponse.json({ error: "url is required" }, { status: 400 });
 
   try {
@@ -108,12 +108,18 @@ export async function POST(req: NextRequest) {
       };
     }
 
-    // Generate image (handles missing imageUrl with solid color fallback)
+    // Use pre-generated image from preview if available (skips regeneration)
+    let imageBuffer: Buffer;
+    if (previewImageBase64) {
+      const b64 = previewImageBase64.replace(/^data:image\/\w+;base64,/, "");
+      imageBuffer = Buffer.from(b64, "base64");
+    } else {
+      const thumbnailTitle = manualTitle || article.title;
+      imageBuffer = await generateImage({ ...article, title: thumbnailTitle }, { isBreaking: false });
+    }
+
+    // Generate AI content for caption/firstComment (use manualCaption if provided)
     const ai = await generateAIContent(article, { isVideo, videoType });
-    // Use manualTitle as the thumbnail headline if provided (it's the AI-refined title from preview)
-    const thumbnailTitle = manualTitle || ai.clickbaitTitle;
-    const articleWithAITitle = { ...article, title: thumbnailTitle };
-    const imageBuffer = await generateImage(articleWithAITitle, { isBreaking: false });
 
     if (dryRun) {
       return NextResponse.json({ article, ai, imageBase64: imageBuffer.toString("base64"), message: "Dry run" });

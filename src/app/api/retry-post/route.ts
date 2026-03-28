@@ -22,9 +22,6 @@ async function updateLog(articleId: string, platform: "instagram" | "facebook", 
 }
 
 export async function POST(req: NextRequest) {
-  const secret = process.env.AUTOMATE_SECRET;
-  if (!secret) return NextResponse.json({ error: "Not configured" }, { status: 500 });
-
   let body: { articleId?: string; title?: string; caption?: string; imageUrl?: string; articleUrl?: string; category?: string; platform?: "instagram" | "facebook" | "both" };
   try { body = await req.json(); } catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }); }
 
