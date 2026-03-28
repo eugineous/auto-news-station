@@ -213,6 +213,24 @@ export default {
       } catch (err) { return json({ error: err.message }, 500); }
     }
 
+    // ── /stage-video-upload ──────────────────────────────────────────────────
+    // Accepts base64 MP4 that is already processed/watermarked
+    if (url.pathname === "/stage-video-upload" && request.method === "POST") {
+      if (!authed) return new Response("Unauthorized", { status: 401 });
+      try {
+        const { base64, contentType = "video/mp4" } = await request.json();
+        if (!base64) return json({ error: "base64 required" }, 400);
+        const buf = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+        const r2Key = `videos/${Date.now()}-upload.mp4`;
+        await env.VIDEOS.put(r2Key, buf, {
+          httpMetadata: { contentType },
+          customMetadata: { uploadedAt: String(Date.now()) },
+        });
+        const publicUrl = `https://pub-8244b5f99b024cda91b74e1131378a14.r2.dev/${r2Key}`;
+        return json({ success: true, url: publicUrl, key: r2Key });
+      } catch (err) { return json({ error: err.message }, 500); }
+    }
+
     // ── /delete-video ─────────────────────────────────────────────────────────
     if (url.pathname === "/delete-video" && request.method === "POST") {
       if (!authed) return new Response("Unauthorized", { status: 401 });

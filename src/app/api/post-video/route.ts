@@ -4,12 +4,19 @@ import { generateImage } from "@/lib/image-gen";
 import { resolveVideoUrl } from "@/lib/video-downloader";
 import { Article } from "@/lib/types";
 import { createHash } from "crypto";
+import ffmpegPath from "ffmpeg-static";
+import fs from "fs/promises";
+import { tmpdir } from "os";
+import path from "path";
+import { spawn } from "child_process";
 
 export const maxDuration = 180;
 
 const GRAPH_API = "https://graph.facebook.com/v19.0";
 const WORKER_URL = process.env.CLOUDFLARE_WORKER_URL || "https://auto-ppp-tv.euginemicah.workers.dev";
 const WORKER_SECRET = process.env.WORKER_SECRET || "ppptvWorker2024";
+const LOGO_PATH = path.join(process.cwd(), "public", "ppp-logo.png");
+const MAX_BYTES = 120 * 1024 * 1024; // 120MB safety
 
 async function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)); }
 
@@ -45,13 +52,50 @@ async function stageVideo(sourceUrl: string): Promise<{ url: string; key: string
   const resolved = await resolveVideoUrl(sourceUrl).catch(() => null);
   const fetchUrl = resolved?.url || sourceUrl;
 
-  const res = await fetch(WORKER_URL + "/stage-video", {
+  // Download video
+  const resp = await fetch(fetchUrl, { signal: AbortSignal.timeout(120000) });
+  if (!resp.ok) throw new Error(`Download failed: ${resp.status}`);
+  const arr = new Uint8Array(await resp.arrayBuffer());
+  if (arr.length > MAX_BYTES) throw new Error("Video too large to process (>120MB)");
+
+  // Write temp files
+  const tmpIn = path.join(tmpdir(), `ppp-in-${Date.now()}.mp4`);
+  const tmpOut = path.join(tmpdir(), `ppp-out-${Date.now()}.mp4`);
+  await fs.writeFile(tmpIn, arr);
+
+  // Ensure logo exists
+  const logoBuf = await fs.readFile(LOGO_PATH);
+  const tmpLogo = path.join(tmpdir(), `ppp-logo-${Date.now()}.png`);
+  await fs.writeFile(tmpLogo, logoBuf);
+
+  // ffmpeg overlay bottom-left with 24px margin, copy audio, keep size
+  await new Promise<void>((resolve, reject) => {
+    const ff = spawn(ffmpegPath as string, [
+      "-i", tmpIn,
+      "-i", tmpLogo,
+      "-filter_complex", "overlay=24:24",
+      "-c:a", "copy",
+      "-c:v", "libx264",
+      "-preset", "veryfast",
+      "-movflags", "+faststart",
+      tmpOut
+    ], { stdio: "ignore" });
+    ff.on("error", reject);
+    ff.on("close", (code) => code === 0 ? resolve() : reject(new Error(`ffmpeg exit ${code}`)));
+  });
+
+  const processed = await fs.readFile(tmpOut);
+  await fs.unlink(tmpIn).catch(()=>{});
+  await fs.unlink(tmpOut).catch(()=>{});
+  await fs.unlink(tmpLogo).catch(()=>{});
+
+  const res = await fetch(WORKER_URL + "/stage-video-upload", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       "Authorization": "Bearer " + WORKER_SECRET,
     },
-    body: JSON.stringify({ videoUrl: fetchUrl }),
+    body: JSON.stringify({ base64: Buffer.from(processed).toString("base64"), contentType: "video/mp4" }),
     signal: AbortSignal.timeout(150000),
   });
   const data = await res.json() as any;
