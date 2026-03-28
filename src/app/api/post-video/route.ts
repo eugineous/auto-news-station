@@ -32,10 +32,8 @@ const FFMPEG_BIN = (() => {
     "/usr/bin/ffmpeg",
     "ffmpeg",
   ].filter(Boolean) as string[];
-  for (const c of candidates) {
-    if (existsSync(c)) return c;
-  }
-  return "ffmpeg";
+  // prefer the first available path; don't over-filter because serverless packs ffmpeg-static
+  return candidates[0] || "ffmpeg";
 })();
 
 async function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)); }
