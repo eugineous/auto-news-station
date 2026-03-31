@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 import { useState, useRef, useEffect, useCallback } from "react";
 import Shell from "../shell";
 
@@ -81,11 +81,24 @@ function CockpitTab({ onCompose }: { onCompose: (url: string) => void }) {
   async function triggerAutoPost() {
     setAutoPosting(true);
     try {
-      await fetch("/api/automate-video", { ...FETCH_OPTS, method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + process.env.NEXT_PUBLIC_AUTOMATE_SECRET } });
+      // Direct call to automate-video to verify it works
+      const res = await fetch("/api/automate-video", { ...FETCH_OPTS, method: "POST", headers: { "Content-Type": "application/json" } });
+      if (!res.ok) throw new Error("Automation fail: " + res.status);
       await load();
     } catch {}
     setAutoPosting(false);
   }
+
+  // ── Autonomous Loop ──────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!autoPost) return;
+    const interval = 12 * 60 * 1000; // 12 minutes — safely staggered with the 10-min Cloudflare cron
+    const t = setInterval(() => {
+      console.log("[auto-ppp-tv] Autonomous trigger firing…");
+      triggerAutoPost();
+    }, interval);
+    return () => clearInterval(t);
+  }, [autoPost]);
 
   const today = posts.filter(p => new Date(p.postedAt).toDateString() === new Date().toDateString());
   const igOk = today.filter(p => p.instagram?.success).length;
@@ -101,7 +114,15 @@ function CockpitTab({ onCompose }: { onCompose: (url: string) => void }) {
           <span style={{ width: 8, height: 8, borderRadius: "50%", background: GREEN, display: "inline-block", boxShadow: `0 0 6px ${GREEN}` }} />
           <span style={{ fontSize: 11, color: "#555" }}>LIVE · refreshes every 15s{lastRefresh ? ` · ${ago(lastRefresh.toISOString())}` : ""}</span>
         </div>
-        <button onClick={load} style={{ background: "none", border: "1px solid #222", color: "#555", borderRadius: 5, padding: "4px 10px", fontSize: 10, cursor: "pointer" }}>↻ Refresh</button>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, background: autoPost ? PINK + "11" : "#111", border: `1px solid ${autoPost ? PINK + "44" : "#222"}`, padding: "4px 10px", borderRadius: 20 }}>
+            <span style={{ fontSize: 10, fontWeight: 800, color: autoPost ? PINK : "#444", textTransform: "uppercase" }}>Auto-Post</span>
+            <button onClick={() => setAutoPost(!autoPost)} style={{ width: 34, height: 18, borderRadius: 10, background: autoPost ? PINK : "#333", border: "none", position: "relative", cursor: "pointer", transition: "all .2s" }}>
+              <div style={{ width: 14, height: 14, borderRadius: "50%", background: "#fff", position: "absolute", top: 2, left: autoPost ? 18 : 2, transition: "all .2s" }} />
+            </button>
+          </div>
+          <button onClick={load} style={{ background: "none", border: "1px solid #222", color: "#555", borderRadius: 5, padding: "4px 10px", fontSize: 10, cursor: "pointer" }}>↻ Refresh</button>
+        </div>
       </div>
 
       {/* Stats */}
@@ -473,9 +494,44 @@ function SourcesTab({ onCompose }: { onCompose: (url: string) => void }) {
   async function quickPost(video: any) {
     setPosting(video.id);
     try {
-      const r = await fetch("/api/post-video", { ...FETCH_OPTS, method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: video.directVideoUrl || video.url, headline: video.title.toUpperCase().slice(0, 100), caption: `${video.title}\n\nCredit: ${video.sourceName} | ${video.url}`, category: video.category || "GENERAL" }) });
-      const d = await r.json() as any;
-      setPostResults(prev => ({ ...prev, [video.id]: { ig: !!d.instagram?.success, fb: !!d.facebook?.success, err: d.error } }));
+      const resp = await fetch("/api/post-video", {
+        ...FETCH_OPTS,
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: video.directVideoUrl || video.url,
+          headline: video.title.toUpperCase().slice(0, 100),
+          caption: `${video.title}\n\nCredit: ${video.sourceName} | ${video.url}`,
+          category: video.category || "GENERAL"
+        })
+      });
+
+      if (!resp.ok || !resp.body) throw new Error("HTTP " + resp.status);
+
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop() || "";
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const evt = JSON.parse(line.slice(6));
+            if (evt.done) {
+              setPostResults(prev => ({
+                ...prev,
+                [video.id]: { ig: !!evt.instagram?.success, fb: !!evt.facebook?.success, err: evt.error }
+              }));
+              break;
+            }
+          } catch {}
+        }
+      }
     } catch (e: any) {
       setPostResults(prev => ({ ...prev, [video.id]: { ig: false, fb: false, err: e.message } }));
     }

@@ -178,127 +178,132 @@ async function postVideoToFB(
 }
 
 export async function POST(req: NextRequest) {
-  const auth = req.headers.get("authorization");
-  if (auth !== "Bearer " + process.env.AUTOMATE_SECRET) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const igToken = process.env.INSTAGRAM_ACCESS_TOKEN;
-  const igAccountId = process.env.INSTAGRAM_ACCOUNT_ID;
-  const fbToken = process.env.FACEBOOK_ACCESS_TOKEN;
-  const fbPageId = process.env.FACEBOOK_PAGE_ID;
-
-  if (!igToken || !igAccountId || !fbToken || !fbPageId) {
-    return NextResponse.json({ error: "Social credentials not configured" }, { status: 500 });
-  }
-
-  const allVideos = await fetchAllVideoSources();
-  if (allVideos.length === 0) {
-    return NextResponse.json({ posted: 0, message: "No videos found from any source" });
-  }
-
-  let target: VideoItem | null = null;
-  for (const video of allVideos) {
-    if (!(await isVideoSeen(video.id))) { target = video; break; }
-  }
-
-  if (!target) {
-    return NextResponse.json({ posted: 0, message: "All recent videos already posted" });
-  }
-
-  await markVideoSeen(target.id);
-
-  const videoUrlToResolve = target.directVideoUrl || target.url;
-  const resolved = await resolveVideoUrl(videoUrlToResolve).catch(() => null);
-  const directUrl = resolved?.url || (target.directVideoUrl ?? null);
-
-  if (!directUrl) {
-    return NextResponse.json({ posted: 0, error: "Could not resolve video URL", source: target.sourceName });
-  }
-
-  const staged = await stageVideoInR2(directUrl);
-  if (!staged) {
-    return NextResponse.json({ posted: 0, error: "Video staging failed", source: target.sourceName });
-  }
-
-  const thumbRaw = target.thumbnail || "";
-  const thumbUrl = thumbRaw ? `${WORKER_URL}/img?url=${encodeURIComponent(thumbRaw)}` : "";
-  const article: Article = {
-    id: createHash("sha256").update(target.id).digest("hex").slice(0, 16),
-    title: target.title,
-    url: target.url,
-    imageUrl: thumbUrl,
-    summary: target.title,
-    fullBody: target.title,
-    sourceName: target.sourceName,
-    category: target.category,
-    publishedAt: target.publishedAt,
-    isVideo: true,
-    videoUrl: target.url,
-  };
-
-  const ai = await generateAIContent(article).catch(() => ({
-    clickbaitTitle: target!.title.toUpperCase(),
-    caption: `${target!.title}\n\nTag someone who needs to see this.`,
-    firstComment: "#KenyaEntertainment #PPPTVKenya",
-    engagementType: "tag" as const,
-  }));
-
-  const caption = `${ai.caption}\n\n${
-    target.sourceType === "direct-mp4" && target.url.includes("tiktok.com")
-      ? (() => {
-          const acct = TIKTOK_ACCOUNTS.find(a => target!.url.includes(a.username));
-          return acct ? buildAttribution(acct, target.url) : `Credit: ${target.sourceName} | ${target.url}`;
-        })()
-      : `Credit: ${target.sourceName} | ${target.url}`
-  }`;
-
-  // Generate branded PPP TV cover image and stage it to R2
-  let coverUrl: string | undefined;
   try {
-    const imageBuffer = await generateImage(article, { isBreaking: false });
-    const stageRes = await fetch(WORKER_URL + "/stage-image", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },
-      body: JSON.stringify({ imageBuffer: imageBuffer.toString("base64") }),
-      signal: AbortSignal.timeout(15000),
-    });
-    if (stageRes.ok) {
-      const d = await stageRes.json() as any;
-      coverUrl = d?.url;
+    const auth = req.headers.get("authorization");
+    if (auth !== "Bearer " + process.env.AUTOMATE_SECRET) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-  } catch { /* cover is optional */ }
 
-  const [igResult, fbResult] = await Promise.all([
-    postReelToIG(staged.url, caption, coverUrl, igToken, igAccountId),
-    postVideoToFB(staged.url, caption, fbToken, fbPageId),
-  ]);
+    const igToken = process.env.INSTAGRAM_ACCESS_TOKEN;
+    const igAccountId = process.env.INSTAGRAM_ACCOUNT_ID;
+    const fbToken = process.env.FACEBOOK_ACCESS_TOKEN;
+    const fbPageId = process.env.FACEBOOK_PAGE_ID;
 
-  fetch(WORKER_URL + "/delete-video", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },
-    body: JSON.stringify({ key: staged.key }),
-  }).catch(() => {});
+    if (!igToken || !igAccountId || !fbToken || !fbPageId) {
+      return NextResponse.json({ error: "Social credentials not configured" }, { status: 500 });
+    }
 
-  if (igResult.success || fbResult.success) {
-    await fetch(WORKER_URL + "/post-log", {
+    const allVideos = await fetchAllVideoSources();
+    if (allVideos.length === 0) {
+      return NextResponse.json({ posted: 0, message: "No videos found from any source" });
+    }
+
+    let target: VideoItem | null = null;
+    for (const video of allVideos) {
+      if (!(await isVideoSeen(video.id))) { target = video; break; }
+    }
+
+    if (!target) {
+      return NextResponse.json({ posted: 0, message: "All recent videos already posted" });
+    }
+
+    await markVideoSeen(target.id);
+
+    const videoUrlToResolve = target.directVideoUrl || target.url;
+    const resolved = await resolveVideoUrl(videoUrlToResolve).catch(() => null);
+    const directUrl = resolved?.url || (target.directVideoUrl ?? null);
+
+    if (!directUrl) {
+      return NextResponse.json({ posted: 0, error: "Could not resolve video URL", source: target.sourceName });
+    }
+
+    const staged = await stageVideoInR2(directUrl);
+    if (!staged) {
+      return NextResponse.json({ posted: 0, error: "Video staging failed", source: target.sourceName });
+    }
+
+    const thumbRaw = target.thumbnail || "";
+    const thumbUrl = thumbRaw ? `${WORKER_URL}/img?url=${encodeURIComponent(thumbRaw)}` : "";
+    const article: Article = {
+      id: createHash("sha256").update(target.id).digest("hex").slice(0, 16),
+      title: target.title,
+      url: target.url,
+      imageUrl: thumbUrl,
+      summary: target.title,
+      fullBody: target.title,
+      sourceName: target.sourceName,
+      category: target.category,
+      publishedAt: target.publishedAt,
+      isVideo: true,
+      videoUrl: target.url,
+    };
+
+    const ai = await generateAIContent(article).catch(() => ({
+      clickbaitTitle: (target as VideoItem).title.toUpperCase(),
+      caption: `${(target as VideoItem).title}\n\nTag someone who needs to see this.`,
+      firstComment: "#KenyaEntertainment #PPPTVKenya",
+      engagementType: "tag" as const,
+    }));
+
+    const caption = `${ai.caption}\n\n${
+      target.sourceType === "direct-mp4" && target.url.includes("tiktok.com")
+        ? (() => {
+            const acct = TIKTOK_ACCOUNTS.find(a => (target as VideoItem).url.includes(a.username));
+            return acct ? buildAttribution(acct, target.url) : `Credit: ${(target as VideoItem).sourceName} | ${(target as VideoItem).url}`;
+          })()
+        : `Credit: ${target.sourceName} | ${target.url}`
+    }`;
+
+    // Generate branded PPP TV cover image and stage it to R2
+    let coverUrl: string | undefined;
+    try {
+      const imageBuffer = await generateImage(article, { isBreaking: false });
+      const stageRes = await fetch(WORKER_URL + "/stage-image", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },
+        body: JSON.stringify({ imageBuffer: imageBuffer.toString("base64") }),
+        signal: AbortSignal.timeout(15000),
+      });
+      if (stageRes.ok) {
+        const d = await stageRes.json() as any;
+        coverUrl = d?.url;
+      }
+    } catch { /* cover is optional */ }
+
+    const [igResult, fbResult] = await Promise.all([
+      postReelToIG(staged.url, caption, coverUrl, igToken, igAccountId),
+      postVideoToFB(staged.url, caption, fbToken, fbPageId),
+    ]);
+
+    fetch(WORKER_URL + "/delete-video", {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },
-      body: JSON.stringify({
-        articleId: article.id, title: target.title, url: target.url,
-        category: target.category, sourceName: target.sourceName,
-        sourceType: target.sourceType,
-        instagram: igResult, facebook: fbResult,
-        postedAt: new Date().toISOString(), postType: "video",
-      }),
-      signal: AbortSignal.timeout(5000),
+      body: JSON.stringify({ key: staged.key }),
     }).catch(() => {});
-  }
 
-  return NextResponse.json({
-    posted: (igResult.success || fbResult.success) ? 1 : 0,
-    video: { title: target.title, source: target.sourceName, type: target.sourceType, url: target.url },
-    instagram: igResult,
-    facebook: fbResult,
-  });
+    if (igResult.success || fbResult.success) {
+      await fetch(WORKER_URL + "/post-log", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },
+        body: JSON.stringify({
+          articleId: article.id, title: target.title, url: target.url,
+          category: target.category, sourceName: target.sourceName,
+          sourceType: target.sourceType,
+          instagram: igResult, facebook: fbResult,
+          postedAt: new Date().toISOString(), postType: "video",
+        }),
+        signal: AbortSignal.timeout(5000),
+      }).catch(() => {});
+    }
+
+    return NextResponse.json({
+      posted: (igResult.success || fbResult.success) ? 1 : 0,
+      video: { title: target.title, source: target.sourceName, type: target.sourceType, url: target.url },
+      instagram: igResult,
+      facebook: fbResult,
+    });
+  } catch (error: any) {
+    console.error("[automate-video] Critical Error:", error);
+    return NextResponse.json({ error: error.message || "Unknown error" }, { status: 500 });
+  }
 }

@@ -231,7 +231,10 @@ export async function POST(req: NextRequest) {
             })
           );
           const container = await containerRes.json() as any;
-          if (!containerRes.ok || container.error) throw new Error(container?.error?.message ?? "IG container failed");
+          if (!containerRes.ok || container.error) {
+            console.error("[IG_CONTAINER_ERROR]", JSON.stringify(container, null, 2));
+            throw new Error(container?.error?.message ?? "IG container failed");
+          }
 
           emit(65, "IG container created — waiting for processing…");
           await waitForIGContainer(container.id, igToken, emit);
@@ -245,10 +248,14 @@ export async function POST(req: NextRequest) {
             })
           );
           const published = await publishRes.json() as any;
-          if (!publishRes.ok || published.error) throw new Error(published?.error?.message ?? "IG publish failed");
+          if (!publishRes.ok || published.error) {
+            console.error("[IG_PUBLISH_ERROR]", JSON.stringify(published, null, 2));
+            throw new Error(published?.error?.message ?? "IG publish failed");
+          }
           igResult = { success: true, postId: published.id };
           emit(90, "Instagram ✓ published!");
         } catch (err: any) {
+          console.error("[IG_PIPELINE_ERROR]", err);
           igResult = { success: false, error: err.message };
           emit(90, `Instagram ✗ ${err.message}`);
         }
@@ -272,10 +279,12 @@ export async function POST(req: NextRequest) {
             fbResult = { success: true, postId: feedData.id };
             emit(96, "Facebook ✓ published!");
           } else {
+            console.error("[FB_ERROR]", JSON.stringify(feedData, null, 2));
             fbResult = { success: false, error: feedData?.error?.message ?? "FB video post failed" };
             emit(96, `Facebook ✗ ${fbResult.error}`);
           }
         } catch (err: any) {
+          console.error("[FB_PIPELINE_ERROR]", err);
           fbResult = { success: false, error: err.message };
           emit(96, `Facebook ✗ ${err.message}`);
         }
@@ -307,6 +316,7 @@ export async function POST(req: NextRequest) {
         instagram: igResult, facebook: fbResult, thumbnailUrl,
       });
     } catch (err: any) {
+      console.error("[POST_VIDEO_FATAL]", err);
       emit(100, `Error: ${err.message}`, { done: true, success: false, error: err.message });
     } finally {
       close();
