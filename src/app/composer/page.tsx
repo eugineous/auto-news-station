@@ -298,6 +298,13 @@ function ComposeTab({ initialUrl, onSuccess, onProgress }: {
   const [tone, setTone]                 = useState<"formal" | "casual" | "hype">("casual");
   const [dupWarning, setDupWarning]     = useState(false);
   const [sourceMeta, setSourceMeta]     = useState<{ name?: string; date?: string } | null>(null);
+  const [scheduleAt, setScheduleAt]     = useState("");
+  const [testMode, setTestMode]         = useState(false);
+  const [language, setLanguage]         = useState<"english" | "swahili">("english");
+  const [bulkMode, setBulkMode]         = useState(false);
+  const [bulkUrls, setBulkUrls]         = useState("");
+  const [bulkQueue, setBulkQueue]       = useState<{ url: string; status: "pending" | "posting" | "done" | "error"; msg?: string }[]>([]);
+  const [bulkRunning, setBulkRunning]   = useState(false);
   const debounceRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
   const thumbDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -344,7 +351,7 @@ function ComposeTab({ initialUrl, onSuccess, onProgress }: {
     setResolvedVideoUrl(""); setPlatform(""); setShowPlayer(false); setPlayerError(false); setDupWarning(false);
     try {
       const [previewRes, resolveRes] = await Promise.all([
-        fetch("/api/preview-url", { ...FETCH_OPTS, method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: target }) }),
+        fetch("/api/preview-url", { ...FETCH_OPTS, method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: target, language }) }),
         fetch("/api/resolve-video", { ...FETCH_OPTS, method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: target }) }),
       ]);
       const preview = await previewRes.json() as any;
@@ -374,7 +381,7 @@ function ComposeTab({ initialUrl, onSuccess, onProgress }: {
     if (!url.trim() || refining) return;
     setRefining(true);
     try {
-      const r = await fetch("/api/preview-url", { ...FETCH_OPTS, method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: url.trim(), tone }) });
+      const r = await fetch("/api/preview-url", { ...FETCH_OPTS, method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: url.trim(), tone, language }) });
       const d = await r.json() as any;
       if (d.ai?.clickbaitTitle) setHeadline(d.ai.clickbaitTitle.toUpperCase().slice(0, 120));
       if (d.ai?.caption) setCaption(d.ai.caption);
@@ -390,10 +397,29 @@ function ComposeTab({ initialUrl, onSuccess, onProgress }: {
     log.unshift({ ts: new Date().toISOString(), url: url.trim(), headline, caption, category });
     localStorage.setItem("composer:log", JSON.stringify(log.slice(0, 20)));
     try {
+      // Schedule mode: POST to /api/schedule-post instead
+      if (scheduleAt) {
+        const r = await fetch("/api/schedule-post", {
+          ...FETCH_OPTS, method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: url.trim(), headline: headline.trim(), caption: caption.trim(), category, scheduledAt: scheduleAt }),
+        });
+        const d = await r.json() as any;
+        if (d.ok) {
+          setResult({ scheduled: true, id: d.id });
+          setStatus("success");
+          setTimeout(() => { setUrl(""); setHeadline(""); setCaption(""); setThumbUrl(""); setThumbSrc(null); setResolvedVideoUrl(""); setStatus("idle"); setShowPlayer(false); setSourceMeta(null); setScheduleAt(""); onSuccess(); }, 3000);
+        } else {
+          setResult({ error: d.error || "Schedule failed" });
+          setStatus("error");
+        }
+        return;
+      }
+
       const resp = await fetch("/api/post-video", {
         ...FETCH_OPTS, method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: url.trim(), headline: headline.trim(), caption: caption.trim() + `\n\nSource: ${url.trim()}`, category, igOnly, fbOnly }),
+        body: JSON.stringify({ url: url.trim(), headline: headline.trim(), caption: caption.trim() + `\n\nSource: ${url.trim()}`, category, igOnly, fbOnly, ...(testMode ? { testMode: true } : {}) }),
       });
       if (!resp.ok || !resp.body) throw new Error("Post request failed: HTTP " + resp.status);
       const reader = resp.body.getReader();
@@ -440,6 +466,45 @@ function ComposeTab({ initialUrl, onSuccess, onProgress }: {
   function resetForm() {
     setUrl(""); setHeadline(""); setCaption(""); setThumbUrl(""); setThumbSrc(null);
     setResolvedVideoUrl(""); setStatus("idle"); setShowPlayer(false); setResult(null); setSourceMeta(null);
+  }
+
+  async function handleBulkPost() {
+    const urls = bulkUrls.split("\n").map(u => u.trim()).filter(Boolean).slice(0, 5);
+    if (urls.length === 0) return;
+    setBulkRunning(true);
+    setBulkQueue(urls.map(u => ({ url: u, status: "pending" as const })));
+    for (let i = 0; i < urls.length; i++) {
+      const u = urls[i];
+      setBulkQueue(q => q.map((item, idx) => idx === i ? { ...item, status: "posting" } : item));
+      try {
+        const resp = await fetch("/api/post-video", {
+          ...FETCH_OPTS, method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: u, headline: u, caption: u, category: "GENERAL", ...(testMode ? { testMode: true } : {}) }),
+        });
+        if (!resp.ok || !resp.body) throw new Error("HTTP " + resp.status);
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = "";
+        let finalEvt: any = null;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          const lines = buf.split("\n"); buf = lines.pop() || "";
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
+            try { const evt = JSON.parse(line.slice(6)); if (evt.done) finalEvt = evt; } catch {}
+          }
+        }
+        const ok = finalEvt?.success || finalEvt?.instagram?.success || finalEvt?.facebook?.success;
+        setBulkQueue(q => q.map((item, idx) => idx === i ? { ...item, status: ok ? "done" : "error", msg: ok ? "Posted ✓" : (finalEvt?.error || "Failed") } : item));
+      } catch (e: any) {
+        setBulkQueue(q => q.map((item, idx) => idx === i ? { ...item, status: "error", msg: e.message } : item));
+      }
+      if (i < urls.length - 1) await new Promise(r => setTimeout(r, 8000));
+    }
+    setBulkRunning(false);
   }
 
   const canPost = url.trim() && headline.trim() && caption.trim() && status !== "posting" && status !== "resolving";
@@ -645,6 +710,96 @@ function ComposeTab({ initialUrl, onSuccess, onProgress }: {
         }}>✕ Reset</button>
       </div>
 
+      {/* Language selector */}
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <span style={{ fontSize: 10, color: "#444", fontWeight: 700, letterSpacing: 1, textTransform: "uppercase" as const }}>Language:</span>
+        {(["english", "swahili"] as const).map(lang => (
+          <button key={lang} onClick={() => setLanguage(lang)} style={{
+            padding: "4px 12px", borderRadius: 20, fontSize: 10, fontWeight: 700, cursor: "pointer",
+            border: `1px solid ${language === lang ? CYAN : "#222"}`,
+            background: language === lang ? CYAN + "22" : "transparent",
+            color: language === lang ? CYAN : "#444",
+            textTransform: "capitalize" as const,
+          }}>{lang}</button>
+        ))}
+      </div>
+
+      {/* Test Mode + Bulk Mode toggles */}
+      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" as const }}>
+        <button onClick={() => setTestMode(!testMode)} style={{
+          display: "flex", alignItems: "center", gap: 6,
+          background: testMode ? YELLOW + "11" : "#111",
+          border: `1px solid ${testMode ? YELLOW + "44" : "#222"}`,
+          padding: "5px 12px", borderRadius: 20, cursor: "pointer",
+        }}>
+          <span style={{ fontSize: 10, fontWeight: 800, color: testMode ? YELLOW : "#444", textTransform: "uppercase" as const }}>🧪 Test Mode</span>
+          <div style={{ width: 28, height: 15, borderRadius: 8, background: testMode ? YELLOW : "#333", border: "none", position: "relative" as const, cursor: "pointer" }}>
+            <div style={{ width: 11, height: 11, borderRadius: "50%", background: "#fff", position: "absolute" as const, top: 2, left: testMode ? 15 : 2, transition: "all .2s" }} />
+          </div>
+        </button>
+        <button onClick={() => setBulkMode(!bulkMode)} style={{
+          display: "flex", alignItems: "center", gap: 6,
+          background: bulkMode ? ORANGE + "11" : "#111",
+          border: `1px solid ${bulkMode ? ORANGE + "44" : "#222"}`,
+          padding: "5px 12px", borderRadius: 20, cursor: "pointer",
+        }}>
+          <span style={{ fontSize: 10, fontWeight: 800, color: bulkMode ? ORANGE : "#444", textTransform: "uppercase" as const }}>📦 Bulk Post</span>
+          <div style={{ width: 28, height: 15, borderRadius: 8, background: bulkMode ? ORANGE : "#333", border: "none", position: "relative" as const, cursor: "pointer" }}>
+            <div style={{ width: 11, height: 11, borderRadius: "50%", background: "#fff", position: "absolute" as const, top: 2, left: bulkMode ? 15 : 2, transition: "all .2s" }} />
+          </div>
+        </button>
+      </div>
+
+      {/* Bulk Post UI */}
+      {bulkMode && (
+        <div style={{ background: "#0a0a0a", border: `1px solid ${ORANGE}33`, borderRadius: 9, padding: "14px 16px", display: "flex", flexDirection: "column" as const, gap: 10 }}>
+          <label style={{ ...lbl, color: ORANGE }}>Bulk URLs <span style={{ color: "#333", fontWeight: 400, textTransform: "none" as const }}>(up to 5, one per line)</span></label>
+          <textarea
+            value={bulkUrls}
+            onChange={e => setBulkUrls(e.target.value)}
+            placeholder={"https://tiktok.com/...\nhttps://youtube.com/...\nhttps://instagram.com/..."}
+            rows={5}
+            style={{ ...inp, resize: "vertical" as const }}
+          />
+          <button onClick={handleBulkPost} disabled={bulkRunning || !bulkUrls.trim()} style={{
+            background: bulkRunning ? "#111" : ORANGE, border: "none", color: "#fff",
+            borderRadius: 7, padding: "11px", fontSize: 12, fontWeight: 800, cursor: bulkRunning ? "not-allowed" : "pointer",
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+          }}>
+            {bulkRunning ? <><Spin /> Posting queue…</> : `▶ Post ${bulkUrls.split("\n").filter(u => u.trim()).slice(0, 5).length} URLs`}
+          </button>
+          {bulkQueue.length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column" as const, gap: 4 }}>
+              {bulkQueue.map((item, i) => (
+                <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 11 }}>
+                  <span style={{ color: item.status === "done" ? GREEN : item.status === "error" ? RED : item.status === "posting" ? ORANGE : "#444", fontWeight: 700, flexShrink: 0 }}>
+                    {item.status === "done" ? "✓" : item.status === "error" ? "✗" : item.status === "posting" ? "…" : "○"}
+                  </span>
+                  <span style={{ flex: 1, color: "#666", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{item.url.slice(0, 50)}…</span>
+                  {item.msg && <span style={{ color: item.status === "done" ? GREEN : RED, fontSize: 10 }}>{item.msg}</span>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Schedule input */}
+      <div>
+        <label style={lbl}>Schedule <span style={{ color: "#333", fontWeight: 400, textTransform: "none" as const }}>(optional — leave blank to post now)</span></label>
+        <input
+          type="datetime-local"
+          value={scheduleAt}
+          onChange={e => setScheduleAt(e.target.value)}
+          style={{ ...inp, colorScheme: "dark" }}
+        />
+        {scheduleAt && (
+          <div style={{ marginTop: 5, fontSize: 10, color: CYAN }}>
+            📅 Will be scheduled for {new Date(scheduleAt).toLocaleString()} — calls /api/schedule-post
+          </div>
+        )}
+      </div>
+
       {/* Post button */}
       <button onClick={handlePost} disabled={!canPost} style={{
         width: "100%", padding: "15px 0", fontSize: 13, fontWeight: 800, letterSpacing: 2,
@@ -656,8 +811,8 @@ function ComposeTab({ initialUrl, onSuccess, onProgress }: {
         boxShadow: canPost ? `0 4px 20px ${PINK}44` : "none",
       }}>
         {status === "resolving" || status === "posting"
-          ? <><Spin /> {status === "resolving" ? "Resolving…" : "Posting to IG + FB (~60s)…"}</>
-          : "🎬 Post Video to IG + FB"}
+          ? <><Spin /> {status === "resolving" ? "Resolving…" : scheduleAt ? "Scheduling…" : "Posting to IG + FB (~60s)…"}</>
+          : scheduleAt ? "📅 Schedule Post" : "🎬 Post Video to IG + FB"}
       </button>
       <div style={{ textAlign: "center", fontSize: 10, color: "#333", marginTop: -10 }}>Ctrl+Enter to post</div>
 
@@ -670,13 +825,15 @@ function ComposeTab({ initialUrl, onSuccess, onProgress }: {
         }}>
           {status === "success" ? (
             <div style={{ display: "flex", flexDirection: "column" as const, gap: 5 }}>
-              <span style={{ fontWeight: 700, color: GREEN, fontSize: 13 }}>✓ Posted successfully</span>
-              {result.instagram?.success && <span style={{ fontSize: 11, color: "#aaa" }}>Instagram ✓ {result.instagram.postId}</span>}
-              {result.facebook?.success && <span style={{ fontSize: 11, color: "#aaa" }}>Facebook ✓ {result.facebook.postId}</span>}
-              {result.twitter?.success && <span style={{ fontSize: 11, color: "#aaa" }}>X (Twitter) ✓ {result.twitter.postId}</span>}
-              {!result.instagram?.success && <span style={{ fontSize: 11, color: RED }}>Instagram ✗ {result.instagram?.error}</span>}
-              {!result.facebook?.success && <span style={{ fontSize: 11, color: RED }}>Facebook ✗ {result.facebook?.error}</span>}
-              {result.twitter && !result.twitter?.success && <span style={{ fontSize: 11, color: RED }}>X ✗ {result.twitter?.error}</span>}
+              {result.scheduled
+                ? <span style={{ fontWeight: 700, color: CYAN, fontSize: 13 }}>📅 Scheduled successfully (ID: {result.id})</span>
+                : <span style={{ fontWeight: 700, color: GREEN, fontSize: 13 }}>✓ Posted successfully</span>}
+              {!result.scheduled && result.instagram?.success && <span style={{ fontSize: 11, color: "#aaa" }}>Instagram ✓ {result.instagram.postId}</span>}
+              {!result.scheduled && result.facebook?.success && <span style={{ fontSize: 11, color: "#aaa" }}>Facebook ✓ {result.facebook.postId}</span>}
+              {!result.scheduled && result.twitter?.success && <span style={{ fontSize: 11, color: "#aaa" }}>X (Twitter) ✓ {result.twitter.postId}</span>}
+              {!result.scheduled && !result.instagram?.success && <span style={{ fontSize: 11, color: RED }}>Instagram ✗ {result.instagram?.error}</span>}
+              {!result.scheduled && !result.facebook?.success && <span style={{ fontSize: 11, color: RED }}>Facebook ✗ {result.facebook?.error}</span>}
+              {!result.scheduled && result.twitter && !result.twitter?.success && <span style={{ fontSize: 11, color: RED }}>X ✗ {result.twitter?.error}</span>}
             </div>
           ) : <span style={{ color: RED, fontSize: 13 }}>{result.error || "Post failed"}</span>}
         </div>
@@ -776,7 +933,7 @@ function SourcesTab({ onCompose }: { onCompose: (url: string) => void }) {
   async function loadVideos() {
     setLoading(true);
     try {
-      const r = await fetch("/api/admin/feeds", { ...FETCH_OPTS, method: "POST" });
+      const r = await fetch("/api/scrape-videos", { ...FETCH_OPTS, method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer ppptvWorker2024" } });
       const d = await r.json() as any;
       setVideos(d.videos || []);
     } catch {}

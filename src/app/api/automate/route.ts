@@ -175,6 +175,28 @@ async function filterUnseen(articles: Article[]): Promise<Article[]> {
   } catch { return articles; }
 }
 
+async function filterBlacklisted(articles: Article[]): Promise<Article[]> {
+  if (!WORKER_SECRET || articles.length === 0) return articles;
+  try {
+    const res = await fetch(WORKER_URL + "/blacklist", {
+      headers: { "Authorization": "Bearer " + WORKER_SECRET },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return articles;
+    const { blacklist = [] } = await res.json() as { blacklist: { type: string; value: string }[] };
+    if (blacklist.length === 0) return articles;
+    return articles.filter(a => {
+      const domain = (() => { try { return new URL(a.url).hostname.toLowerCase(); } catch { return ""; } })();
+      const titleLower = a.title.toLowerCase();
+      return !blacklist.some((e: { type: string; value: string }) => {
+        if (e.type === "domain") return domain.includes(e.value.toLowerCase());
+        if (e.type === "keyword") return titleLower.includes(e.value.toLowerCase());
+        return false;
+      });
+    });
+  } catch { return articles; }
+}
+
 async function markSeen(id: string, title?: string): Promise<void> {
   if (!WORKER_SECRET) return;
   try {
@@ -440,8 +462,9 @@ export async function POST(req: NextRequest) {
     // 2. Quality gate
     const quality = kenya.filter(hasMinimumContent);
 
-    // 3. Dedup via KV
-    const unseen = await filterUnseen(quality);
+    // 3. Blacklist + Dedup via KV
+    const notBlacklisted = await filterBlacklisted(quality);
+    const unseen = await filterUnseen(notBlacklisted);
     response.skipped = quality.length - unseen.length;
 
     // Extra in-memory title dedup — catches same article with different URL variants

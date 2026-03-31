@@ -1,38 +1,19 @@
 {
   "name": "PPP TV Command Center",
   "short_name": "PPP TV",
-  "description": "PPP TV Kenya social media management dashboard",
-  "start_url": "/dashboard",
-  "scope": "/",
+  "description": "Auto News Station — Compose, Monitor, Post to IG + FB + X",
+  "start_url": "/composer",
   "display": "standalone",
-  "background_color": "#141414",
-  "theme_color": "#E50914",
-  "orientation": "any",
-  "categories": ["productivity", "social"],
+  "background_color": "#050505",
+  "theme_color": "#FF007A",
+  "orientation": "portrait",
   "icons": [
-    {
-      "src": "/icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "maskable"
-    },
-    {
-      "src": "/icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "maskable"
-    }
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Compose", "url": "/composer", "description": "Post a video" },
+    { "name": "Dashboard", "url": "/dashboard", "description": "View pipeline" },
+    { "name": "Status", "url": "/status", "description": "System health" }
   ]
 }

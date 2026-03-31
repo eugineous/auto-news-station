@@ -1,5 +1,6 @@
 ﻿"use client";
 import { useState, useEffect, useCallback, useRef } from "react";
+import Link from "next/link";
 const R="#E50914",PK="#FF007A",GR="#4ade80",AM="#f59e0b";
 const CAT:Record<string,{bg:string;text:string}> = {
   CELEBRITY:{bg:"#FF007A",text:"#fff"},POLITICS:{bg:"#FF007A",text:"#fff"},NEWS:{bg:"#FF007A",text:"#fff"},
@@ -714,11 +715,113 @@ function AnalyticsSection({posts,nextIn}:{posts:Post[];nextIn:string}){
 }
 
 function SettingsSection({onTrigger}:{onTrigger:()=>void}){
-  const [clearing,setClearing]=useState(false);const [clearMsg,setClearMsg]=useState("");const [triggering,setTriggering]=useState(false);
-  async function clearCache(){setClearing(true);setClearMsg("");try{const r=await fetch("https://auto-ppp-tv.euginemicah.workers.dev/clear-cache",{method:"POST",headers:{Authorization:"Bearer ppptvWorker2024"}});const d=await r.json();setClearMsg(`Cleared ${d.cleared||0} seen articles`);}catch(e:any){setClearMsg("Error: "+e.message);}finally{setClearing(false);}}
-  async function triggerNow(){setTriggering(true);try{await fetch("https://auto-ppp-tv.euginemicah.workers.dev/trigger");onTrigger();}catch(e:any){alert("Error: "+e.message);}finally{setTriggering(false);}}
-  return <div className="fade"><div style={{marginBottom:16}}><h2 style={{fontFamily:"Bebas Neue,sans-serif",fontSize:22,letterSpacing:1,marginBottom:4}}>Settings</h2><p style={{fontSize:12,color:"#444"}}>Control the pipeline and manage the system.</p></div>
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
+  const [clearing,setClearing]=useState(false);
+  const [clearMsg,setClearMsg]=useState("");
+  const [triggering,setTriggering]=useState(false);
+
+  // Video Pipeline / Scheduled Posts
+  const [scheduledPosts,setScheduledPosts]=useState<any[]>([]);
+  const [schedLoading,setSchedLoading]=useState(true);
+  const [cancellingId,setCancellingId]=useState<string|null>(null);
+
+  // System Health
+  const [health,setHealth]=useState<any>(null);
+  const [healthLoading,setHealthLoading]=useState(true);
+
+  // Pause Pipeline
+  const [paused,setPaused]=useState(false);
+  const [pauseLoading,setPauseLoading]=useState(false);
+
+  // Blacklist
+  const [blacklist,setBlacklist]=useState<any[]>([]);
+  const [blLoading,setBlLoading]=useState(true);
+  const [blType,setBlType]=useState<"domain"|"keyword">("domain");
+  const [blValue,setBlValue]=useState("");
+  const [blAdding,setBlAdding]=useState(false);
+  const [blDeletingKey,setBlDeletingKey]=useState<string|null>(null);
+
+  const WORKER="https://auto-ppp-tv.euginemicah.workers.dev";
+  const WORKER_AUTH={Authorization:"Bearer ppptvWorker2024"};
+
+  async function clearCache(){setClearing(true);setClearMsg("");try{const r=await fetch(WORKER+"/clear-cache",{method:"POST",headers:WORKER_AUTH});const d=await r.json();setClearMsg(`Cleared ${d.cleared||0} seen articles`);}catch(e:any){setClearMsg("Error: "+e.message);}finally{setClearing(false);}}
+  async function triggerNow(){setTriggering(true);try{await fetch(WORKER+"/trigger");onTrigger();}catch(e:any){alert("Error: "+e.message);}finally{setTriggering(false);}}
+
+  async function loadScheduled(){
+    setSchedLoading(true);
+    try{const r=await fetch(WORKER+"/schedule",{headers:WORKER_AUTH});const d=await r.json();setScheduledPosts(d.scheduled||d||[]);}
+    catch{}finally{setSchedLoading(false);}
+  }
+
+  async function cancelScheduled(id:string){
+    setCancellingId(id);
+    try{await fetch(WORKER+"/schedule/"+id,{method:"DELETE",headers:WORKER_AUTH});await loadScheduled();}
+    catch{}finally{setCancellingId(null);}
+  }
+
+  async function loadHealth(){
+    setHealthLoading(true);
+    try{
+      const r=await fetch("/api/admin/health",{headers:{Authorization:"Bearer "+(process.env.NEXT_PUBLIC_AUTOMATE_SECRET||"")}});
+      const d=await r.json();
+      setHealth(d);
+      // Read paused state from worker health
+      const wh=await fetch(WORKER+"/health",{headers:WORKER_AUTH}).then(x=>x.json()).catch(()=>({}));
+      setPaused(!!(wh as any).pipelinePaused);
+    }catch{}finally{setHealthLoading(false);}
+  }
+
+  async function togglePause(){
+    setPauseLoading(true);
+    try{
+      const endpoint=paused?"/pipeline/resume":"/pipeline/pause";
+      await fetch(WORKER+endpoint,{method:"POST",headers:WORKER_AUTH});
+      setPaused(!paused);
+    }catch{}finally{setPauseLoading(false);}
+  }
+
+  async function loadBlacklist(){
+    setBlLoading(true);
+    try{const r=await fetch(WORKER+"/blacklist",{headers:WORKER_AUTH});const d=await r.json();setBlacklist(d.blacklist||[]);}
+    catch{}finally{setBlLoading(false);}
+  }
+
+  async function addBlacklist(){
+    if(!blValue.trim())return;
+    setBlAdding(true);
+    try{
+      await fetch(WORKER+"/blacklist",{method:"POST",headers:{...WORKER_AUTH,"Content-Type":"application/json"},body:JSON.stringify({type:blType,value:blValue.trim()})});
+      setBlValue("");
+      await loadBlacklist();
+    }catch{}finally{setBlAdding(false);}
+  }
+
+  async function deleteBlacklist(key:string){
+    setBlDeletingKey(key);
+    try{
+      await fetch(WORKER+"/blacklist",{method:"DELETE",headers:{...WORKER_AUTH,"Content-Type":"application/json"},body:JSON.stringify({key})});
+      await loadBlacklist();
+    }catch{}finally{setBlDeletingKey(null);}
+  }
+
+  useEffect(()=>{loadScheduled();loadHealth();loadBlacklist();},[]);
+
+  const depEntries=health?.dependencies?Object.entries(health.dependencies):[];
+
+  return <div className="fade">
+    <div style={{marginBottom:16}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
+        <div>
+          <h2 style={{fontFamily:"Bebas Neue,sans-serif",fontSize:22,letterSpacing:1,marginBottom:4}}>Settings</h2>
+          <p style={{fontSize:12,color:"#444"}}>Control the pipeline and manage the system.</p>
+        </div>
+        <Link href="/composer" style={{display:"inline-flex",alignItems:"center",gap:6,background:"#FF007A22",border:"1px solid #FF007A44",color:"#FF007A",borderRadius:8,padding:"8px 16px",fontSize:12,fontWeight:700,textDecoration:"none",letterSpacing:.5}}>
+          🎬 Video Ops →
+        </Link>
+      </div>
+    </div>
+
+    {/* Quick Actions + Environment */}
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:16}}>
       <div className="kpi-card"><div style={{fontSize:10,color:"#444",letterSpacing:2,fontWeight:700,textTransform:"uppercase",marginBottom:14}}>Quick Actions</div>
         <div style={{display:"flex",flexDirection:"column",gap:10}}>
           <button onClick={triggerNow} disabled={triggering} style={{width:"100%",background:R,color:"#fff",border:"none",borderRadius:6,padding:"11px",fontSize:13,fontWeight:700,cursor:"pointer",opacity:triggering?.5:1,boxShadow:`0 4px 16px rgba(229,9,20,.25)`}}>{triggering?<Spin/>:"🚀 Run Pipeline Now"}</button>
@@ -732,6 +835,110 @@ function SettingsSection({onTrigger}:{onTrigger:()=>void}){
       <div className="kpi-card"><div style={{fontSize:10,color:"#444",letterSpacing:2,fontWeight:700,textTransform:"uppercase",marginBottom:14}}>Environment</div>
         {[["Worker","auto-ppp-tv.euginemicah.workers.dev"],["Vercel","auto-news-station.vercel.app"],["PPP TV","ppp-tv-site.vercel.app"],["Cron","*/10 * * * *"],["AI Headline","Gemini 2.5 Flash"],["AI Caption","NVIDIA Llama 3.1 8B"],["Image","1080×1350 JPEG"],["Dedup TTL","30 days"]].map(([k,v])=><div key={k} style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:"1px solid #111",fontSize:12}}><span style={{color:"#444"}}>{k}</span><span style={{fontWeight:600,color:"#666",fontFamily:"monospace",fontSize:11}}>{v}</span></div>)}
       </div>
+    </div>
+
+    {/* Video Pipeline — Pause toggle + Scheduled Posts */}
+    <div className="kpi-card" style={{marginBottom:16}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,flexWrap:"wrap",gap:8}}>
+        <div style={{fontSize:10,color:"#444",letterSpacing:2,fontWeight:700,textTransform:"uppercase"}}>🎬 Video Pipeline</div>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <span style={{fontSize:11,color:paused?"#f87171":"#4ade80",fontWeight:700}}>{paused?"PAUSED":"RUNNING"}</span>
+          <button onClick={togglePause} disabled={pauseLoading} style={{
+            background:paused?"#4ade8022":"#f8717122",border:`1px solid ${paused?"#4ade8044":"#f8717144"}`,
+            color:paused?"#4ade80":"#f87171",borderRadius:6,padding:"5px 14px",fontSize:11,fontWeight:700,cursor:"pointer",
+            opacity:pauseLoading?.5:1,
+          }}>{pauseLoading?<Spin/>:paused?"▶ Resume":"⏸ Pause"}</button>
+        </div>
+      </div>
+
+      {/* Scheduled Posts */}
+      <div style={{fontSize:10,color:"#555",letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Scheduled Posts</div>
+      {schedLoading?(
+        <div style={{textAlign:"center",padding:20,color:"#333"}}><Spin/></div>
+      ):scheduledPosts.length===0?(
+        <div style={{fontSize:12,color:"#333",padding:"10px 0"}}>No scheduled posts</div>
+      ):(
+        <div style={{display:"flex",flexDirection:"column",gap:6}}>
+          {scheduledPosts.map((p:any,i:number)=>(
+            <div key={p.id||i} style={{display:"flex",gap:10,alignItems:"center",background:"#0a0a0a",border:"1px solid #1a1a1a",borderRadius:7,padding:"8px 12px"}}>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:12,color:"#ccc",fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.headline||p.title||p.url}</div>
+                <div style={{display:"flex",gap:8,marginTop:3}}>
+                  <span style={{fontSize:10,color:"#555"}}>{p.scheduledAt?new Date(p.scheduledAt).toLocaleString():"—"}</span>
+                  {p.url&&<a href={p.url} target="_blank" rel="noopener noreferrer" style={{fontSize:10,color:"#333",textDecoration:"none",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.url.slice(0,40)}…</a>}
+                </div>
+              </div>
+              <button onClick={()=>cancelScheduled(p.id)} disabled={cancellingId===p.id} style={{
+                background:"#1a0808",border:"1px solid #3a1a1a",color:"#f87171",borderRadius:5,
+                padding:"4px 10px",fontSize:10,fontWeight:700,cursor:"pointer",flexShrink:0,
+                opacity:cancellingId===p.id?.5:1,
+              }}>{cancellingId===p.id?<Spin/>:"✕ Cancel"}</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+
+    {/* System Health */}
+    <div className="kpi-card" style={{marginBottom:16}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+        <div style={{fontSize:10,color:"#444",letterSpacing:2,fontWeight:700,textTransform:"uppercase"}}>System Health</div>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          {health&&<span style={{fontSize:10,fontWeight:700,color:health.status==="ok"?"#4ade80":health.status==="degraded"?"#fbbf24":"#f87171",textTransform:"uppercase",letterSpacing:1}}>{health.status}</span>}
+          <button onClick={loadHealth} style={{background:"none",border:"1px solid #222",color:"#555",borderRadius:5,padding:"3px 8px",fontSize:10,cursor:"pointer"}}>↻</button>
+        </div>
+      </div>
+      {healthLoading?(
+        <div style={{textAlign:"center",padding:20,color:"#333"}}><Spin/></div>
+      ):(
+        <div style={{display:"flex",flexDirection:"column",gap:6}}>
+          {depEntries.map(([key,dep]:any)=>{
+            const label=key==="metaGraphApi"?"Meta Graph API":key==="geminiApi"?"Gemini":key==="cloudflareWorker"?"Worker":key==="r2Storage"?"R2":key==="xPosting"?"X (Twitter)":key;
+            return (
+              <div key={key} style={{display:"flex",alignItems:"center",gap:10,padding:"6px 0",borderBottom:"1px solid #111"}}>
+                <span style={{width:7,height:7,borderRadius:"50%",background:dep.ok?"#4ade80":"#f87171",flexShrink:0,display:"inline-block"}}/>
+                <span style={{flex:1,fontSize:12,color:"#888"}}>{label}</span>
+                <span style={{fontSize:10,color:dep.ok?"#4ade80":"#f87171",fontWeight:700}}>{dep.ok?"OK":"ERROR"}</span>
+                {dep.latencyMs>0&&<span style={{fontSize:10,color:"#444",fontFamily:"monospace"}}>{dep.latencyMs}ms</span>}
+                {dep.error&&<span style={{fontSize:10,color:"#f87171",maxWidth:120,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{dep.error}</span>}
+              </div>
+            );
+          })}
+          {depEntries.length===0&&<div style={{fontSize:12,color:"#333"}}>Health data unavailable</div>}
+          {health?.warnings?.map((w:string,i:number)=>(
+            <div key={i} style={{fontSize:11,color:"#fbbf24",marginTop:4}}>⚠ {w}</div>
+          ))}
+        </div>
+      )}
+    </div>
+
+    {/* Blacklist Manager */}
+    <div className="kpi-card">
+      <div style={{fontSize:10,color:"#444",letterSpacing:2,fontWeight:700,textTransform:"uppercase",marginBottom:14}}>Blacklist Manager</div>
+      {/* Add form */}
+      <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap"}}>
+        <select value={blType} onChange={e=>setBlType(e.target.value as "domain"|"keyword")} style={{background:"#0a0a0a",border:"1px solid #1a1a1a",borderRadius:6,padding:"7px 10px",color:"#e5e5e5",fontSize:12,outline:"none"}}>
+          <option value="domain">Domain</option>
+          <option value="keyword">Keyword</option>
+        </select>
+        <input value={blValue} onChange={e=>setBlValue(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addBlacklist()} placeholder={blType==="domain"?"e.g. example.com":"e.g. spam keyword"} style={{flex:1,background:"#0a0a0a",border:"1px solid #1a1a1a",borderRadius:6,padding:"7px 12px",color:"#e5e5e5",fontSize:12,outline:"none",minWidth:120}}/>
+        <button onClick={addBlacklist} disabled={blAdding||!blValue.trim()} style={{background:R,color:"#fff",border:"none",borderRadius:6,padding:"7px 16px",fontSize:12,fontWeight:700,cursor:"pointer",opacity:(blAdding||!blValue.trim())?.5:1}}>{blAdding?<Spin/>:"+ Add"}</button>
+      </div>
+      {blLoading?(
+        <div style={{textAlign:"center",padding:16,color:"#333"}}><Spin/></div>
+      ):blacklist.length===0?(
+        <div style={{fontSize:12,color:"#333"}}>No blacklist entries</div>
+      ):(
+        <div style={{display:"flex",flexDirection:"column",gap:4,maxHeight:200,overflowY:"auto"}}>
+          {blacklist.map((entry:any,i:number)=>(
+            <div key={entry.key||i} style={{display:"flex",alignItems:"center",gap:8,background:"#0a0a0a",border:"1px solid #1a1a1a",borderRadius:6,padding:"6px 10px"}}>
+              <span style={{fontSize:9,fontWeight:800,color:entry.type==="domain"?"#3b82f6":"#a855f7",textTransform:"uppercase",letterSpacing:1,flexShrink:0}}>{entry.type}</span>
+              <span style={{flex:1,fontSize:12,color:"#ccc",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{entry.value}</span>
+              <button onClick={()=>deleteBlacklist(entry.key||`blacklist:${entry.type}:${entry.value}`)} disabled={blDeletingKey===entry.key} style={{background:"none",border:"1px solid #2a1a1a",color:"#f87171",borderRadius:4,padding:"2px 8px",fontSize:10,cursor:"pointer",flexShrink:0,opacity:blDeletingKey===entry.key?.5:1}}>✕</button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   </div>;
 }

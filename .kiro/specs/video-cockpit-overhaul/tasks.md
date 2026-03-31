@@ -6,7 +6,7 @@ Incremental implementation starting with the three critical bug fixes, then new 
 
 ## Tasks
 
-- [ ] 1. Fix SSE parsing bug in Composer (`src/app/composer/page.tsx`)
+- [x] 1. Fix SSE parsing bug in Composer (`src/app/composer/page.tsx`)
   - Replace `response.json()` call with `response.body.getReader()` + `TextDecoder` buffered SSE reader in `handlePost()`
   - Buffer incomplete lines across `reader.read()` chunks; only parse lines starting with `data: `
   - Skip non-`data:` lines silently; catch JSON parse errors per-line without throwing
@@ -40,7 +40,7 @@ Incremental implementation starting with the three critical bug fixes, then new 
     - **Validates: Requirements 3.2**
     - Use `fc.record({ url, headline, caption, ... })` for any form state; assert all fields are empty strings after success event + navigation delay
 
-- [ ] 2. Fix dark IG video thumbnails — cover image pipeline (`src/app/api/post-video/route.ts`, `src/lib/publisher.ts`)
+- [x] 2. Fix dark IG video thumbnails — cover image pipeline (`src/app/api/post-video/route.ts`, `src/lib/publisher.ts`)
   - In `post-video/route.ts`: after `stageVideo()`, call `generateImage(article, { ratio: "4:5" })` to produce a 1080×1350 JPEG buffer
   - Attempt R2 staging via `WORKER_URL + "/stage-image"`; on success set `coverImageUrl`
   - Fallback: upload via `${GRAPH_API}/${fbPageId}/photos` with `published: false`; fetch returned image's `images[0].source` as `coverImageUrl`
@@ -66,7 +66,7 @@ Incremental implementation starting with the three critical bug fixes, then new 
 
 - [ ] 3. Checkpoint — Ensure bug fixes pass all tests, ask the user if questions arise.
 
-- [ ] 4. Add `extractThumbnailUrl()` helper and expand video sources (`src/lib/video-sources.ts`)
+- [x] 4. Add `extractThumbnailUrl()` helper and expand video sources (`src/lib/video-sources.ts`)
   - Add `extractThumbnailUrl(video: VideoItem, resolved?: { thumbnail?: string }): string` function:
     - YouTube: extract video ID from `url`, return `https://img.youtube.com/vi/{id}/maxresdefault.jpg`
     - TikTok (`sourceType === "direct-mp4"`): return `video.thumbnail` if non-empty
@@ -104,7 +104,7 @@ Incremental implementation starting with the three critical bug fixes, then new 
     - **Validates: Requirements 6.6**
     - Use `fc.array(fc.string())` with some repeated IDs; assert `fetchAllVideoSources()` output contains no duplicate IDs
 
-- [ ] 5. Wire `extractThumbnailUrl()` into autonomous pipeline (`src/app/api/automate-video/route.ts`)
+- [x] 5. Wire `extractThumbnailUrl()` into autonomous pipeline (`src/app/api/automate-video/route.ts`)
   - Import `extractThumbnailUrl` from `video-sources.ts`
   - Replace the inline `thumbRaw = target.thumbnail || ""` logic with `extractThumbnailUrl(target, resolved)`
   - Pass the extracted thumbnail URL as `article.imageUrl` to `generateImage()`
@@ -123,13 +123,13 @@ Incremental implementation starting with the three critical bug fixes, then new 
     - **Validates: Requirements 11.18**
     - Use `fc.string({ minLength: 2201, maxLength: 5000 })`; assert `truncateCaption()` returns string ≤ 2200 chars ending at a sentence boundary
 
-- [ ] 6. Create new API routes (`src/app/api/scrape-videos/route.ts`, `src/app/api/schedule-post/route.ts`, `src/app/api/health/route.ts`)
+- [x] 6. Create new API routes (`src/app/api/scrape-videos/route.ts`, `src/app/api/schedule-post/route.ts`, `src/app/api/health/route.ts`)
   - `POST /api/scrape-videos`: call `fetchAllVideoSources()`, return `{ videos, count }` as JSON; add auth check matching existing pattern
   - `POST /api/schedule-post`: accept `{ url, headline, caption, category, scheduledAt }`; POST to `WORKER_URL + "/schedule"` with the payload; return `{ ok, id }`
   - `GET /api/health`: ping Meta Graph API, Gemini API, NVIDIA API, Worker KV (`/health`), and R2 (`/stage-image` with empty body) in parallel; measure latency for each; return `{ status, dependencies }` where `status` is `"ok"` / `"degraded"` / `"down"`
   - _Requirements: 11.2, 11.3, 11.11_
 
-- [ ] 7. Protect `/composer` route and add middleware auth (`src/middleware.ts`)
+- [x] 7. Protect `/composer` route and add middleware auth (`src/middleware.ts`)
   - Update `middleware.ts` to redirect unauthenticated requests to `/login` for paths matching `/composer` and `/dashboard`
   - Use the existing `src/lib/auth.ts` session check pattern
   - Ensure the matcher includes `/composer` explicitly
@@ -219,7 +219,7 @@ Incremental implementation starting with the three critical bug fixes, then new 
 
 - [ ] 12. Checkpoint — Ensure Composer page, Cockpit tab, and Sources tab render correctly, ask the user if questions arise.
 
-- [ ] 13. Add platform-wide features to Cloudflare Worker (`cloudflare/worker.js`)
+- [x] 13. Add platform-wide features to Cloudflare Worker (`cloudflare/worker.js`)
   - Add `/schedule` POST endpoint: accept `{ url, headline, caption, category, scheduledAt, id }`; store as `schedule:{timestamp}:{id}` in KV
   - Add `/schedule` GET endpoint: list all `schedule:*` keys, return array of scheduled posts
   - Add `/schedule/:id` DELETE endpoint: delete a scheduled post by key
@@ -240,7 +240,7 @@ Incremental implementation starting with the three critical bug fixes, then new 
     - **Validates: Requirements 11.23**
     - Use `fc.array(fc.string())` for domains/keywords, some blacklisted; assert pipeline filter step excludes matching items
 
-- [ ] 14. Add blacklist check to automate pipeline (`src/app/api/automate-video/route.ts`, `src/app/api/automate/route.ts`)
+- [x] 14. Add blacklist check to automate pipeline (`src/app/api/automate-video/route.ts`, `src/app/api/automate/route.ts`)
   - In `automate-video/route.ts`: after `fetchAllVideoSources()`, fetch `WORKER_URL + "/blacklist"` to get current blacklist entries
   - Filter `allVideos` to exclude items whose `url` domain or `title` matches any blacklist entry
   - Apply same blacklist filter in `src/app/api/automate/route.ts` `filterUnseen()` step

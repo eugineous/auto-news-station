@@ -1,0 +1,13 @@
+{
+  "name": "ESLint on Write",
+  "version": "1.0.0",
+  "description": "Reminds Kiro to use getDiagnostics after writing code files",
+  "when": {
+    "type": "postToolUse",
+    "toolTypes": ["write"]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "A file was just written. If it is a TypeScript or TSX file, use the getDiagnostics tool on it to check for type errors and lint issues. Fix any errors found before proceeding."
+  }
+}

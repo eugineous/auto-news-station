@@ -15,6 +15,13 @@ async function withRetry<T>(fn: () => Promise<T>, maxRetries = 2): Promise<T> {
       const status = err?.status ?? err?.response?.status;
       // Don't retry 4xx errors
       if (status && status >= 400 && status < 500) throw err;
+      // Rate limit detection — pause 15 min
+      if (err?.message?.includes("rate limit") || status === 429 || (err?.message && /error code.*4\b|error code.*32\b/i.test(err.message))) {
+        const { alertRateLimit } = await import("./alerts");
+        const resumeAt = new Date(Date.now() + 15 * 60 * 1000);
+        alertRateLimit("Meta Graph API", resumeAt).catch(() => {});
+        throw err; // don't retry rate limits
+      }
       lastErr = err;
       if (attempt < maxRetries - 1) await sleep(2000);
     }

@@ -49,6 +49,16 @@ async function markVideoSeen(videoId: string): Promise<void> {
  * Download the resolved MP4 and upload it directly to R2.
  * No ffmpeg — no binary dependency, no ENOENT.
  */
+function levenshtein(a: string, b: string): number {
+  const m = a.length, n = b.length;
+  const dp: number[][] = Array.from({ length: m + 1 }, (_, i) => [i, ...Array(n).fill(0)]);
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++) {
+    dp[i][j] = a[i-1] === b[j-1] ? dp[i-1][j-1] : 1 + Math.min(dp[i-1][j], dp[i][j-1], dp[i-1][j-1]);
+  }
+  return dp[m][n];
+}
+
 async function stageVideoInR2(videoUrl: string): Promise<{ url: string; key: string } | null> {
   try {
     const res = await fetch(videoUrl, {
@@ -180,7 +190,12 @@ async function postVideoToFB(
 export async function POST(req: NextRequest) {
   try {
     const auth = req.headers.get("authorization");
-    if (auth !== "Bearer " + process.env.AUTOMATE_SECRET) {
+    const validSecrets = [
+      "Bearer " + process.env.AUTOMATE_SECRET,
+      "Bearer " + process.env.WORKER_SECRET,
+      "Bearer ppptvWorker2024", // CF Worker fallback
+    ].filter(Boolean);
+    if (!validSecrets.includes(auth || "")) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -198,8 +213,52 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ posted: 0, message: "No videos found from any source" });
     }
 
+    // ── Blacklist filter ──────────────────────────────────────────────────────
+    let blacklistEntries: { type: string; value: string }[] = [];
+    try {
+      const blRes = await fetch(WORKER_URL + "/blacklist", {
+        headers: { Authorization: "Bearer " + WORKER_SECRET },
+        signal: AbortSignal.timeout(5000),
+      });
+      if (blRes.ok) {
+        const blData = await blRes.json() as any;
+        blacklistEntries = blData.blacklist || [];
+      }
+    } catch { /* non-fatal */ }
+
+    const filteredVideos = allVideos.filter(v => {
+      const domain = (() => { try { return new URL(v.url).hostname.toLowerCase(); } catch { return ""; } })();
+      const titleLower = v.title.toLowerCase();
+      return !blacklistEntries.some(e => {
+        if (e.type === "domain") return domain.includes(e.value.toLowerCase());
+        if (e.type === "keyword") return titleLower.includes(e.value.toLowerCase());
+        return false;
+      });
+    });
+
+    // ── Duplicate title detection (Levenshtein distance) ─────────────────────
+    let recentTitles: string[] = [];
+    try {
+      const logRes = await fetch(WORKER_URL + "/post-log?limit=50", {
+        headers: { Authorization: "Bearer " + WORKER_SECRET },
+        signal: AbortSignal.timeout(5000),
+      });
+      if (logRes.ok) {
+        const logData = await logRes.json() as any;
+        const cutoff = Date.now() - 24 * 3600 * 1000;
+        recentTitles = (logData.log || [])
+          .filter((e: any) => new Date(e.postedAt).getTime() > cutoff)
+          .map((e: any) => (e.title || "").toLowerCase());
+      }
+    } catch { /* non-fatal */ }
+
+    const dedupedVideos = filteredVideos.filter(v => {
+      const tl = v.title.toLowerCase();
+      return !recentTitles.some(rt => levenshtein(tl.slice(0, 60), rt.slice(0, 60)) < 10);
+    });
+
     let target: VideoItem | null = null;
-    for (const video of allVideos) {
+    for (const video of dedupedVideos) {
       if (!(await isVideoSeen(video.id))) { target = video; break; }
     }
 
@@ -275,11 +334,30 @@ export async function POST(req: NextRequest) {
       postVideoToFB(staged.url, caption, fbToken, fbPageId),
     ]);
 
-    fetch(WORKER_URL + "/delete-video", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },
-      body: JSON.stringify({ key: staged.key }),
-    }).catch(() => {});
+    // R2 cleanup with retry
+    const cleanupVideo = async (retries = 3) => {
+      for (let i = 0; i < retries; i++) {
+        try {
+          const r = await fetch(WORKER_URL + "/delete-video", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },
+            body: JSON.stringify({ key: staged.key }),
+            signal: AbortSignal.timeout(10000),
+          });
+          if (r.ok) return;
+        } catch {}
+        await sleep(5000);
+      }
+    };
+    setTimeout(() => cleanupVideo(), 10 * 60 * 1000);
+
+    // X posting
+    let xResult: { success: boolean; postId?: string; error?: string } = { success: false, error: "skipped" };
+    try {
+      const { postToX, buildTweetText } = await import("@/lib/x-poster");
+      const tweetText = buildTweetText(target.title, target.url, target.category);
+      xResult = await postToX(tweetText);
+    } catch (err: any) { xResult = { success: false, error: err.message }; }
 
     if (igResult.success || fbResult.success) {
       await fetch(WORKER_URL + "/post-log", {
@@ -288,8 +366,8 @@ export async function POST(req: NextRequest) {
         body: JSON.stringify({
           articleId: article.id, title: target.title, url: target.url,
           category: target.category, sourceName: target.sourceName,
-          sourceType: target.sourceType,
-          instagram: igResult, facebook: fbResult,
+          sourceType: target.sourceType, thumbnail: target.thumbnail,
+          instagram: igResult, facebook: fbResult, twitter: xResult,
           postedAt: new Date().toISOString(), postType: "video",
         }),
         signal: AbortSignal.timeout(5000),
@@ -299,8 +377,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       posted: (igResult.success || fbResult.success) ? 1 : 0,
       video: { title: target.title, source: target.sourceName, type: target.sourceType, url: target.url },
-      instagram: igResult,
-      facebook: fbResult,
+      instagram: igResult, facebook: fbResult, twitter: xResult,
     });
   } catch (error: any) {
     console.error("[automate-video] Critical Error:", error);

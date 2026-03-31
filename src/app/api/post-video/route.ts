@@ -5,6 +5,7 @@ import { resolveVideoUrl } from "@/lib/video-downloader";
 import { publishStories } from "@/lib/publisher";
 import { Article } from "@/lib/types";
 import { createHash } from "crypto";
+import { alertPostSuccess, alertPostFailure } from "@/lib/alerts";
 
 export const maxDuration = 180;
 
@@ -323,6 +324,9 @@ export async function POST(req: NextRequest) {
           twitter: xResult,
           postedAt: new Date().toISOString(), manualPost: true, postType: "video",
         });
+        alertPostSuccess({ title: headline, url: article.url, ig: igResult.success, fb: fbResult.success, x: xResult.success, category }).catch(() => {});
+      } else {
+        alertPostFailure({ title: headline, error: igResult.error || fbResult.error || "Both platforms failed" }).catch(() => {});
       }
 
       emit(100, anySuccess ? "Done! ✓" : "Completed with errors", {

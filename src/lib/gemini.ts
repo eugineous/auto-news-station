@@ -161,8 +161,12 @@ function getEngagementCTA(): { cta: string; type: "debate" | "tag" | "save" | "s
 // ── Main export ───────────────────────────────────────────────────────────────
 export async function generateAIContent(
   article: Article,
-  _options?: { isVideo?: boolean; videoType?: string }
+  _options?: { isVideo?: boolean; videoType?: string; tone?: "formal" | "casual" | "hype" | "sheng"; language?: "en" | "sw" }
 ): Promise<AIContent> {
+  const tone = _options?.tone || "casual";
+  const language = _options?.language || "en";
+  const isSheng = tone === "sheng";
+  const isSwahili = language === "sw";
   const hasGemini = !!process.env.GEMINI_API_KEY;
   const hasNvidia = !!process.env.NVIDIA_API_KEY;
 
@@ -172,8 +176,19 @@ export async function generateAIContent(
 
   const hookPattern = HOOK_PATTERNS[Math.floor(Math.random() * HOOK_PATTERNS.length)];
 
+  const toneInstruction = isSheng
+    ? `Write in Kenyan Sheng — a mix of Swahili, English, and Nairobi street slang. Use words like: fam, bana, si, ama, maze, sawa, poa, mtu, watu, hii, hiyo, leo, jana, kesho, mambo, vipi, noma, moto, baridi, kali, msee, dame, dude, wadau, wenyewe, kweli, kabisa, sawa sawa, si ndio, ata, hata, lakini, but, though, tho, coz, cuz. Sound like a young Nairobi content creator.`
+    : isSwahili
+    ? `Write entirely in Swahili. Use proper Swahili grammar and vocabulary appropriate for Kenyan news media.`
+    : tone === "hype"
+    ? `Write with maximum energy and hype. Use caps for emphasis, fire emojis, exclamation points. Make it feel URGENT and EXCITING.`
+    : tone === "formal"
+    ? `Write in formal journalistic style. Professional, factual, no slang, no emojis.`
+    : `Write in casual, conversational Kenyan English. Friendly, relatable, engaging.`;
+
   const captionPrompt =
     `Write a PPP TV Kenya news caption for this article. Write like a professional journalist — factual, specific, no clickbait.\n\n` +
+    `TONE: ${toneInstruction}\n\n` +
     `TITLE: ${article.title}\n` +
     `CATEGORY: ${article.category}\n` +
     `SOURCE: ${article.sourceName || "PPP TV Kenya"}\n` +

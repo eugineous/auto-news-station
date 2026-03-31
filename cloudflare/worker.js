@@ -306,6 +306,127 @@ export default {
       } catch (err) { return json({ error: err.message }, 500); }
     }
 
+    // ── /pipeline/status ─────────────────────────────────────────────────────
+    if (url.pathname === "/pipeline/status") {
+      const paused = await env.SEEN_ARTICLES.get("pipeline:paused");
+      const rateLimited = await env.SEEN_ARTICLES.get("ratelimit:pause:meta");
+      return json({ paused: !!paused, rateLimited: !!rateLimited });
+    }
+
+    // ── /pipeline/pause ───────────────────────────────────────────────────────
+    if (url.pathname === "/pipeline/pause" && request.method === "POST") {
+      if (!authed) return new Response("Unauthorized", { status: 401 });
+      await env.SEEN_ARTICLES.put("pipeline:paused", "1", { expirationTtl: 24 * 3600 });
+      return json({ ok: true, status: "paused" });
+    }
+
+    // ── /pipeline/resume ──────────────────────────────────────────────────────
+    if (url.pathname === "/pipeline/resume" && request.method === "POST") {
+      if (!authed) return new Response("Unauthorized", { status: 401 });
+      await env.SEEN_ARTICLES.delete("pipeline:paused");
+      return json({ ok: true, status: "running" });
+    }
+
+    // ── /schedule POST ────────────────────────────────────────────────────────
+    if (url.pathname === "/schedule" && request.method === "POST") {
+      if (!authed) return new Response("Unauthorized", { status: 401 });
+      try {
+        const body = await request.json();
+        const { url: postUrl, headline, caption, category, scheduledAt, id } = body;
+        if (!postUrl || !scheduledAt || !id) return json({ error: "url, scheduledAt, id required" }, 400);
+        const ts = new Date(scheduledAt).getTime();
+        const key = `schedule:${ts}:${id}`;
+        await env.SEEN_ARTICLES.put(key, JSON.stringify({ url: postUrl, headline, caption, category, scheduledAt, id }), { expirationTtl: 7 * 24 * 3600 });
+        return json({ ok: true, id, key });
+      } catch (err) { return json({ error: err.message }, 500); }
+    }
+
+    // ── /schedule GET ─────────────────────────────────────────────────────────
+    if (url.pathname === "/schedule" && request.method === "GET") {
+      if (!authed) return new Response("Unauthorized", { status: 401 });
+      try {
+        const list = await env.SEEN_ARTICLES.list({ prefix: "schedule:" });
+        const items = await Promise.all(list.keys.map(async k => {
+          const v = await env.SEEN_ARTICLES.get(k.name);
+          try { return { key: k.name, ...JSON.parse(v) }; } catch { return null; }
+        }));
+        return json({ scheduled: items.filter(Boolean) });
+      } catch (err) { return json({ error: err.message }, 500); }
+    }
+
+    // ── /schedule/:id DELETE ──────────────────────────────────────────────────
+    if (url.pathname.startsWith("/schedule/") && request.method === "DELETE") {
+      if (!authed) return new Response("Unauthorized", { status: 401 });
+      const id = url.pathname.slice("/schedule/".length);
+      const list = await env.SEEN_ARTICLES.list({ prefix: "schedule:" });
+      const match = list.keys.find(k => k.name.endsWith(`:${id}`));
+      if (match) await env.SEEN_ARTICLES.delete(match.name);
+      return json({ ok: true });
+    }
+
+    // ── /blacklist GET ────────────────────────────────────────────────────────
+    if (url.pathname === "/blacklist" && request.method === "GET") {
+      if (!authed) return new Response("Unauthorized", { status: 401 });
+      try {
+        const list = await env.SEEN_ARTICLES.list({ prefix: "blacklist:" });
+        const items = await Promise.all(list.keys.map(async k => {
+          const v = await env.SEEN_ARTICLES.get(k.name);
+          const [, type, ...rest] = k.name.split(":");
+          return { key: k.name, type, value: rest.join(":"), note: v };
+        }));
+        return json({ blacklist: items });
+      } catch (err) { return json({ error: err.message }, 500); }
+    }
+
+    // ── /blacklist POST ───────────────────────────────────────────────────────
+    if (url.pathname === "/blacklist" && request.method === "POST") {
+      if (!authed) return new Response("Unauthorized", { status: 401 });
+      try {
+        const { type, value } = await request.json();
+        if (!type || !value) return json({ error: "type and value required" }, 400);
+        const key = `blacklist:${type}:${value.toLowerCase()}`;
+        await env.SEEN_ARTICLES.put(key, "1", { expirationTtl: 365 * 24 * 3600 });
+        return json({ ok: true, key });
+      } catch (err) { return json({ error: err.message }, 500); }
+    }
+
+    // ── /blacklist DELETE ─────────────────────────────────────────────────────
+    if (url.pathname === "/blacklist" && request.method === "DELETE") {
+      if (!authed) return new Response("Unauthorized", { status: 401 });
+      try {
+        const { key } = await request.json();
+        if (key) await env.SEEN_ARTICLES.delete(key);
+        return json({ ok: true });
+      } catch (err) { return json({ error: err.message }, 500); }
+    }
+
+    // ── /r2-health ────────────────────────────────────────────────────────────
+    if (url.pathname === "/r2-health") {
+      if (!authed) return new Response("Unauthorized", { status: 401 });
+      try {
+        const testKey = `health-check-${Date.now()}`;
+        await env.VIDEOS.put(testKey, "ok", { expirationTtl: 60 });
+        const val = await env.VIDEOS.get(testKey);
+        await env.VIDEOS.delete(testKey);
+        return json({ ok: val === "ok" });
+      } catch (err) { return json({ ok: false, error: err.message }); }
+    }
+
+    // ── /img proxy ────────────────────────────────────────────────────────────
+    if (url.pathname === "/img") {
+      const imgUrl = url.searchParams.get("url");
+      if (!imgUrl) return new Response("url param required", { status: 400 });
+      try {
+        const r = await fetch(imgUrl, {
+          headers: { "User-Agent": "Mozilla/5.0 (compatible; PPPTVBot/1.0)" },
+          signal: AbortSignal.timeout(10000),
+        });
+        if (!r.ok) return new Response("Image fetch failed", { status: 502 });
+        const ct = r.headers.get("content-type") || "image/jpeg";
+        return new Response(r.body, { headers: { "Content-Type": ct, "Cache-Control": "public, max-age=3600", "Access-Control-Allow-Origin": "*" } });
+      } catch (err) { return new Response(err.message, { status: 502 }); }
+    }
+
     return new Response("Not found", { status: 404 });
   },
 };
