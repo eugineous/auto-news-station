@@ -10,6 +10,7 @@ import satori from "satori";
 import sharp from "sharp";
 import { readFile } from "fs/promises";
 import path from "path";
+import React from "react";
 
 export const maxDuration = 60;
 
@@ -28,34 +29,25 @@ async function generateSlideImage(
   const fontData = await getFont();
   const fonts = fontData ? [{ name: "Bebas Neue", data: fontData, weight: 400 as const }] : [];
 
-  const svg = await satori(
+  const el = React.createElement(
+    "div",
     {
-      type: "div",
-      props: {
-        style: {
-          width: W, height: H, background: "#0a0a0a",
-          display: "flex", flexDirection: "column",
-          padding: 60, fontFamily: "Bebas Neue, sans-serif",
-          border: `8px solid ${slide.color}`,
-          position: "relative",
-        },
-        children: [
-          // Slide counter
-          { type: "div", props: { style: { fontSize: 18, color: slide.color, letterSpacing: 4, marginBottom: 30 }, children: `${slide.slideNum} / ${slide.total}` } },
-          // Category pill
-          { type: "div", props: { style: { background: slide.color + "22", color: slide.color, border: `1px solid ${slide.color}44`, fontSize: 14, fontWeight: 800, padding: "6px 16px", borderRadius: 4, letterSpacing: 2, marginBottom: 40, alignSelf: "flex-start" }, children: slide.category } },
-          // Headline
-          { type: "div", props: { style: { fontSize: slide.slideNum === 1 ? 72 : 56, color: "#ffffff", lineHeight: 1.1, marginBottom: 30, flex: 1 }, children: slide.headline } },
-          // Body
-          { type: "div", props: { style: { fontSize: 22, color: "#aaaaaa", lineHeight: 1.6 }, children: slide.body } },
-          // PPP TV branding
-          { type: "div", props: { style: { position: "absolute", bottom: 40, right: 60, fontSize: 20, color: slide.color, letterSpacing: 3 }, children: "PPP TV KENYA" } },
-        ],
+      style: {
+        width: W, height: H, background: "#0a0a0a",
+        display: "flex", flexDirection: "column" as const,
+        padding: 60, fontFamily: "Bebas Neue, sans-serif",
+        border: `8px solid ${slide.color}`,
+        position: "relative" as const,
       },
     },
-    { width: W, height: H, fonts }
+    React.createElement("div", { style: { fontSize: 18, color: slide.color, letterSpacing: 4, marginBottom: 30 } }, `${slide.slideNum} / ${slide.total}`),
+    React.createElement("div", { style: { background: slide.color + "22", color: slide.color, border: `1px solid ${slide.color}44`, fontSize: 14, fontWeight: 800, padding: "6px 16px", borderRadius: 4, letterSpacing: 2, marginBottom: 40, alignSelf: "flex-start" as const } }, slide.category),
+    React.createElement("div", { style: { fontSize: slide.slideNum === 1 ? 72 : 56, color: "#ffffff", lineHeight: 1.1, marginBottom: 30, flex: 1 } }, slide.headline),
+    React.createElement("div", { style: { fontSize: 22, color: "#aaaaaa", lineHeight: 1.6 } }, slide.body),
+    React.createElement("div", { style: { position: "absolute" as const, bottom: 40, right: 60, fontSize: 20, color: slide.color, letterSpacing: 3 } }, "PPP TV KENYA"),
   );
 
+  const svg = await satori(el, { width: W, height: H, fonts });
   const buf = await sharp(Buffer.from(svg)).jpeg({ quality: 90 }).toBuffer();
   return buf.toString("base64");
 }
@@ -70,7 +62,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const scraped = await scrapeUrl(url);
-    const content = scraped.fullBody?.slice(0, 3000) || scraped.summary || scraped.title;
+    const content = scraped.bodyText?.slice(0, 3000) || scraped.description || scraped.title;
 
     const client = new GoogleGenAI({ apiKey });
     const prompt = `You are a social media content creator for PPP TV Kenya. Create a 6-slide Instagram carousel from this article.

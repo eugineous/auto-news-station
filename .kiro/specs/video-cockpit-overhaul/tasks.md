@@ -137,7 +137,7 @@ Incremental implementation starting with the three critical bug fixes, then new 
 
 - [ ] 8. Checkpoint — Ensure new routes and middleware work correctly, ask the user if questions arise.
 
-- [ ] 9. Redesign Composer page as standalone `/composer` route (`src/app/composer/page.tsx`)
+- [x] 9. Redesign Composer page as standalone `/composer` route (`src/app/composer/page.tsx`)
   - Set `document.title = "Video Ops"` in a `useEffect` on mount
   - Add URL debounce: replace `onBlur` trigger with `useEffect` watching `url` state, debounced 600ms via `useRef<ReturnType<typeof setTimeout>>`
   - Add character counters: render `{caption.length}/2200` and `{headline.length}/120` below each field; color red when within 10% of limit
@@ -184,7 +184,7 @@ Incremental implementation starting with the three critical bug fixes, then new 
     - **Validates: Requirements 10.9**
     - Use `fc.constantFrom(...CATS)`; assert storing and reading back from `localStorage` restores the same category
 
-- [ ] 10. Redesign Cockpit tab — video-first UI (`src/app/composer/page.tsx`)
+- [x] 10. Redesign Cockpit tab — video-first UI (`src/app/composer/page.tsx`)
   - Add `VideoPost` interface with `postType`, `thumbnail`, `sourceType` fields
   - Filter video posts: `posts.filter(p => p.postType === "video")` for the Video Feed section
   - Render video cards with: 80px-wide 16:9 thumbnail, platform badge (color from `PLATFORM_COLOR`), category badge, source name, relative timestamp, title (one-line truncated), IG ✓/✗, FB ✓/✗, "Re-post" button
@@ -204,7 +204,7 @@ Incremental implementation starting with the three critical bug fixes, then new 
     - **Validates: Requirements 5.3**
     - Use `fc.array(videoPostArb)`; assert total, igOk, fbOk, and fails counts are computed correctly
 
-- [ ] 11. Redesign Sources tab — video cards, filter bar, Feed Health sub-tab (`src/app/composer/page.tsx`)
+- [x] 11. Redesign Sources tab — video cards, filter bar, Feed Health sub-tab (`src/app/composer/page.tsx`)
   - Switch Sources tab to call `POST /api/scrape-videos` instead of `POST /api/admin/feeds`
   - Render each `VideoItem` as a card: 80px 16:9 thumbnail, platform badge, category badge, source name, relative timestamp, title (one-line), "▶ Post" and "Edit" buttons
   - Hide broken thumbnails via `onError`
@@ -252,7 +252,7 @@ Incremental implementation starting with the three critical bug fixes, then new 
     - **Validates: Requirements 11.19**
     - Use `fc.tuple(fc.string(), fc.integer({ min: 0, max: 15 }))` for title pairs with distance; assert pipeline skips titles with distance < 10 from recent posts
 
-- [ ] 15. Add Dashboard Video Pipeline section and system health panel (`src/app/dashboard/page.tsx`)
+- [x] 15. Add Dashboard Video Pipeline section and system health panel (`src/app/dashboard/page.tsx`)
   - Add "Video Pipeline" section separate from "Article Pipeline": video-specific stats, recent video posts, and controls
   - Add "Scheduled Posts" section: fetch `WORKER + "/schedule"` (GET); display each pending post with scheduled time, URL, and cancel button (DELETE)
   - Add system health panel: fetch `GET /api/health`; display each dependency (Meta Graph API, Gemini, NVIDIA, Worker KV, R2) with OK/error status and latency
@@ -265,7 +265,7 @@ Incremental implementation starting with the three critical bug fixes, then new 
 
 - [ ] 16. Checkpoint — Ensure Dashboard sections render and Worker endpoints respond correctly, ask the user if questions arise.
 
-- [ ] 17. Write unit tests (`src/lib/__tests__/video-cockpit-overhaul.unit.test.ts`)
+- [x] 17. Write unit tests (`src/lib/__tests__/video-cockpit-overhaul.unit.test.ts`)
   - SSE parser: empty stream, single event, multi-event, event split across two chunks
   - `extractThumbnailUrl()`: YouTube ID extraction from `?v=` and `youtu.be/` URLs, TikTok cover fallback, empty thumbnail fallback
   - `truncateCaption()`: exactly 2200 chars (no-op), 2201 chars with sentence boundary, 2201 chars with no sentence boundary
