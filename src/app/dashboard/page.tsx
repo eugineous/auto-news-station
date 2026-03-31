@@ -591,22 +591,42 @@ function ComposeSection({onSuccess}:{onSuccess:()=>void}){
     try{
       const title=editTitle||preview.ai.clickbaitTitle;const caption=editCaption||preview.ai.caption;
       const isVideo=preview.scraped.isVideo&&preview.scraped.videoUrl;
-      let r:Response,d:any;
+      let r:Response={ok:true} as Response,d:any={};
       if(isVideo){
-        // Step 1: Resolve to a direct MP4 URL first — avoids blank/broken video posts
+        // Step 1: Resolve to a direct MP4 URL first
         const resolveRes=await fetch("/api/resolve-video",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:preview.scraped.videoUrl})});
         const resolveData=await resolveRes.json();
         if(!resolveRes.ok||!resolveData.success||!resolveData.videoUrl){
-          throw new Error(resolveData.error||"Could not extract video from this URL. Try the Import tab in the Composer instead.");
+          throw new Error(resolveData.error||"Could not extract video from this URL. Try the Composer instead.");
         }
-        // Step 2: Post the resolved direct MP4 URL
-        r=await fetch("/api/post-video",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:resolveData.videoUrl,headline:title,caption,category:cat!=="AUTO"?cat:(preview.category||"GENERAL")})});
+        // Step 2: Post via SSE stream — do NOT call .json() on this response
+        const videoResp=await fetch("/api/post-video",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:resolveData.videoUrl,headline:title,caption,category:cat!=="AUTO"?cat:(preview.category||"GENERAL")})});
+        if(!videoResp.ok||!videoResp.body)throw new Error("Post request failed: HTTP "+videoResp.status);
+        const reader=videoResp.body.getReader();
+        const decoder=new TextDecoder();
+        let buf="";
+        let finalEvt:any=null;
+        while(true){
+          const{done,value}=await reader.read();
+          if(done)break;
+          buf+=decoder.decode(value,{stream:true});
+          const lines=buf.split("\n");
+          buf=lines.pop()||"";
+          for(const line of lines){
+            if(!line.startsWith("data: "))continue;
+            try{const evt=JSON.parse(line.slice(6));if(evt.done)finalEvt=evt;}catch{}
+          }
+        }
+        if(!finalEvt)throw new Error("Stream ended without a result");
+        d=finalEvt;
+        r={ok:true} as Response;
       }else{
         const body:Record<string,string>={url:url.trim(),manualTitle:title,manualCaption:caption,imageBase64:preview.imageBase64};
         if(cat!=="AUTO")body.category=cat;
         r=await fetch("/api/post-from-url-proxy",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+        d=await r.json();
       }
-      d=await r.json();if(!r.ok||d.error)throw new Error(d.error||"Post failed");
+      if(!r.ok||d.error)throw new Error(d.error||"Post failed");
       const ig=d.instagram?.success,fb=d.facebook?.success;
       if(!ig&&!fb)throw new Error(`IG: ${d.instagram?.error||"unknown"} | FB: ${d.facebook?.error||"unknown"}`);
       setOk((ig&&fb)?"✓ Posted to IG + FB":ig?"✓ Posted to IG (FB: "+(d.facebook?.error||"failed")+")":"✓ Posted to FB (IG: "+(d.instagram?.error||"failed")+")");
