@@ -32,6 +32,7 @@ export interface PlatformResult {
 export interface PublishResult {
   instagram: PlatformResult;
   facebook: PlatformResult;
+  twitter?: PlatformResult;
 }
 
 export interface SchedulerResponse {

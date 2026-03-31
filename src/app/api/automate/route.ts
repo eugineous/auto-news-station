@@ -324,7 +324,7 @@ async function postOneArticle(article: Article, isBreaking: boolean): Promise<{ 
 
         if (anySuccess) {
           await Promise.all([
-            logPost({ articleId: article.id, title: clickbaitTitle, url: article.url, category: article.category, instagram: result.instagram, facebook: result.facebook, postedAt: new Date().toISOString(), isBreaking, postType: "video" }),
+            logPost({ articleId: article.id, title: clickbaitTitle, url: article.url, category: article.category, instagram: result.instagram, facebook: result.facebook, twitter: result.twitter, postedAt: new Date().toISOString(), isBreaking, postType: "video" }),
             incrementDailyCount(),
             setLastCategory(article.category),
           ]);
@@ -388,7 +388,8 @@ async function postOneArticle(article: Article, isBreaking: boolean): Promise<{ 
       logPost({
         articleId: article.id, title: clickbaitTitle, url: article.url,
         category: article.category, instagram: result.instagram,
-        facebook: result.facebook, postedAt: new Date().toISOString(),
+        facebook: result.facebook, twitter: result.twitter,
+        postedAt: new Date().toISOString(),
         isBreaking,
       }),
       incrementDailyCount(),

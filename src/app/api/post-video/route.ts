@@ -301,19 +301,33 @@ export async function POST(req: NextRequest) {
         }, 10 * 60 * 1000);
       }
 
+      // ── X (Twitter) ──────────────────────────────────────────────────────────
+      emit(97, "Posting to X…");
+      let xResult: { success: boolean; postId?: string; error?: string } = { success: false, error: "skipped" };
+      try {
+        const { postToX, buildTweetText } = await import("@/lib/x-poster");
+        const tweetText = buildTweetText(headline, article.url, category);
+        xResult = await postToX(tweetText, imageBuffer);
+        emit(98, xResult.success ? "X ✓ posted!" : `X ✗ ${xResult.error}`);
+      } catch (err: any) {
+        xResult = { success: false, error: err.message };
+        emit(98, `X ✗ ${err.message}`);
+      }
+
       const anySuccess = igResult.success || fbResult.success;
       if (anySuccess) {
         publishStories(imageBuffer, WORKER_URL, WORKER_SECRET).catch(() => {});
         await logPost({
           articleId: article.id, title: headline, url: article.url,
           category: article.category, instagram: igResult, facebook: fbResult,
+          twitter: xResult,
           postedAt: new Date().toISOString(), manualPost: true, postType: "video",
         });
       }
 
       emit(100, anySuccess ? "Done! ✓" : "Completed with errors", {
         done: true, success: anySuccess,
-        instagram: igResult, facebook: fbResult, thumbnailUrl,
+        instagram: igResult, facebook: fbResult, twitter: xResult, thumbnailUrl,
       });
     } catch (err: any) {
       console.error("[POST_VIDEO_FATAL]", err);

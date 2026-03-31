@@ -258,6 +258,7 @@ function CockpitTab({ onCompose }: { onCompose: (url: string) => void }) {
             <div style={{ display: "flex", flexDirection: "column" as const, gap: 3, flexShrink: 0, alignItems: "flex-end" }}>
               <span style={{ fontSize: 11, color: p.instagram?.success ? GREEN : RED, fontWeight: 800 }}>IG {p.instagram?.success ? "✓" : "✗"}</span>
               <span style={{ fontSize: 11, color: p.facebook?.success ? GREEN : RED, fontWeight: 800 }}>FB {p.facebook?.success ? "✓" : "✗"}</span>
+              {p.twitter && <span style={{ fontSize: 11, color: p.twitter?.success ? CYAN : "#444", fontWeight: 800 }}>𝕏 {p.twitter?.success ? "✓" : "✗"}</span>}
             </div>
           </div>
         ))}
@@ -672,8 +673,10 @@ function ComposeTab({ initialUrl, onSuccess, onProgress }: {
               <span style={{ fontWeight: 700, color: GREEN, fontSize: 13 }}>✓ Posted successfully</span>
               {result.instagram?.success && <span style={{ fontSize: 11, color: "#aaa" }}>Instagram ✓ {result.instagram.postId}</span>}
               {result.facebook?.success && <span style={{ fontSize: 11, color: "#aaa" }}>Facebook ✓ {result.facebook.postId}</span>}
+              {result.twitter?.success && <span style={{ fontSize: 11, color: "#aaa" }}>X (Twitter) ✓ {result.twitter.postId}</span>}
               {!result.instagram?.success && <span style={{ fontSize: 11, color: RED }}>Instagram ✗ {result.instagram?.error}</span>}
               {!result.facebook?.success && <span style={{ fontSize: 11, color: RED }}>Facebook ✗ {result.facebook?.error}</span>}
+              {result.twitter && !result.twitter?.success && <span style={{ fontSize: 11, color: RED }}>X ✗ {result.twitter?.error}</span>}
             </div>
           ) : <span style={{ color: RED, fontSize: 13 }}>{result.error || "Post failed"}</span>}
         </div>

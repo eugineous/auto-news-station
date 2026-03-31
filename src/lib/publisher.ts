@@ -1,4 +1,5 @@
 ﻿import { SocialPost, PublishResult } from "./types";
+import { postToX, buildTweetText } from "./x-poster";
 
 const GRAPH_API = "https://graph.facebook.com/v19.0";
 
@@ -256,42 +257,69 @@ async function publishToFacebookVideo(
   }
 }
 
-// ── Video publish orchestrator ────────────────────────────────────────────────
+// ── X (Twitter) post ──────────────────────────────────────────────────────────
+async function publishToX(
+  post: SocialPost,
+  imageBuffer?: Buffer
+): Promise<{ success: boolean; postId?: string; error?: string }> {
+  if (!process.env.X_USERNAME || !process.env.X_PASSWORD) {
+    return { success: false, error: "X credentials not configured" };
+  }
+  try {
+    const text = buildTweetText(
+      post.caption.split("\n")[0].slice(0, 200), // first line as headline
+      post.articleUrl,
+      post.platform === "instagram" ? undefined : undefined,
+    );
+    const result = await postToX(text, imageBuffer);
+    return { success: result.success, postId: result.tweetId, error: result.error };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+
 export async function publishVideo(
   posts: { ig?: SocialPost; fb?: SocialPost },
   stagedVideoUrl: string,
-  coverImageUrl?: string
+  coverImageUrl?: string,
+  imageBuffer?: Buffer
 ): Promise<PublishResult> {
-  const [instagram, facebook] = await Promise.all([
+  const [instagram, facebook, twitter] = await Promise.all([
     posts.ig
       ? publishToInstagramVideo(posts.ig, stagedVideoUrl, coverImageUrl)
       : Promise.resolve({ success: false, error: "skipped" }),
     posts.fb
       ? publishToFacebookVideo(posts.fb, stagedVideoUrl)
       : Promise.resolve({ success: false, error: "skipped" }),
+    posts.ig
+      ? publishToX(posts.ig, imageBuffer)
+      : Promise.resolve({ success: false, error: "skipped" }),
   ]);
-  return { instagram, facebook };
+  return { instagram, facebook, twitter };
 }
 
-// ── Main publish — stages image once, posts to both platforms in parallel ─────
+// ── Main publish — stages image once, posts to all platforms in parallel ──────
 export async function publish(
   posts: { ig?: SocialPost; fb?: SocialPost },
   imageBuffer: Buffer,
   _videoBuffer?: Buffer,
   _coverImageUrl?: string
 ): Promise<PublishResult> {
-  // Stage image once in R2 — both IG and FB can use the same URL
   const stagedUrl = await stageImageInR2(imageBuffer) ?? undefined;
 
-  const [instagram, facebook] = await Promise.all([
+  const [instagram, facebook, twitter] = await Promise.all([
     posts.ig
       ? publishToInstagram(posts.ig, imageBuffer, stagedUrl)
       : Promise.resolve({ success: false, error: "skipped" }),
     posts.fb
       ? publishToFacebook(posts.fb, imageBuffer, stagedUrl)
       : Promise.resolve({ success: false, error: "skipped" }),
+    posts.ig
+      ? publishToX(posts.ig, imageBuffer)
+      : Promise.resolve({ success: false, error: "skipped" }),
   ]);
-  return { instagram, facebook };
+  return { instagram, facebook, twitter };
 }
 
 // ── Story posting ─────────────────────────────────────────────────────────────
