@@ -474,8 +474,17 @@ export async function POST(req: NextRequest) {
     // 2. Quality gate
     const quality = kenya.filter(hasMinimumContent);
 
-    // 3. Blacklist + Dedup via KV
-    const notBlacklisted = await filterBlacklisted(quality);
+    // 3. Block political content — entertainment & sports only
+    const nonPolitical = quality.filter(a => {
+      const cat = a.category?.toUpperCase();
+      if (["POLITICS", "NEWS", "BUSINESS", "TECHNOLOGY", "HEALTH", "SCIENCE"].includes(cat)) return false;
+      const politicalKeywords = /\b(election|vote|voting|president|prime minister|parliament|government|party|campaign|protest|coup|impeach|corruption|arrest|court|verdict|prison|police|crime|murder|terror|war|military|sanction|tariff|nato|un |imf |gdp|inflation|recession|budget|tax|deficit|policy|legislation|bill|law|regulation|constitution|democracy|dictatorship|opposition|ruling party|coalition|manifesto|rally|demonstration|strike|boycott|referendum|ballot|candidate|cabinet|minister|secretary|ambassador|diplomat|treaty|summit|g7|g20|brics|ruto|uhuru|raila|odinga|gachagua|kindiki|tinubu|buhari|ramaphosa|museveni|kagame|biden|trump|harris|macron|putin|zelensky)\b/i;
+      if (politicalKeywords.test(a.title)) return false;
+      return true;
+    });
+
+    // 4. Blacklist + Dedup via KV
+    const notBlacklisted = await filterBlacklisted(nonPolitical);
     const unseen = await filterUnseen(notBlacklisted);
     response.skipped = quality.length - unseen.length;
 

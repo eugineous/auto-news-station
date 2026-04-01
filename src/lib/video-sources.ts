@@ -48,6 +48,16 @@ function isEntertainmentTitle(title: string): boolean {
   return /music|song|video|celebrity|gossip|entertainment|fashion|award|concert|interview|exclusive|drama|movie|film|tv|show|dance|comedy|viral|trending|nairobi|kenya|africa/i.test(title);
 }
 
+// ── Politics/news filter — NEVER post political content ───────────────────────
+const BLOCKED_CATEGORIES = new Set(["POLITICS", "NEWS", "BUSINESS", "TECHNOLOGY", "HEALTH", "SCIENCE"]);
+const POLITICAL_KEYWORDS = /\b(politics|political|election|vote|voting|president|prime minister|minister|parliament|congress|senate|government|party|campaign|protest|riot|war|military|coup|impeach|resign|resign|corruption|scandal|arrest|court|judge|verdict|sentence|prison|jail|police|crime|murder|kill|attack|bomb|terror|terrorist|refugee|migrant|immigration|border|sanction|tariff|trade war|nato|un |united nations|world bank|imf |gdp|inflation|recession|budget|tax|deficit|debt|policy|legislation|bill|law|regulation|constitution|democracy|dictatorship|authoritarian|opposition|ruling party|coalition|manifesto|rally|demonstration|strike|boycott|referendum|ballot|candidate|incumbent|opposition leader|cabinet|minister|secretary|ambassador|diplomat|treaty|agreement|summit|g7|g20|brics|african union|au summit|ruto|uhuru|raila|odinga|gachagua|kindiki|tinubu|buhari|ramaphosa|museveni|kagame|mnangagwa|magufuli|samia|hassan|biden|trump|harris|macron|sunak|scholz|modi|xi jinping|putin|zelensky|netanyahu|erdogan)\b/i;
+
+function isPolitical(title: string, category: string): boolean {
+  if (BLOCKED_CATEGORIES.has(category?.toUpperCase())) return true;
+  if (POLITICAL_KEYWORDS.test(title)) return true;
+  return false;
+}
+
 function isRecent(dateStr: string, maxHours = 48): boolean {
   try {
     const d = new Date(dateStr);
@@ -193,33 +203,27 @@ async function fetchRedditFeed(feedUrl: string, sourceName: string, category: st
   } catch { return []; }
 }
 
-// ── 4. News site RSS feeds with video embeds ──────────────────────────────────
-// These RSS feeds contain articles that embed YouTube/video content
+// ── 4. News site RSS feeds — entertainment & sports ONLY ─────────────────────
 const NEWS_RSS_FEEDS = [
+  // ── Kenya Entertainment ───────────────────────────────────────────────────
   { url: "https://www.tuko.co.ke/rss/entertainment.xml",                  name: "Tuko Entertainment",    cat: "ENTERTAINMENT" },
   { url: "https://www.tuko.co.ke/rss/celebrities.xml",                    name: "Tuko Celebrities",      cat: "CELEBRITY" },
-  { url: "https://www.standardmedia.co.ke/rss/entertainment",             name: "Standard Entertainment", cat: "ENTERTAINMENT" },
-  { url: "https://nation.africa/kenya/entertainment/rss",                 name: "Nation Entertainment",  cat: "ENTERTAINMENT" },
   { url: "https://www.mpasho.co.ke/feed/",                                name: "Mpasho",                cat: "CELEBRITY" },
-  { url: "https://www.kenyans.co.ke/feeds/entertainment",                 name: "Kenyans Entertainment", cat: "ENTERTAINMENT" },
-  { url: "https://nairobinews.nation.africa/feed/",                       name: "Nairobi News",          cat: "NEWS" },
   { url: "https://www.pulselive.co.ke/rss/entertainment",                 name: "Pulse Live Kenya",      cat: "ENTERTAINMENT" },
   { url: "https://www.ghafla.com/ke/feed/",                               name: "Ghafla Kenya",          cat: "CELEBRITY" },
   { url: "https://www.sde.co.ke/feed/",                                   name: "SDE Kenya",             cat: "CELEBRITY" },
-  { url: "https://citizen.digital/feed",                                  name: "Citizen Digital",       cat: "NEWS" },
   { url: "https://www.the-star.co.ke/authors/sasa/feed/",                 name: "The Star Sasa",         cat: "ENTERTAINMENT" },
+  { url: "https://www.kenyans.co.ke/feeds/entertainment",                 name: "Kenyans Entertainment", cat: "ENTERTAINMENT" },
+  // ── Kenya Sports ─────────────────────────────────────────────────────────
   { url: "https://www.the-star.co.ke/authors/sports/feed/",               name: "The Star Sports",       cat: "SPORTS" },
-  { url: "https://www.k24tv.co.ke/feed/",                                 name: "K24 TV",                cat: "NEWS" },
-  { url: "https://www.kbc.co.ke/feed/",                                   name: "KBC",                   cat: "NEWS" },
-  { url: "https://www.switchtv.ke/rss",                                   name: "Switch TV",             cat: "ENTERTAINMENT" },
   { url: "https://www.standardmedia.co.ke/rss/sports",                    name: "Standard Sports",       cat: "SPORTS" },
-  { url: "https://www.goal.com/feeds/en/news",                            name: "Goal Football",         cat: "SPORTS" },
-  { url: "https://www.skysports.com/rss/12040",                           name: "Sky Sports Football",   cat: "SPORTS" },
   { url: "https://www.citizen.digital/sports/feed",                       name: "Citizen Sports",        cat: "SPORTS" },
-  // International entertainment RSS with video
+  { url: "https://www.tuko.co.ke/rss/sports.xml",                         name: "Tuko Sports",           cat: "SPORTS" },
+  { url: "https://www.pulselive.co.ke/rss/sports",                        name: "Pulse Live Sports",     cat: "SPORTS" },
+  { url: "https://www.kenyans.co.ke/feeds/sports",                        name: "Kenyans Sports",        cat: "SPORTS" },
+  // ── International Entertainment ───────────────────────────────────────────
   { url: "https://feeds.bbci.co.uk/news/entertainment_and_arts/rss.xml", name: "BBC Entertainment",     cat: "ENTERTAINMENT" },
   { url: "https://rss.cnn.com/rss/cnn_showbiz.rss",                      name: "CNN Showbiz",           cat: "ENTERTAINMENT" },
-  { url: "https://feeds.reuters.com/reuters/entertainment",              name: "Reuters Entertainment", cat: "ENTERTAINMENT" },
   { url: "https://www.rollingstone.com/music/feed/",                      name: "Rolling Stone Music",   cat: "MUSIC" },
   { url: "https://variety.com/feed/",                                     name: "Variety",               cat: "TV & FILM" },
   { url: "https://deadline.com/feed/",                                    name: "Deadline",              cat: "TV & FILM" },
@@ -228,16 +232,16 @@ const NEWS_RSS_FEEDS = [
   { url: "https://www.tmz.com/rss.xml",                                   name: "TMZ",                   cat: "CELEBRITY" },
   { url: "https://pagesix.com/feed/",                                     name: "Page Six",              cat: "CELEBRITY" },
   { url: "https://www.etonline.com/news/rss",                             name: "ET Online",             cat: "CELEBRITY" },
-  { url: "https://feeds.skynews.com/feeds/rss/world.xml",                 name: "Sky News World",        cat: "NEWS" },
-  { url: "https://feeds.skynews.com/feeds/rss/uk.xml",                    name: "Sky News UK",           cat: "NEWS" },
+  { url: "https://www.hollywoodreporter.com/t/feed/",                     name: "Hollywood Reporter",    cat: "TV & FILM" },
   { url: "https://feeds.nbcnews.com/nbcnews/public/entertainment",       name: "NBC Entertainment",     cat: "ENTERTAINMENT" },
-  { url: "https://www.aljazeera.com/xml/rss/all.xml",                     name: "Al Jazeera All",        cat: "NEWS" },
   { url: "https://rss.nytimes.com/services/xml/rss/nyt/Movies.xml",      name: "NYT Movies",            cat: "TV & FILM" },
   { url: "https://rss.nytimes.com/services/xml/rss/nyt/Arts.xml",        name: "NYT Arts",              cat: "ENTERTAINMENT" },
-  { url: "https://feeds.feedburner.com/uproxx/filmdrunk",                name: "Uproxx Film",           cat: "TV & FILM" },
-  { url: "https://www.hollywoodreporter.com/t/feed/",                     name: "Hollywood Reporter",    cat: "TV & FILM" },
+  // ── International Sports ──────────────────────────────────────────────────
+  { url: "https://www.goal.com/feeds/en/news",                            name: "Goal Football",         cat: "SPORTS" },
+  { url: "https://www.skysports.com/rss/12040",                           name: "Sky Sports Football",   cat: "SPORTS" },
   { url: "https://www.espn.com/espn/rss/news",                            name: "ESPN News",             cat: "SPORTS" },
-  { url: "https://www.vice.com/en/rss?locale=en_us",                      name: "Vice",                  cat: "NEWS" },
+  { url: "https://feeds.bbci.co.uk/sport/rss.xml",                       name: "BBC Sport",             cat: "SPORTS" },
+  { url: "https://www.skysports.com/rss/0,20514,11661,00.xml",           name: "Sky Sports Cricket",    cat: "SPORTS" },
 ];
 
 async function fetchNewsRSSWithVideo(feedUrl: string, sourceName: string, category: string): Promise<VideoItem[]> {
@@ -443,125 +447,100 @@ async function fetchTikTokAccountVideos(account: TikTokAccount): Promise<VideoIt
 // ── 7. TikWM Search — finds fresh videos by keyword ──────────────────────────
 async function fetchTikWMTrending(): Promise<VideoItem[]> {
   const SEARCH_TERMS = [
-    // ── Kenya & East Africa ───────────────────────────────────────────────────
-    { keyword: "kenya news today",        cat: "NEWS",          name: "TikTok Kenya News" },
-    { keyword: "nairobi viral",           cat: "ENTERTAINMENT", name: "TikTok Nairobi" },
-    { keyword: "kenya celebrity gossip",  cat: "CELEBRITY",     name: "TikTok Kenya Celebrity" },
-    { keyword: "kenya entertainment",     cat: "ENTERTAINMENT", name: "TikTok Kenya Entertainment" },
-    { keyword: "kenya music 2025",        cat: "MUSIC",         name: "TikTok Kenya Music" },
-    { keyword: "kenya sports news",       cat: "SPORTS",        name: "TikTok Kenya Sports" },
-    { keyword: "east africa news",        cat: "NEWS",          name: "TikTok East Africa" },
-    { keyword: "harambee stars",          cat: "SPORTS",        name: "TikTok Harambee Stars" },
-    { keyword: "kenyan celebrity",        cat: "CELEBRITY",     name: "TikTok Kenyan Celebrity" },
-    // ── Tanzania ──────────────────────────────────────────────────────────────
-    { keyword: "tanzania news english",   cat: "NEWS",          name: "TikTok Tanzania News" },
-    { keyword: "dar es salaam viral",     cat: "ENTERTAINMENT", name: "TikTok Dar es Salaam" },
-    { keyword: "tanzania celebrity",      cat: "CELEBRITY",     name: "TikTok Tanzania Celebrity" },
-    { keyword: "bongo music 2025",        cat: "MUSIC",         name: "TikTok Bongo Music" },
-    { keyword: "tanzania football",       cat: "SPORTS",        name: "TikTok Tanzania Football" },
-    { keyword: "tanzanian entertainment", cat: "ENTERTAINMENT", name: "TikTok Tanzania Entertainment" },
-    // ── Nigeria & West Africa ─────────────────────────────────────────────────
-    { keyword: "nigeria celebrity news",  cat: "CELEBRITY",     name: "TikTok Nigeria Celebrity" },
-    { keyword: "nollywood 2025",          cat: "TV & FILM",     name: "TikTok Nollywood" },
-    { keyword: "afrobeats viral",         cat: "MUSIC",         name: "TikTok Afrobeats" },
-    { keyword: "lagos viral video",       cat: "ENTERTAINMENT", name: "TikTok Lagos" },
-    { keyword: "nigeria news today",      cat: "NEWS",          name: "TikTok Nigeria News" },
-    { keyword: "ghana celebrity",         cat: "CELEBRITY",     name: "TikTok Ghana Celebrity" },
-    { keyword: "ghana news today",        cat: "NEWS",          name: "TikTok Ghana News" },
-    // ── South Africa ─────────────────────────────────────────────────────────
-    { keyword: "south africa celebrity",  cat: "CELEBRITY",     name: "TikTok SA Celebrity" },
-    { keyword: "south africa news today", cat: "NEWS",          name: "TikTok SA News" },
-    { keyword: "south africa entertainment", cat: "ENTERTAINMENT", name: "TikTok SA Entertainment" },
-    { keyword: "bafana bafana",           cat: "SPORTS",        name: "TikTok Bafana Bafana" },
+    // ── Kenya Entertainment & Sports ──────────────────────────────────────────
+    { keyword: "kenya celebrity gossip",      cat: "CELEBRITY",     name: "TikTok Kenya Celebrity" },
+    { keyword: "nairobi entertainment viral", cat: "ENTERTAINMENT", name: "TikTok Nairobi Entertainment" },
+    { keyword: "kenya music 2025",            cat: "MUSIC",         name: "TikTok Kenya Music" },
+    { keyword: "kenyan celebrity drama",      cat: "CELEBRITY",     name: "TikTok Kenya Celebrity Drama" },
+    { keyword: "kenya comedy viral",          cat: "COMEDY",        name: "TikTok Kenya Comedy" },
+    { keyword: "nairobi viral video",         cat: "ENTERTAINMENT", name: "TikTok Nairobi Viral" },
+    { keyword: "kenya fashion style",         cat: "FASHION",       name: "TikTok Kenya Fashion" },
+    { keyword: "kenya influencer",            cat: "INFLUENCERS",   name: "TikTok Kenya Influencer" },
+    // ── Kenya Sports ──────────────────────────────────────────────────────────
+    { keyword: "harambee stars football",     cat: "SPORTS",        name: "TikTok Harambee Stars" },
+    { keyword: "gor mahia afc leopards",      cat: "SPORTS",        name: "TikTok Kenya Football" },
+    { keyword: "kenya athletics running",     cat: "SPORTS",        name: "TikTok Kenya Athletics" },
+    { keyword: "eliud kipchoge marathon",     cat: "SPORTS",        name: "TikTok Kipchoge" },
+    { keyword: "kenya rugby sevens",          cat: "SPORTS",        name: "TikTok Kenya Rugby" },
+    { keyword: "kenya basketball",            cat: "SPORTS",        name: "TikTok Kenya Basketball" },
+    { keyword: "kenya cricket",               cat: "SPORTS",        name: "TikTok Kenya Cricket" },
+    // ── Tanzania Entertainment & Sports ───────────────────────────────────────
+    { keyword: "bongo music 2025",            cat: "MUSIC",         name: "TikTok Bongo Music" },
+    { keyword: "tanzania celebrity",          cat: "CELEBRITY",     name: "TikTok Tanzania Celebrity" },
+    { keyword: "dar es salaam viral",         cat: "ENTERTAINMENT", name: "TikTok Dar es Salaam" },
+    { keyword: "tanzanian entertainment",     cat: "ENTERTAINMENT", name: "TikTok Tanzania Entertainment" },
+    { keyword: "simba sc yanga sc",           cat: "SPORTS",        name: "TikTok Tanzania Football" },
+    // ── Nigeria & West Africa Entertainment ───────────────────────────────────
+    { keyword: "nollywood 2025",              cat: "TV & FILM",     name: "TikTok Nollywood" },
+    { keyword: "afrobeats viral",             cat: "MUSIC",         name: "TikTok Afrobeats" },
+    { keyword: "nigeria celebrity gossip",    cat: "CELEBRITY",     name: "TikTok Nigeria Celebrity" },
+    { keyword: "lagos entertainment viral",   cat: "ENTERTAINMENT", name: "TikTok Lagos Entertainment" },
+    { keyword: "ghana celebrity",             cat: "CELEBRITY",     name: "TikTok Ghana Celebrity" },
+    { keyword: "ghana music 2025",            cat: "MUSIC",         name: "TikTok Ghana Music" },
+    // ── South Africa Entertainment & Sports ───────────────────────────────────
+    { keyword: "south africa celebrity",      cat: "CELEBRITY",     name: "TikTok SA Celebrity" },
+    { keyword: "south africa entertainment",  cat: "ENTERTAINMENT", name: "TikTok SA Entertainment" },
+    { keyword: "bafana bafana football",      cat: "SPORTS",        name: "TikTok Bafana Bafana" },
+    { keyword: "amapiano 2025",               cat: "MUSIC",         name: "TikTok Amapiano" },
     // ── USA Entertainment ─────────────────────────────────────────────────────
-    { keyword: "celebrity news today",    cat: "CELEBRITY",     name: "TikTok Celebrity News" },
-    { keyword: "hollywood gossip 2025",   cat: "CELEBRITY",     name: "TikTok Hollywood" },
-    { keyword: "music video viral",       cat: "MUSIC",         name: "TikTok Music Viral" },
-    { keyword: "nba highlights today",    cat: "SPORTS",        name: "TikTok NBA" },
-    { keyword: "nfl news today",          cat: "SPORTS",        name: "TikTok NFL" },
-    { keyword: "us entertainment news",   cat: "ENTERTAINMENT", name: "TikTok US Entertainment" },
-    { keyword: "american celebrity drama", cat: "CELEBRITY",    name: "TikTok American Celebrity" },
-    { keyword: "grammy awards 2025",      cat: "MUSIC",         name: "TikTok Grammy" },
-    { keyword: "oscar awards 2025",       cat: "TV & FILM",     name: "TikTok Oscars" },
-    { keyword: "new music release",       cat: "MUSIC",         name: "TikTok New Music" },
-    // ── UK Entertainment ──────────────────────────────────────────────────────
-    { keyword: "uk celebrity news",       cat: "CELEBRITY",     name: "TikTok UK Celebrity" },
-    { keyword: "premier league highlights", cat: "SPORTS",      name: "TikTok Premier League" },
-    { keyword: "british celebrity gossip", cat: "CELEBRITY",    name: "TikTok British Celebrity" },
-    { keyword: "uk music chart",          cat: "MUSIC",         name: "TikTok UK Music" },
-    { keyword: "bbc news viral",          cat: "NEWS",          name: "TikTok BBC News" },
-    // ── Sports Global ─────────────────────────────────────────────────────────
-    { keyword: "football news today",     cat: "SPORTS",        name: "TikTok Football News" },
-    { keyword: "champions league",        cat: "SPORTS",        name: "TikTok Champions League" },
-    { keyword: "world cup 2026",          cat: "SPORTS",        name: "TikTok World Cup" },
-    { keyword: "messi ronaldo 2025",      cat: "SPORTS",        name: "TikTok Messi Ronaldo" },
-    { keyword: "boxing news today",       cat: "SPORTS",        name: "TikTok Boxing" },
-    { keyword: "ufc fight news",          cat: "SPORTS",        name: "TikTok UFC" },
-    { keyword: "tennis news today",       cat: "SPORTS",        name: "TikTok Tennis" },
-    { keyword: "cricket news today",      cat: "SPORTS",        name: "TikTok Cricket" },
-    { keyword: "athletics world record",  cat: "SPORTS",        name: "TikTok Athletics" },
-    { keyword: "africa cup of nations",   cat: "SPORTS",        name: "TikTok AFCON" },
-    // ── Global Entertainment ──────────────────────────────────────────────────
-    { keyword: "viral video today",       cat: "ENTERTAINMENT", name: "TikTok Viral Today" },
-    { keyword: "trending news worldwide", cat: "NEWS",          name: "TikTok Trending News" },
-    { keyword: "breaking news today",     cat: "NEWS",          name: "TikTok Breaking News" },
-    { keyword: "entertainment news today", cat: "ENTERTAINMENT", name: "TikTok Entertainment" },
-    { keyword: "celebrity breakup 2025",  cat: "CELEBRITY",     name: "TikTok Celebrity Breakup" },
-    { keyword: "celebrity wedding 2025",  cat: "CELEBRITY",     name: "TikTok Celebrity Wedding" },
-    { keyword: "new movie trailer",       cat: "TV & FILM",     name: "TikTok Movie Trailer" },
-    { keyword: "netflix series 2025",     cat: "TV & FILM",     name: "TikTok Netflix" },
-    { keyword: "award show 2025",         cat: "AWARDS",        name: "TikTok Awards" },
-    // ── Australia & New Zealand ───────────────────────────────────────────────
-    { keyword: "australia celebrity news", cat: "CELEBRITY",    name: "TikTok Australia Celebrity" },
-    { keyword: "australia sports news",   cat: "SPORTS",        name: "TikTok Australia Sports" },
-    // ── Canada ────────────────────────────────────────────────────────────────
-    { keyword: "canada celebrity news",   cat: "CELEBRITY",     name: "TikTok Canada Celebrity" },
-    { keyword: "drake news 2025",         cat: "MUSIC",         name: "TikTok Drake" },
-    // ── Caribbean & Jamaica ───────────────────────────────────────────────────
-    { keyword: "jamaica news today",      cat: "NEWS",          name: "TikTok Jamaica News" },
-    { keyword: "reggae dancehall 2025",   cat: "MUSIC",         name: "TikTok Reggae Dancehall" },
-    { keyword: "caribbean celebrity",     cat: "CELEBRITY",     name: "TikTok Caribbean Celebrity" },
-    // ── India (English) ───────────────────────────────────────────────────────
-    { keyword: "bollywood news english",  cat: "TV & FILM",     name: "TikTok Bollywood" },
-    { keyword: "india cricket news",      cat: "SPORTS",        name: "TikTok India Cricket" },
-    // ── Middle East & Africa ──────────────────────────────────────────────────
-    { keyword: "africa entertainment news", cat: "ENTERTAINMENT", name: "TikTok Africa Entertainment" },
-    { keyword: "african music viral",     cat: "MUSIC",         name: "TikTok African Music" },
-    { keyword: "africa celebrity gossip", cat: "CELEBRITY",     name: "TikTok Africa Celebrity" },
-    // ── Fashion & Lifestyle ───────────────────────────────────────────────────
-    { keyword: "fashion week 2025",       cat: "FASHION",       name: "TikTok Fashion Week" },
-    { keyword: "celebrity fashion",       cat: "FASHION",       name: "TikTok Celebrity Fashion" },
-    // ── Comedy & Viral ────────────────────────────────────────────────────────
-    { keyword: "comedy viral 2025",       cat: "COMEDY",        name: "TikTok Comedy Viral" },
-    { keyword: "funny celebrity moment",  cat: "COMEDY",        name: "TikTok Funny Celebrity" },
-    // ── Technology & Business ─────────────────────────────────────────────────
-    { keyword: "tech news today",         cat: "TECHNOLOGY",    name: "TikTok Tech News" },
-    { keyword: "ai news 2025",            cat: "TECHNOLOGY",    name: "TikTok AI News" },
-    // ── More Africa ───────────────────────────────────────────────────────────
-    { keyword: "uganda news today",       cat: "NEWS",          name: "TikTok Uganda News" },
-    { keyword: "rwanda news today",       cat: "NEWS",          name: "TikTok Rwanda News" },
-    { keyword: "ethiopia news today",     cat: "NEWS",          name: "TikTok Ethiopia News" },
-    { keyword: "zimbabwe news today",     cat: "NEWS",          name: "TikTok Zimbabwe News" },
-    { keyword: "zambia news today",       cat: "NEWS",          name: "TikTok Zambia News" },
-    { keyword: "cameroon news today",     cat: "NEWS",          name: "TikTok Cameroon News" },
-    { keyword: "senegal news today",      cat: "NEWS",          name: "TikTok Senegal News" },
-    // ── More Sports ───────────────────────────────────────────────────────────
-    { keyword: "rugby news today",        cat: "SPORTS",        name: "TikTok Rugby" },
-    { keyword: "formula 1 news",          cat: "SPORTS",        name: "TikTok F1" },
-    { keyword: "basketball highlights",   cat: "SPORTS",        name: "TikTok Basketball" },
-    { keyword: "golf news today",         cat: "SPORTS",        name: "TikTok Golf" },
-    { keyword: "swimming world record",   cat: "SPORTS",        name: "TikTok Swimming" },
-    // ── More Music ────────────────────────────────────────────────────────────
-    { keyword: "amapiano 2025",           cat: "MUSIC",         name: "TikTok Amapiano" },
-    { keyword: "afropop viral",           cat: "MUSIC",         name: "TikTok Afropop" },
-    { keyword: "hip hop news today",      cat: "MUSIC",         name: "TikTok Hip Hop" },
-    { keyword: "rnb music 2025",          cat: "MUSIC",         name: "TikTok RnB" },
-    { keyword: "pop music viral",         cat: "MUSIC",         name: "TikTok Pop Music" },
-    // ── More TV & Film ────────────────────────────────────────────────────────
-    { keyword: "disney plus 2025",        cat: "TV & FILM",     name: "TikTok Disney Plus" },
-    { keyword: "amazon prime series",     cat: "TV & FILM",     name: "TikTok Amazon Prime" },
-    { keyword: "hbo max series 2025",     cat: "TV & FILM",     name: "TikTok HBO" },
-    { keyword: "reality tv drama 2025",   cat: "TV & FILM",     name: "TikTok Reality TV" },
+    { keyword: "celebrity news today",        cat: "CELEBRITY",     name: "TikTok Celebrity News" },
+    { keyword: "hollywood gossip 2025",       cat: "CELEBRITY",     name: "TikTok Hollywood" },
+    { keyword: "new music video viral",       cat: "MUSIC",         name: "TikTok Music Viral" },
+    { keyword: "nba highlights today",        cat: "SPORTS",        name: "TikTok NBA" },
+    { keyword: "nfl highlights today",        cat: "SPORTS",        name: "TikTok NFL" },
+    { keyword: "celebrity breakup 2025",      cat: "CELEBRITY",     name: "TikTok Celebrity Breakup" },
+    { keyword: "celebrity wedding 2025",      cat: "CELEBRITY",     name: "TikTok Celebrity Wedding" },
+    { keyword: "grammy awards 2025",          cat: "MUSIC",         name: "TikTok Grammy" },
+    { keyword: "oscar awards 2025",           cat: "TV & FILM",     name: "TikTok Oscars" },
+    { keyword: "new movie trailer 2025",      cat: "TV & FILM",     name: "TikTok Movie Trailer" },
+    { keyword: "netflix series viral",        cat: "TV & FILM",     name: "TikTok Netflix" },
+    { keyword: "reality tv drama 2025",       cat: "TV & FILM",     name: "TikTok Reality TV" },
+    // ── UK Entertainment & Sports ─────────────────────────────────────────────
+    { keyword: "uk celebrity gossip",         cat: "CELEBRITY",     name: "TikTok UK Celebrity" },
+    { keyword: "premier league highlights",   cat: "SPORTS",        name: "TikTok Premier League" },
+    { keyword: "uk music chart 2025",         cat: "MUSIC",         name: "TikTok UK Music" },
+    // ── Global Sports ─────────────────────────────────────────────────────────
+    { keyword: "champions league highlights", cat: "SPORTS",        name: "TikTok Champions League" },
+    { keyword: "messi ronaldo 2025",          cat: "SPORTS",        name: "TikTok Messi Ronaldo" },
+    { keyword: "boxing fight highlights",     cat: "SPORTS",        name: "TikTok Boxing" },
+    { keyword: "ufc fight highlights",        cat: "SPORTS",        name: "TikTok UFC" },
+    { keyword: "tennis highlights today",     cat: "SPORTS",        name: "TikTok Tennis" },
+    { keyword: "cricket highlights today",    cat: "SPORTS",        name: "TikTok Cricket" },
+    { keyword: "africa cup of nations",       cat: "SPORTS",        name: "TikTok AFCON" },
+    { keyword: "formula 1 highlights",        cat: "SPORTS",        name: "TikTok F1" },
+    { keyword: "basketball highlights viral", cat: "SPORTS",        name: "TikTok Basketball" },
+    { keyword: "rugby highlights today",      cat: "SPORTS",        name: "TikTok Rugby" },
+    { keyword: "world cup 2026 football",     cat: "SPORTS",        name: "TikTok World Cup" },
+    // ── Music Global ──────────────────────────────────────────────────────────
+    { keyword: "afropop viral 2025",          cat: "MUSIC",         name: "TikTok Afropop" },
+    { keyword: "hip hop music viral",         cat: "MUSIC",         name: "TikTok Hip Hop" },
+    { keyword: "rnb music 2025",              cat: "MUSIC",         name: "TikTok RnB" },
+    { keyword: "pop music viral 2025",        cat: "MUSIC",         name: "TikTok Pop Music" },
+    { keyword: "reggae dancehall 2025",       cat: "MUSIC",         name: "TikTok Reggae Dancehall" },
+    // ── Entertainment Global ──────────────────────────────────────────────────
+    { keyword: "viral entertainment today",   cat: "ENTERTAINMENT", name: "TikTok Viral Entertainment" },
+    { keyword: "celebrity drama 2025",        cat: "CELEBRITY",     name: "TikTok Celebrity Drama" },
+    { keyword: "award show 2025",             cat: "AWARDS",        name: "TikTok Awards" },
+    { keyword: "fashion week 2025",           cat: "FASHION",       name: "TikTok Fashion Week" },
+    { keyword: "comedy viral 2025",           cat: "COMEDY",        name: "TikTok Comedy" },
+    { keyword: "funny celebrity moment",      cat: "COMEDY",        name: "TikTok Funny Celebrity" },
+    { keyword: "disney plus series 2025",     cat: "TV & FILM",     name: "TikTok Disney Plus" },
+    { keyword: "hbo series 2025",             cat: "TV & FILM",     name: "TikTok HBO" },
+    // ── More Africa Sports & Entertainment ────────────────────────────────────
+    { keyword: "african music viral 2025",    cat: "MUSIC",         name: "TikTok African Music" },
+    { keyword: "africa celebrity gossip",     cat: "CELEBRITY",     name: "TikTok Africa Celebrity" },
+    { keyword: "east africa entertainment",   cat: "ENTERTAINMENT", name: "TikTok East Africa Entertainment" },
+    { keyword: "africa football highlights",  cat: "SPORTS",        name: "TikTok Africa Football" },
+    // ── Australia & Canada Entertainment ──────────────────────────────────────
+    { keyword: "australia celebrity news",    cat: "CELEBRITY",     name: "TikTok Australia Celebrity" },
+    { keyword: "canada celebrity news",       cat: "CELEBRITY",     name: "TikTok Canada Celebrity" },
+    { keyword: "drake music 2025",            cat: "MUSIC",         name: "TikTok Drake" },
+    // ── Caribbean ─────────────────────────────────────────────────────────────
+    { keyword: "caribbean celebrity",         cat: "CELEBRITY",     name: "TikTok Caribbean Celebrity" },
+    { keyword: "jamaica music viral",         cat: "MUSIC",         name: "TikTok Jamaica Music" },
+    // ── India Entertainment ───────────────────────────────────────────────────
+    { keyword: "bollywood celebrity 2025",    cat: "TV & FILM",     name: "TikTok Bollywood" },
+    { keyword: "india cricket highlights",    cat: "SPORTS",        name: "TikTok India Cricket" },
   ];
 
   const items: VideoItem[] = [];
@@ -640,10 +619,9 @@ export async function fetchAllVideoSources(): Promise<VideoItem[]> {
     return true;
   });
 
-  // Sort newest first
+  // Sort newest first, filter out political content
   deduped.sort((a, b) => b.publishedAt.getTime() - a.publishedAt.getTime());
-
-  return deduped;
+  return deduped.filter(v => !isPolitical(v.title, v.category));
 }
 
 export { TIKTOK_ACCOUNTS, buildAttribution };
