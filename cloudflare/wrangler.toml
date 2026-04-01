@@ -2,9 +2,9 @@ name = "auto-ppp-tv"
 main = "worker.js"
 compatibility_date = "2024-01-01"
 
-# Cron: every 15 minutes (burst pipeline) + daily cleanup
+# Cron: every 5 minutes (smart throttled) + daily cleanup
 [triggers]
-crons = ["*/15 * * * *", "0 3 * * *"]
+crons = ["*/5 * * * *", "0 3 * * *"]
 
 # Cloudflare KV namespace for deduplication + state
 [[kv_namespaces]]

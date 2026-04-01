@@ -595,6 +595,59 @@ async function triggerAutomate(env) {
   const secret = env.AUTOMATE_SECRET;
   if (!secret) { console.warn("[auto-ppp-tv] AUTOMATE_SECRET not set"); return; }
 
+  // ── Smart throttle — shadowban prevention ─────────────────────────────────
+  // Instagram hard limit: 50 posts/24h. We target max 25/day (safe zone).
+  // Cron fires every 5 min = 288 ticks/day. We skip most ticks randomly.
+  // Target: ~25 posts/day = fire roughly every 58 min on average.
+  // Strategy: check posts today, enforce max 25, add random jitter.
+  const today = new Date().toISOString().slice(0, 10);
+  const todayCountRaw = await env.SEEN_ARTICLES.get(`daily:${today}`);
+  const todayCount = todayCountRaw ? parseInt(todayCountRaw) : 0;
+
+  // Hard cap: never exceed 25 posts/day (well under IG's 50 limit)
+  const MAX_DAILY = 25;
+  if (todayCount >= MAX_DAILY) {
+    console.log(`[throttle] Daily cap reached (${todayCount}/${MAX_DAILY}) — skipping`);
+    return;
+  }
+
+  // Time-based throttle: enforce minimum gap between posts
+  // As day fills up, increase minimum gap to spread posts evenly
+  const lastPostTime = await env.SEEN_ARTICLES.get("last:post:time");
+  if (lastPostTime) {
+    const msSinceLast = Date.now() - parseInt(lastPostTime);
+    // Minimum gap scales with how many posts we've made today
+    // Early in day: 15 min min gap. Later: 30 min min gap.
+    const minGapMs = todayCount < 10
+      ? 15 * 60 * 1000   // first 10 posts: min 15 min gap
+      : 30 * 60 * 1000;  // after 10 posts: min 30 min gap
+
+    if (msSinceLast < minGapMs) {
+      console.log(`[throttle] Too soon since last post (${Math.round(msSinceLast/60000)}m ago, min ${Math.round(minGapMs/60000)}m) — skipping`);
+      return;
+    }
+  }
+
+  // Random skip: even when gap is met, randomly skip ~40% of eligible ticks
+  // This creates natural-looking irregular posting patterns
+  const hourEAT = (new Date().getUTCHours() + 3) % 24;
+  // Dead zone: 1am-5am EAT — skip entirely
+  if (hourEAT >= 1 && hourEAT < 5) {
+    console.log(`[throttle] Dead zone (${hourEAT}:00 EAT) — skipping`);
+    return;
+  }
+  // Peak hours (7am-10pm EAT): 70% chance to post when eligible
+  // Off-peak: 40% chance
+  const isPeak = hourEAT >= 7 && hourEAT <= 22;
+  const postChance = isPeak ? 0.70 : 0.40;
+  if (Math.random() > postChance) {
+    console.log(`[throttle] Random skip (${isPeak ? "peak" : "off-peak"} hour ${hourEAT}:00 EAT)`);
+    return;
+  }
+
+  // Record this post attempt time
+  await env.SEEN_ARTICLES.put("last:post:time", String(Date.now()), { expirationTtl: 24 * 3600 });
+
   // ── A/B testing: rotate caption variant every 10 runs ────────────────────
   const runCount = parseInt(await env.SEEN_ARTICLES.get("run-count") || "0");
   const abVariant = runCount % 20 < 10 ? "A" : "B"; // A=breaking style, B=casual style
@@ -602,11 +655,7 @@ async function triggerAutomate(env) {
   await env.SEEN_ARTICLES.put("agent:last_run", new Date().toISOString(), { expirationTtl: 7 * 24 * 3600 });
 
   try {
-    // Random jitter: wait 0–8 minutes before firing so posts don't land at exact :00/:15/:30/:45
-    const jitterMs = Math.floor(Math.random() * 8 * 60 * 1000);
-    console.log(`[burst] jitter delay: ${Math.round(jitterMs / 1000)}s`);
-    await sleep(jitterMs);
-
+    // No jitter needed — throttle logic above handles timing
     const nextCount = runCount + 1;
     await env.SEEN_ARTICLES.put("run-count", String(nextCount), { expirationTtl: 24 * 3600 });
 
