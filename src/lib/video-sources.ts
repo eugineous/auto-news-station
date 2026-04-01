@@ -443,25 +443,21 @@ async function fetchTikTokAccountVideos(account: TikTokAccount): Promise<VideoIt
 // ── 7. TikWM Search — finds fresh videos by keyword ──────────────────────────
 async function fetchTikWMTrending(): Promise<VideoItem[]> {
   const SEARCH_TERMS = [
-    { keyword: "kenya news",        cat: "NEWS",          name: "TikTok Kenya News" },
-    { keyword: "nairobi",           cat: "NEWS",          name: "TikTok Nairobi" },
-    { keyword: "kenya entertainment", cat: "ENTERTAINMENT", name: "TikTok Kenya Entertainment" },
+    { keyword: "kenya news today",  cat: "NEWS",          name: "TikTok Kenya News" },
+    { keyword: "nairobi viral",     cat: "ENTERTAINMENT", name: "TikTok Nairobi" },
     { keyword: "kenya celebrity",   cat: "CELEBRITY",     name: "TikTok Kenya Celebrity" },
-    { keyword: "kenya sports",      cat: "SPORTS",        name: "TikTok Kenya Sports" },
-    { keyword: "east africa news",  cat: "NEWS",          name: "TikTok East Africa" },
-    { keyword: "kenya music",       cat: "MUSIC",         name: "TikTok Kenya Music" },
   ];
 
   const items: VideoItem[] = [];
 
   await Promise.allSettled(SEARCH_TERMS.map(async (term) => {
     try {
-      const body = new URLSearchParams({ keywords: term.keyword, count: "5", cursor: "0", HD: "1" });
+      const body = new URLSearchParams({ keywords: term.keyword, count: "3", cursor: "0", HD: "1" });
       const res = await fetch("https://www.tikwm.com/api/feed/search", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": "Mozilla/5.0 (compatible; PPPTVBot/1.0)" },
         body: body.toString(),
-        signal: AbortSignal.timeout(12000),
+        signal: AbortSignal.timeout(8000),
       });
       if (!res.ok) return;
       const data = await res.json() as any;
@@ -502,16 +498,12 @@ export async function fetchAllVideoSources(): Promise<VideoItem[]> {
   }
 
   const allResults = await Promise.allSettled([
-    // Reddit — most reliable, native video posts with direct MP4 URLs
-    ...REDDIT_FEEDS.map(f => fetchRedditFeed(f.url, f.name, f.cat)),
-    // TikWM trending — scrapes known news accounts
+    // TikWM search — most reliable, returns direct CDN URLs
     fetchTikWMTrending(),
-    // YouTube RSS — may work sometimes
-    ...YOUTUBE_CHANNELS.slice(0, 5).map(ch => fetchYouTubeChannel(ch.id, ch.name, ch.cat)),
-    // Dailymotion
-    ...DAILYMOTION_FEEDS.slice(0, 2).map(f => fetchDailymotionFeed(f.url, f.name, f.cat)),
-    // TikTok accounts
-    ...TIKTOK_ACCOUNTS.slice(0, 5).map(a => fetchTikTokAccountVideos(a)),
+    // Reddit native videos (v.redd.it direct MP4)
+    ...REDDIT_FEEDS.slice(0, 3).map(f => fetchRedditFeed(f.url, f.name, f.cat)),
+    // YouTube RSS — found but needs resolution via worker
+    ...YOUTUBE_CHANNELS.slice(0, 3).map(ch => fetchYouTubeChannel(ch.id, ch.name, ch.cat)),
   ]);
 
   const all: VideoItem[] = [];

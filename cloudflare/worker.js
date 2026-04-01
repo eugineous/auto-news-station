@@ -369,25 +369,29 @@ export default {
         const { videoId } = await request.json();
         if (!videoId) return json({ error: "videoId required" }, 400);
 
-        // Use YouTube's iOS client — bypasses bot detection
+        // Use YouTube's embedded player client — bypasses bot detection
         const playerRes = await fetch("https://www.youtube.com/youtubei/v1/player", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "User-Agent": "com.google.ios.youtube/19.29.1 (iPhone16,2; U; CPU iOS 17_5_1 like Mac OS X)",
-            "X-YouTube-Client-Name": "5",
-            "X-YouTube-Client-Version": "19.29.1",
+            "User-Agent": "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/65.0.3325.181 Mobile Safari/537.36",
+            "X-YouTube-Client-Name": "56",
+            "X-YouTube-Client-Version": "20230101",
+            "Origin": "https://www.youtube.com",
+            "Referer": `https://www.youtube.com/watch?v=${videoId}`,
           },
           body: JSON.stringify({
             videoId,
             context: {
               client: {
-                clientName: "IOS",
-                clientVersion: "19.29.1",
-                deviceModel: "iPhone16,2",
+                clientName: "ANDROID_EMBEDDED_PLAYER",
+                clientVersion: "17.31.35",
+                androidSdkVersion: 30,
                 hl: "en",
                 gl: "US",
-                utcOffsetMinutes: 0,
+              },
+              thirdParty: {
+                embedUrl: "https://www.youtube.com",
               }
             }
           }),
