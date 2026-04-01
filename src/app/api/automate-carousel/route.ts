@@ -11,6 +11,7 @@ import { generateAIContent } from "@/lib/gemini";
 import { generateImage } from "@/lib/image-gen";
 import { Article } from "@/lib/types";
 import { createHash } from "crypto";
+import { logPost } from "@/lib/supabase";
 
 export const maxDuration = 300;
 
@@ -63,48 +64,61 @@ const CAROUSEL_SOURCES = [
   { username: "ghafla",              cat: "CELEBRITY",     name: "Ghafla Kenya" },
 ];
 
-// Scrape IG account for carousel posts using public oEmbed/scraping
+// Scrape carousel content from Reddit galleries and multi-image RSS feeds
+// (Instagram's internal API is blocked server-side — Reddit galleries work reliably)
 async function scrapeIGCarousels(username: string): Promise<{ images: string[]; caption: string; postUrl: string }[]> {
+  // Map IG usernames to Reddit subreddits with gallery posts
+  const REDDIT_MAP: Record<string, string> = {
+    "theshaderoom":        "r/entertainment",
+    "complex":             "r/hiphopimages",
+    "worldstar":           "r/PublicFreakout",
+    "espn":                "r/sports",
+    "nba":                 "r/nba",
+    "premierleague":       "r/soccer",
+    "sportsbible":         "r/soccer",
+    "goal":                "r/soccer",
+    "billboard":           "r/Music",
+    "rollingstone":        "r/Music",
+    "audiomackafrica":     "r/AfricanMusic",
+    "nairobi_gossip_club": "r/Kenya",
+    "mpasho":              "r/Kenya",
+    "ghafla":              "r/Kenya",
+  };
+
+  const subreddit = REDDIT_MAP[username];
+  if (!subreddit) return [];
+
   try {
-    // Use Instagram's public API endpoint for recent media
-    const res = await fetch(
-      `https://www.instagram.com/api/v1/users/web_profile_info/?username=${username}`,
-      {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15",
-          "Accept": "application/json",
-          "X-IG-App-ID": "936619743392459",
-          "X-Requested-With": "XMLHttpRequest",
-        },
-        signal: AbortSignal.timeout(10000),
-      }
-    );
+    const res = await fetch(`https://www.reddit.com/${subreddit}/hot.json?limit=25`, {
+      headers: { "User-Agent": "PPPTVBot/2.0 (carousel aggregator)" },
+      signal: AbortSignal.timeout(10000),
+    });
     if (!res.ok) return [];
     const data = await res.json() as any;
-    const edges = data?.data?.user?.edge_owner_to_timeline_media?.edges || [];
-
+    const posts = data?.data?.children || [];
     const carousels: { images: string[]; caption: string; postUrl: string }[] = [];
-    for (const edge of edges.slice(0, 12)) {
-      const node = edge.node;
-      // Only carousel albums (CAROUSEL_ALBUM type or sidecar)
-      if (node.__typename !== "GraphSidecar" && node.edge_sidecar_to_children?.edges?.length < 2) continue;
 
-      const sidecarEdges = node.edge_sidecar_to_children?.edges || [];
-      if (sidecarEdges.length < 2) continue;
+    for (const post of posts) {
+      const p = post.data;
+      // Reddit gallery posts have is_gallery=true and media_metadata
+      if (!p.is_gallery || !p.media_metadata) continue;
+      const images = Object.values(p.media_metadata as Record<string, any>)
+        .filter((m: any) => m.status === "valid" && m.e === "Image")
+        .map((m: any) => {
+          // Use the highest resolution available
+          const src = m.s?.u || m.p?.slice(-1)[0]?.u || "";
+          return src.replace(/&amp;/g, "&");
+        })
+        .filter(Boolean)
+        .slice(0, 10);
 
-      // Extract image URLs from carousel items
-      const images: string[] = [];
-      for (const sidecar of sidecarEdges.slice(0, 10)) {
-        const imgUrl = sidecar.node?.display_url || sidecar.node?.display_resources?.slice(-1)[0]?.src;
-        if (imgUrl) images.push(imgUrl);
-      }
       if (images.length < 2) continue;
-
-      const caption = node.edge_media_to_caption?.edges?.[0]?.node?.text || "";
-      const shortcode = node.shortcode || "";
-      const postUrl = shortcode ? `https://www.instagram.com/p/${shortcode}/` : "";
-
-      carousels.push({ images, caption, postUrl });
+      carousels.push({
+        images,
+        caption: p.title || "",
+        postUrl: `https://www.reddit.com${p.permalink}`,
+      });
+      if (carousels.length >= 3) break;
     }
     return carousels;
   } catch { return []; }
@@ -132,32 +146,17 @@ async function stageImageToR2(imageUrl: string): Promise<string | null> {
   } catch { return null; }
 }
 
-// Check if carousel already posted
+// Check if carousel already posted (via Supabase)
 async function isCarouselSeen(postUrl: string): Promise<boolean> {
-  try {
-    const id = createHash("sha256").update(postUrl).digest("hex").slice(0, 16);
-    const res = await fetch(WORKER_URL + "/seen/check", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },
-      body: JSON.stringify({ ids: [id], titles: [] }),
-      signal: AbortSignal.timeout(5000),
-    });
-    if (!res.ok) return false;
-    const d = await res.json() as any;
-    return d.seen?.length > 0;
-  } catch { return false; }
+  const { isArticleSeen } = await import("@/lib/supabase");
+  const id = createHash("sha256").update(postUrl).digest("hex").slice(0, 16);
+  return isArticleSeen(id);
 }
 
 async function markCarouselSeen(postUrl: string): Promise<void> {
-  try {
-    const id = createHash("sha256").update(postUrl).digest("hex").slice(0, 16);
-    await fetch(WORKER_URL + "/seen", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },
-      body: JSON.stringify({ ids: [id] }),
-      signal: AbortSignal.timeout(5000),
-    });
-  } catch {}
+  const { markArticleSeen } = await import("@/lib/supabase");
+  const id = createHash("sha256").update(postUrl).digest("hex").slice(0, 16);
+  await markArticleSeen(id);
 }
 
 export async function POST(req: NextRequest) {
@@ -295,19 +294,19 @@ export async function POST(req: NextRequest) {
     const published = await publishRes.json() as any;
     if (!publishRes.ok || published.error) throw new Error(published.error?.message || "Publish failed");
 
-    // Log
-    await fetch(WORKER_URL + "/post-log", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },
-      body: JSON.stringify({
-        articleId: article.id, title: article.title, url: target.postUrl,
-        category: target.source.cat, sourceName: target.source.name,
-        instagram: { success: true, postId: published.id },
-        facebook: { success: false, error: "carousel IG only" },
-        postedAt: new Date().toISOString(), postType: "carousel",
-      }),
-      signal: AbortSignal.timeout(5000),
-    }).catch(() => {});
+    // Log to Supabase
+    await logPost({
+      article_id: article.id,
+      title: article.title,
+      url: target.postUrl,
+      category: target.source.cat,
+      source_name: target.source.name,
+      ig_success: true,
+      ig_post_id: published.id,
+      fb_success: false,
+      fb_error: "carousel IG only",
+      post_type: "carousel",
+    });
 
     return NextResponse.json({
       posted: 1,

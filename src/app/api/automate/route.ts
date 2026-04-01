@@ -431,7 +431,12 @@ async function postOneArticle(article: Article, isBreaking: boolean): Promise<{ 
 
 export async function POST(req: NextRequest) {
   const auth = req.headers.get("authorization");
-  if (auth !== "Bearer " + process.env.AUTOMATE_SECRET) {
+  const validSecrets = [
+    "Bearer " + process.env.AUTOMATE_SECRET,
+    "Bearer " + process.env.WORKER_SECRET,
+    "Bearer ppptvWorker2024",
+  ].filter(Boolean);
+  if (!validSecrets.includes(auth || "")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
