@@ -269,33 +269,57 @@ export async function POST(req: NextRequest) {
     });
 
     let target: VideoItem | null = null;
-    for (const video of dedupedVideos) {
-      if (!(await isVideoSeen(video.id))) { target = video; break; }
-    }
-
-    if (!target) {
-      return NextResponse.json({ posted: 0, message: "All recent videos already posted" });
-    }
-
-    await markVideoSeen(target.id);
-
-    // If we already have a direct video URL (CDN), use it directly without re-resolving
-    // TikWM returns CDN URLs like v19-webapp.tiktok.com or tikcdn.io
     let directUrl: string | null = null;
-    const isCdnUrl = (u: string) => /\.(mp4|mov|webm)/i.test(u) ||
-      /v\d+-webapp\.tiktok\.com|tikcdn\.io|tiktokcdn\.com|v16-webapp|v19-webapp|v26-webapp/i.test(u) ||
-      /googlevideo\.com|cdninstagram\.com|video\.twimg\.com/i.test(u);
 
-    if (target.directVideoUrl && isCdnUrl(target.directVideoUrl)) {
-      directUrl = target.directVideoUrl;
-    } else {
-      const videoUrlToResolve = target.directVideoUrl || target.url;
-      const resolved = await resolveVideoUrl(videoUrlToResolve).catch(() => null);
-      directUrl = resolved?.url || (target.directVideoUrl ?? null);
+    // Try each video until we find one we can resolve
+    for (const video of dedupedVideos) {
+      if (await isVideoSeen(video.id)) continue;
+
+      // Try to get a direct URL
+      let url: string | null = null;
+      const isCdnUrl = (u: string) => /\.(mp4|mov|webm)/i.test(u) ||
+        /v\d+-webapp\.tiktok\.com|tikcdn\.io|tiktokcdn\.com|v16-webapp|v19-webapp|v26-webapp/i.test(u) ||
+        /googlevideo\.com|cdninstagram\.com|video\.twimg\.com|redd\.it|v\.redd\.it/i.test(u);
+
+      if (video.directVideoUrl && isCdnUrl(video.directVideoUrl)) {
+        url = video.directVideoUrl;
+      } else if (video.url.includes("tiktok.com")) {
+        try {
+          const tikwmBody = new URLSearchParams({ url: video.url, hd: "1" });
+          const tikwmRes = await fetch("https://www.tikwm.com/api/", {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": "Mozilla/5.0 (compatible; PPPTVBot/1.0)" },
+            body: tikwmBody.toString(),
+            signal: AbortSignal.timeout(12000),
+          });
+          if (tikwmRes.ok) {
+            const d = await tikwmRes.json() as any;
+            if (d.code === 0 && d.data) url = d.data.hdplay || d.data.play || null;
+          }
+        } catch {}
+        if (!url) {
+          const resolved = await resolveVideoUrl(video.url).catch(() => null);
+          url = resolved?.url || null;
+        }
+      } else if (video.directVideoUrl) {
+        url = video.directVideoUrl;
+      } else {
+        const resolved = await resolveVideoUrl(video.url).catch(() => null);
+        url = resolved?.url || null;
+      }
+
+      if (url) {
+        target = video;
+        directUrl = url;
+        await markVideoSeen(video.id);
+        break;
+      }
+      // Can't resolve this one — mark seen and try next
+      await markVideoSeen(video.id);
     }
 
-    if (!directUrl) {
-      return NextResponse.json({ posted: 0, error: "Could not resolve video URL", source: target.sourceName });
+    if (!target || !directUrl) {
+      return NextResponse.json({ posted: 0, message: "No resolvable videos found from any source" });
     }
 
     const staged = await stageVideoInR2(directUrl);
