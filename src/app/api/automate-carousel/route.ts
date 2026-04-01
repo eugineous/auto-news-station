@@ -176,8 +176,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "IG credentials not configured" }, { status: 500 });
   }
 
-  // Pick random sources to scrape this run
-  const shuffled = [...CAROUSEL_SOURCES].sort(() => Math.random() - 0.5).slice(0, 5);
+  // Only pick sources that have Reddit gallery mappings
+  const MAPPED_SOURCES = CAROUSEL_SOURCES.filter(s => [
+    "theshaderoom","complex","worldstar","espn","nba","premierleague",
+    "sportsbible","goal","billboard","rollingstone","audiomackafrica",
+    "nairobi_gossip_club","mpasho","ghafla"
+  ].includes(s.username));
+  const shuffled = [...MAPPED_SOURCES].sort(() => Math.random() - 0.5).slice(0, 5);
 
   let target: { images: string[]; caption: string; postUrl: string; source: typeof CAROUSEL_SOURCES[0] } | null = null;
 
