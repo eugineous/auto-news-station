@@ -105,7 +105,7 @@ async function scrapeIGCarousels(username: string): Promise<{ images: string[]; 
       const images = Object.values(p.media_metadata as Record<string, any>)
         .filter((m: any) => m.status === "valid" && m.e === "Image")
         .map((m: any) => {
-          // Use the highest resolution available
+          // Use the highest resolution available, decode HTML entities
           const src = m.s?.u || m.p?.slice(-1)[0]?.u || "";
           return src.replace(/&amp;/g, "&");
         })

@@ -548,31 +548,31 @@ async function fetchTikWMTrending(): Promise<VideoItem[]> {
   // Always include 2 guaranteed Kenya terms + 3 random global terms for variety
   const GUARANTEED = [
     { keyword: "nairobi", cat: "ENTERTAINMENT", name: "TikTok Nairobi" },
-    { keyword: "kenya entertainment", cat: "ENTERTAINMENT", name: "TikTok Kenya Entertainment" },
     { keyword: "celebrity news", cat: "CELEBRITY", name: "TikTok Celebrity News" },
   ];
-  const randomTerms = [...SEARCH_TERMS].sort(() => Math.random() - 0.5).slice(0, 4);
+  const randomTerms = [...SEARCH_TERMS].sort(() => Math.random() - 0.5).slice(0, 2);
   const shuffled = [...GUARANTEED, ...randomTerms];
 
-  await Promise.allSettled(shuffled.map(async (term) => {
+  // Run searches sequentially — stops early when we have 5+ videos to avoid Vercel timeout
+  for (const term of shuffled) {
+    if (items.length >= 5) break;
     try {
       const body = new URLSearchParams({ keywords: term.keyword, count: "5", cursor: "0", HD: "1" });
       const res = await fetch("https://www.tikwm.com/api/feed/search", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": "Mozilla/5.0 (compatible; PPPTVBot/1.0)" },
         body: body.toString(),
-        signal: AbortSignal.timeout(8000),
+        signal: AbortSignal.timeout(6000),
       });
-      if (!res.ok) return;
+      if (!res.ok) continue;
       const data = await res.json() as any;
-      if (data.code !== 0 || !data.data?.videos?.length) return;
+      if (data.code !== 0 || !data.data?.videos?.length) continue;
 
-      for (const v of data.data.videos.slice(0, 3)) {
+      for (const v of data.data.videos.slice(0, 5)) {
         const title = v.title || v.desc || "";
         if (!title || v.is_ad) continue;
         if (!isRecent(new Date(v.create_time * 1000).toISOString(), 48)) continue;
 
-        // Extract username from author field
         const username = v.author?.unique_id || v.author?.id || "unknown";
         const videoUrl = `https://www.tiktok.com/@${username}/video/${v.video_id}`;
 
@@ -589,7 +589,7 @@ async function fetchTikWMTrending(): Promise<VideoItem[]> {
         });
       }
     } catch {}
-  }));
+  }
 
   return items;
 }
@@ -604,10 +604,10 @@ export async function fetchAllVideoSources(): Promise<VideoItem[]> {
   const allResults = await Promise.allSettled([
     // TikWM search — most reliable, returns direct CDN URLs
     fetchTikWMTrending(),
-    // Reddit native videos (v.redd.it direct MP4)
-    ...REDDIT_FEEDS.slice(0, 3).map(f => fetchRedditFeed(f.url, f.name, f.cat)),
-    // YouTube RSS — found but needs resolution via worker
-    ...YOUTUBE_CHANNELS.slice(0, 3).map(ch => fetchYouTubeChannel(ch.id, ch.name, ch.cat)),
+    // Reddit native videos — only 2 feeds to stay under timeout
+    ...REDDIT_FEEDS.slice(0, 2).map(f => fetchRedditFeed(f.url, f.name, f.cat)),
+    // YouTube RSS — only 2 channels
+    ...YOUTUBE_CHANNELS.slice(0, 2).map(ch => fetchYouTubeChannel(ch.id, ch.name, ch.cat)),
   ]);
 
   const all: VideoItem[] = [];
