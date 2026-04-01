@@ -208,21 +208,31 @@ export async function generateAIContent(
     : `Write in casual, conversational Kenyan English. Friendly, relatable, engaging.`;
 
   const captionPrompt =
-    `STEP 1 — FACT CHECK: Before writing, use Google Search to verify:\n` +
-    `- The current title/role of every person mentioned\n` +
-    `- Any statistics, dates, or claims in the article\n` +
-    `- Kenya political context: Ruto=current president, Uhuru=former president, Gachagua=former DP, Kindiki=current DP\n\n` +
-    `STEP 2 — WRITE the PPP TV Kenya caption using ONLY verified facts.\n\n` +
+    `You MUST use Google Search before writing a single word. This is mandatory.\n\n` +
+    `REQUIRED SEARCHES (do all of these before writing):\n` +
+    `1. Search: "${article.title}" — find the latest news and context\n` +
+    `2. Search the full names of every person mentioned — verify their CURRENT title/role as of today\n` +
+    `3. Search any statistics, claims, or events mentioned — verify they are accurate\n\n` +
+    `KNOWN KENYA FACTS (verify these are still current via search):\n` +
+    `- William Ruto = President of Kenya since September 2022\n` +
+    `- Uhuru Kenyatta = FORMER President (left office Sept 2022) — NEVER call him "President"\n` +
+    `- Raila Odinga = Opposition leader — has NEVER been president\n` +
+    `- Kithure Kindiki = Deputy President since October 2024\n` +
+    `- Rigathi Gachagua = FORMER Deputy President (impeached October 2024)\n\n` +
+    `AFTER RESEARCHING, write the PPP TV Kenya caption:\n\n` +
     `TITLE: ${article.title}\n` +
     `CATEGORY: ${article.category}\n` +
     `SOURCE: ${article.sourceName || "PPP TV Kenya"}\n` +
     `SOURCE URL: ${article.url}\n` +
     (content ? `ARTICLE:\n${content}\n\n` : "\n") +
     `LEDE APPROACH: ${hookPattern}\n\n` +
-    `CRITICAL: Do NOT invent, assume, or add any names, dates, statistics, titles, or events that cannot be verified.\n` +
-    `Follow the system instructions exactly. No clickbait. No curiosity gaps. No withholding facts.\n` +
-    `End with: "Source: ${article.sourceName || "PPP TV Kenya"}"\n` +
-    `Reply with ONLY the caption text — no labels, no "Caption:", no preamble.`;
+    `TONE: ${toneInstruction}\n\n` +
+    `RULES:\n` +
+    `- Only write facts confirmed by your Google Search results or the article above\n` +
+    `- Correct any outdated titles or facts using your search results\n` +
+    `- No clickbait. No curiosity gaps. No invented details.\n` +
+    `- End with: "Source: ${article.sourceName || "PPP TV Kenya"}"\n` +
+    `- Reply with ONLY the caption text — no labels, no preamble.`;
 
   // Run title (Gemini+Search) and caption (Gemini+Search) in parallel
   // NVIDIA is used as fallback for caption only (it has no search capability)
@@ -265,17 +275,23 @@ export async function generateAIContent(
     caption = results[1].value;
   } else {
     if (results[1].status === "rejected") console.warn("[gemini] caption failed:", results[1].reason);
-    // NVIDIA fallback — no search but still useful
+    // NVIDIA fallback — no search but apply known fact corrections
     if (hasNvidia) {
       try {
         const nvidiaCaptionPrompt =
           `Write a PPP TV Kenya news caption for this article.\n\n` +
+          `CRITICAL FACT CORRECTIONS — apply these before writing:\n` +
+          `- Uhuru Kenyatta = FORMER President of Kenya (NOT current president)\n` +
+          `- William Ruto = CURRENT President of Kenya\n` +
+          `- Raila Odinga = Opposition leader (never been president)\n` +
+          `- Kithure Kindiki = CURRENT Deputy President\n` +
+          `- Rigathi Gachagua = FORMER Deputy President (impeached 2024)\n\n` +
           `TITLE: ${article.title}\n` +
           `CATEGORY: ${article.category}\n` +
           `SOURCE: ${article.sourceName || "PPP TV Kenya"}\n` +
           (content ? `ARTICLE:\n${content}\n\n` : "\n") +
           `LEDE APPROACH: ${hookPattern}\n\n` +
-          `CRITICAL: Only use facts explicitly stated in the ARTICLE text above. Do NOT invent any detail.\n` +
+          `RULES: Only use facts from the article. Apply the title corrections above. No clickbait.\n` +
           `End with: "Source: ${article.sourceName || "PPP TV Kenya"}"\n` +
           `Reply with ONLY the caption text.`;
         caption = await generateWithNvidia(nvidiaCaptionPrompt, CAPTION_SYSTEM);
@@ -312,15 +328,16 @@ async function generateCaptionWithGemini(article: Article, content: string): Pro
   const client = getGeminiClient(process.env.GEMINI_API_KEY!);
   const hookPattern = HOOK_PATTERNS[Math.floor(Math.random() * HOOK_PATTERNS.length)];
   const prompt =
-    `Write a PPP TV Kenya social media caption for maximum engagement.\n\n` +
+    `You MUST use Google Search before writing. Search the article title and verify all facts.\n\n` +
+    `REQUIRED: Search "${article.title}" and verify current titles of all people mentioned.\n` +
+    `KENYA FACTS: Ruto=current president, Uhuru=FORMER president, Kindiki=current DP, Gachagua=FORMER DP.\n\n` +
     `TITLE: ${article.title}\n` +
     `CATEGORY: ${article.category}\n` +
     `SOURCE URL: ${article.url}\n` +
     (content ? `ARTICLE:\n${content}\n\n` : "\n") +
     `HOOK TECHNIQUE: ${hookPattern}\n\n` +
-    `Use Google Search to verify any names, titles, statistics, or claims in the article before writing. Only include facts you can confirm are accurate.\n` +
-    `CRITICAL: Do NOT invent, assume, or add any detail not confirmed by the article or search results.\n` +
-    `Follow the system instructions. No hashtags. No ALL CAPS. No emojis in first line.\n` +
+    `Write a PPP TV Kenya caption using only verified facts. No hashtags. No ALL CAPS. No clickbait.\n` +
+    `End with: "Source: ${article.sourceName || "PPP TV Kenya"}"\n` +
     `Reply with ONLY the caption text.`;
 
   const response = await client.models.generateContent({
