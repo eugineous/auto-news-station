@@ -56,6 +56,5 @@ const nextConfig = {
   typescript: { ignoreBuildErrors: false },
 };
 
-module.exports = nextConfig;
-
+// build: 2026-04-01
 module.exports = nextConfig;
