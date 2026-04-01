@@ -231,16 +231,36 @@ export async function verifyStory(title: string, url: string): Promise<{ verifie
 }
 
 
+// ── Determine if content is news (requires research + rewrite) ───────────────
+const NEWS_CATEGORIES = new Set(["NEWS", "POLITICS", "BUSINESS", "TECHNOLOGY", "HEALTH", "SCIENCE"]);
+function isNewsCategory(cat: string): boolean { return NEWS_CATEGORIES.has(cat?.toUpperCase()); }
+
 export async function generateAIContent(
   article: Article,
   _options?: { isVideo?: boolean; videoType?: string; tone?: "formal" | "casual" | "hype" | "sheng"; language?: "en" | "sw" }
 ): Promise<AIContent> {
   const tone = _options?.tone || "casual";
   const language = _options?.language || "en";
-  const isSheng = tone === "sheng";
-  const isSwahili = language === "sw";
   const hasGemini = !!process.env.GEMINI_API_KEY;
   const hasNvidia = !!process.env.NVIDIA_API_KEY;
+
+  // ── Non-news: skip AI rewrite, use original content as-is ────────────────
+  if (!isNewsCategory(article.category)) {
+    const rawTitle = article.title.replace(/#\w+/g, "").replace(/\s{2,}/g, " ").trim().toUpperCase().slice(0, 120);
+    const rawCaption = (article.fullBody?.trim() || article.summary?.trim() || article.title).slice(0, 500);
+    const hashtags = getHashtags(article.category);
+    const cta = getEngagementCTA();
+    const caption = rawCaption + "\n\n" + cta.cta + "\n\nSource: " + (article.sourceName || "PPP TV Kenya");
+    return {
+      clickbaitTitle: rawTitle,
+      caption,
+      firstComment: hashtags,
+      engagementType: cta.type,
+    };
+  }
+
+  const isSheng = tone === "sheng";
+  const isSwahili = language === "sw";
 
   const content = (article.fullBody?.trim().length ?? 0) > 50
     ? article.fullBody.trim().slice(0, 2000)
