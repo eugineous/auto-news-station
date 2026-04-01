@@ -51,7 +51,6 @@ export default function Dashboard(){
   const [posts,setPosts]=useState<Post[]>([]);
   const [loading,setLoading]=useState(true);
   const [retries,setRetries]=useState<Record<string,Retry>>({});
-  const [section,setSection]=useState<"cockpit"|"feed"|"compose"|"failures"|"analytics"|"settings">("cockpit");
   const [nextIn,setNextIn]=useState("--:--");
   const [toast,setToast]=useState<{msg:string;type:"ok"|"err"}|null>(null);
   const [triggering,setTriggering]=useState(false);
@@ -144,12 +143,12 @@ export default function Dashboard(){
   const successRate=sorted.length>0?Math.round(sorted.filter(p=>p.instagram.success||p.facebook.success).length/sorted.length*100):0;
 
   const NAV=[
-    {id:"cockpit",icon:"⚡",label:"Cockpit"},
-    {id:"feed",icon:"📡",label:"Live Feed"},
-    {id:"compose",icon:"✏️",label:"Compose"},
-    {id:"failures",icon:"⚠️",label:"Failures",alert:failCount>0},
-    {id:"analytics",icon:"📊",label:"Analytics"},
-    {id:"settings",icon:"⚙️",label:"Settings"},
+    {href:"/dashboard", icon:"⚡", label:"Cockpit"},
+    {href:"/dashboard/feed", icon:"📡", label:"Live Feed"},
+    {href:"/composer",  icon:"✏️", label:"Compose"},
+    {href:"/queue",     icon:"⚠️", label:"Failures"},
+    {href:"/analytics", icon:"📊", label:"Analytics"},
+    {href:"/settings",  icon:"⚙️", label:"Settings"},
   ] as const;
 
   return (
@@ -190,12 +189,11 @@ export default function Dashboard(){
 
         <nav style={{flex:1,padding:"12px 8px",overflowY:"auto"}}>
           {NAV.map(n=>(
-            <button key={n.id} className="nav-btn" onClick={()=>setSection(n.id as any)}
-              style={{color:section===n.id?"#fff":"#555",fontWeight:section===n.id?700:400,background:section===n.id?"#141414":"none",borderLeft:`3px solid ${section===n.id?R:"transparent"}`}}>
+            <Link key={n.href} href={n.href} className="nav-btn"
+              style={{color:n.href==="/dashboard"?"#fff":"#555",fontWeight:n.href==="/dashboard"?700:400,background:n.href==="/dashboard"?"#141414":"none",borderLeft:`3px solid ${n.href==="/dashboard"?R:"transparent"}`,textDecoration:"none",display:"flex",alignItems:"center",gap:10}}>
               <span style={{fontSize:16,width:20,textAlign:"center"}}>{n.icon}</span>
               <span style={{flex:1}}>{n.label}</span>
-              {(n as any).alert&&<span style={{width:7,height:7,borderRadius:"50%",background:"#f87171",animation:"blink 1.5s infinite",flexShrink:0}}/>}
-            </button>
+            </Link>
           ))}
         </nav>
 
@@ -239,9 +237,9 @@ export default function Dashboard(){
           </div>
           <div style={{display:"flex",gap:8,alignItems:"center"}}>
             {failCount>0&&(
-              <button onClick={()=>setSection("failures")} style={{background:"#1a0808",border:"1px solid #3a1a1a",color:"#f87171",fontSize:11,fontWeight:700,padding:"4px 12px",borderRadius:20,cursor:"pointer",animation:"blink 2s infinite"}}>
+              <Link href="/queue" style={{background:"#1a0808",border:"1px solid #3a1a1a",color:"#f87171",fontSize:11,fontWeight:700,padding:"4px 12px",borderRadius:20,cursor:"pointer",animation:"blink 2s infinite",textDecoration:"none"}}>
                 ⚠ {failCount} failed
-              </button>
+              </Link>
             )}
             <span style={{fontSize:11,color:"#444",fontFamily:"monospace"}}>{todayCount} posts today</span>
             <button onClick={fetchPosts} style={{background:"none",border:"1px solid #1a1a1a",borderRadius:6,padding:"5px 10px",fontSize:11,color:"#444",cursor:"pointer"}}>↻</button>
@@ -249,26 +247,18 @@ export default function Dashboard(){
         </div>
 
         <div style={{padding:"20px 24px",maxWidth:1400,margin:"0 auto",width:"100%"}}>
-
-          {/* ══ COCKPIT OVERVIEW ══ */}
-          {section==="cockpit"&&<CockpitSection posts={sorted} loading={loading} nextIn={nextIn} todayCount={todayCount} igOkToday={igOkToday} fbOkToday={fbOkToday} failCount={failCount} successRate={successRate} retries={retries} onRetry={doRetry} onTrigger={triggerNow} triggering={triggering} onClear={clearCache} clearing={clearing} onPost={()=>{fetchPosts();showToast("Posted!","ok");}} onCompose={()=>setSection("compose")}/>}
-          {section==="feed"&&<FeedSection posts={posts} toggles={sourceToggles} onToggle={(src)=>setSourceToggles(s=>({...s,[src]:!(s[src]??true)}))} onPost={()=>{fetchPosts();showToast("Posted!","ok");}}/>}
-          {section==="compose"&&<ComposeSection onSuccess={()=>{fetchPosts();setSection("cockpit");showToast("Posted!","ok");}}/>}
-          {section==="failures"&&<FailuresSection posts={sorted} onRetry={doRetry} retries={retries}/>}
-          {section==="analytics"&&<AnalyticsSection posts={sorted} nextIn={nextIn}/>}
-          {section==="settings"&&<SettingsSection onTrigger={()=>showToast("Pipeline triggered!","ok")}/>}
+          <CockpitSection posts={sorted} loading={loading} nextIn={nextIn} todayCount={todayCount} igOkToday={igOkToday} fbOkToday={fbOkToday} failCount={failCount} successRate={successRate} retries={retries} onRetry={doRetry} onTrigger={triggerNow} triggering={triggering} onClear={clearCache} clearing={clearing} onPost={()=>{fetchPosts();showToast("Posted!","ok");}} onCompose={()=>{window.location.href="/composer";}}/>
         </div>
       </div>
 
       {/* Mobile nav */}
       <nav className="mobile-nav" style={{display:"none",position:"fixed",bottom:0,left:0,right:0,background:"rgba(5,5,5,0.98)",backdropFilter:"blur(16px)",borderTop:"1px solid #141414",zIndex:50}}>
         {NAV.map(n=>(
-          <button key={n.id} onClick={()=>setSection(n.id as any)}
-            style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:3,padding:"10px 0",background:"none",border:"none",color:section===n.id?R:"#444",cursor:"pointer",fontSize:9,letterSpacing:1,fontWeight:700,textTransform:"uppercase",position:"relative"}}>
+          <Link key={n.href} href={n.href}
+            style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:3,padding:"10px 0",color:"#444",fontSize:9,letterSpacing:1,fontWeight:700,textTransform:"uppercase" as const,textDecoration:"none"}}>
             <span style={{fontSize:18}}>{n.icon}</span>
-            <span>{n.id==="cockpit"?"Home":n.id==="feed"?"Feed":n.id==="compose"?"Post":n.id==="failures"?"Fails":n.id==="analytics"?"Stats":"Config"}</span>
-            {(n as any).alert&&<span style={{position:"absolute",top:8,right:"calc(50% - 14px)",width:6,height:6,borderRadius:"50%",background:"#f87171",animation:"blink 1.5s infinite"}}/>}
-          </button>
+            <span>{n.label}</span>
+          </Link>
         ))}
       </nav>
 
