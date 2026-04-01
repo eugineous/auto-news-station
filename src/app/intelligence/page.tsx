@@ -42,7 +42,7 @@ export default function IntelligencePage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch("https://auto-ppp-tv.euginemicah.workers.dev/post-log", { headers: { Authorization: "Bearer ppptvWorker2024" } })
+    fetch("/api/post-log", { credentials: "include" })
       .then(r => r.json())
       .then((d: any) => setPosts(d.log || []))
       .catch(() => {})
