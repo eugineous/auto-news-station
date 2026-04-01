@@ -48,7 +48,7 @@ function isEntertainmentTitle(title: string): boolean {
   return /music|song|video|celebrity|gossip|entertainment|fashion|award|concert|interview|exclusive|drama|movie|film|tv|show|dance|comedy|viral|trending|nairobi|kenya|africa/i.test(title);
 }
 
-function isRecent(dateStr: string, maxHours = 24): boolean {
+function isRecent(dateStr: string, maxHours = 48): boolean {
   try {
     const d = new Date(dateStr);
     return Date.now() - d.getTime() < maxHours * 3600 * 1000;
@@ -501,20 +501,16 @@ export async function fetchAllVideoSources(): Promise<VideoItem[]> {
   }
 
   const allResults = await Promise.allSettled([
-    // YouTube (10 channels) — may be blocked server-side
-    ...YOUTUBE_CHANNELS.map(ch => fetchYouTubeChannel(ch.id, ch.name, ch.cat)),
-    // Dailymotion (4 feeds)
-    ...DAILYMOTION_FEEDS.map(f => fetchDailymotionFeed(f.url, f.name, f.cat)),
-    // Reddit (5 subreddits) — most reliable, no auth needed
+    // Reddit — most reliable, native video posts with direct MP4 URLs
     ...REDDIT_FEEDS.map(f => fetchRedditFeed(f.url, f.name, f.cat)),
-    // News RSS with video embeds (YouTube embeds + MP4 enclosures only)
-    ...NEWS_RSS_FEEDS.map(f => fetchNewsRSSWithVideo(f.url, f.name, f.cat)),
-    // Vimeo (2 feeds)
-    ...VIMEO_FEEDS.map(f => fetchVimeoFeed(f.url, f.name, f.cat)),
-    // TikTok accounts via TikWM
-    ...TIKTOK_ACCOUNTS.map(a => fetchTikTokAccountVideos(a)),
-    // TikWM trending — always returns fresh videos
+    // TikWM trending — scrapes known news accounts
     fetchTikWMTrending(),
+    // YouTube RSS — may work sometimes
+    ...YOUTUBE_CHANNELS.slice(0, 5).map(ch => fetchYouTubeChannel(ch.id, ch.name, ch.cat)),
+    // Dailymotion
+    ...DAILYMOTION_FEEDS.slice(0, 2).map(f => fetchDailymotionFeed(f.url, f.name, f.cat)),
+    // TikTok accounts
+    ...TIKTOK_ACCOUNTS.slice(0, 5).map(a => fetchTikTokAccountVideos(a)),
   ]);
 
   const all: VideoItem[] = [];
