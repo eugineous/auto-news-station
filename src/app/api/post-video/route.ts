@@ -40,9 +40,10 @@ async function logPost(entry: object): Promise<void> {
   } catch {}
 }
 
-async function stageVideo(sourceUrl: string): Promise<{ url: string; key: string }> {
+async function stageVideo(sourceUrl: string): Promise<{ url: string; key: string; thumbnail?: string }> {
   const resolved = await resolveVideoUrl(sourceUrl).catch(() => null);
   const fetchUrl = resolved?.url || sourceUrl;
+  const resolvedThumbnail = resolved?.thumbnail; // capture thumbnail from resolver
 
   let videoBytes: Uint8Array | null = null;
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -91,7 +92,7 @@ async function stageVideo(sourceUrl: string): Promise<{ url: string; key: string
   });
   const data = await res.json() as any;
   if (!res.ok || !data.success) throw new Error(data.error ?? `Stage failed: HTTP ${res.status}`);
-  return { url: data.url, key: data.key };
+  return { url: data.url, key: data.key, thumbnail: resolvedThumbnail };
 }
 
 async function waitForIGContainer(containerId: string, token: string, emit?: (p: number, msg: string) => void): Promise<void> {
@@ -169,45 +170,53 @@ export async function POST(req: NextRequest) {
       const imageBuffer = await generateImage(article, { isBreaking: false });
 
       emit(20, "Resolving video URL…");
-      // stageVideo handles resolve + download + upload
       emit(28, "Downloading video…");
-      const { url: stagedVideoUrl, key: stagedKey } = await stageVideo(url);
+      const { url: stagedVideoUrl, key: stagedKey, thumbnail: resolverThumb } = await stageVideo(url);
 
       emit(50, "Video staged to R2 ✓");
 
-      // Stage cover image
+      // Stage cover image — try resolver thumbnail first (actual video frame), then branded image
       emit(55, "Staging cover image…");
       let coverImageUrl: string | undefined;
-      try {
-        const stageImgRes = await fetch(WORKER_URL + "/stage-image", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },
-          body: JSON.stringify({ imageBuffer: imageBuffer.toString("base64") }),
-          signal: AbortSignal.timeout(15000),
-        });
-        if (stageImgRes.ok) {
-          const d = await stageImgRes.json() as any;
-          coverImageUrl = d?.url;
-        }
-      } catch {}
 
-      if (!coverImageUrl && fbToken && fbPageId) {
+      // Priority 1: use the resolver's thumbnail (actual video thumbnail/frame)
+      if (resolverThumb || thumbRaw) {
+        const thumbToStage = resolverThumb || thumbRaw;
         try {
-          const blob = new Blob(
-            [imageBuffer.buffer.slice(imageBuffer.byteOffset, imageBuffer.byteOffset + imageBuffer.byteLength) as ArrayBuffer],
-            { type: "image/jpeg" }
-          );
-          const form = new FormData();
-          form.append("source", blob, "cover.jpg");
-          form.append("published", "false");
-          form.append("access_token", fbToken);
-          const r = await fetch(`${GRAPH_API}/${fbPageId}/photos`, { method: "POST", body: form });
-          const d = await r.json() as any;
-          if (r.ok && !d.error) {
-            await sleep(3000);
-            const pr = await fetch(`${GRAPH_API}/${d.id}?fields=images&access_token=${fbToken}`);
-            const pd = await pr.json() as any;
-            coverImageUrl = pd.images?.[0]?.source;
+          const thumbRes = await fetch(thumbToStage, {
+            headers: { "User-Agent": "Mozilla/5.0 (compatible; PPPTVBot/1.0)" },
+            signal: AbortSignal.timeout(10000),
+          });
+          if (thumbRes.ok) {
+            const thumbBytes = new Uint8Array(await thumbRes.arrayBuffer());
+            if (thumbBytes.length > 1000) {
+              const stageThumbRes = await fetch(WORKER_URL + "/stage-image", {
+                method: "POST",
+                headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },
+                body: JSON.stringify({ imageBuffer: Buffer.from(thumbBytes).toString("base64") }),
+                signal: AbortSignal.timeout(15000),
+              });
+              if (stageThumbRes.ok) {
+                const d = await stageThumbRes.json() as any;
+                coverImageUrl = d?.url;
+              }
+            }
+          }
+        } catch {}
+      }
+
+      // Priority 2: branded PPP TV thumbnail
+      if (!coverImageUrl) {
+        try {
+          const stageImgRes = await fetch(WORKER_URL + "/stage-image", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },
+            body: JSON.stringify({ imageBuffer: imageBuffer.toString("base64") }),
+            signal: AbortSignal.timeout(15000),
+          });
+          if (stageImgRes.ok) {
+            const d = await stageImgRes.json() as any;
+            coverImageUrl = d?.url;
           }
         } catch {}
       }
