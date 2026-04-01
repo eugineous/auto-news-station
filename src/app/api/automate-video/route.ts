@@ -8,6 +8,7 @@ import { resolveVideoUrl } from "@/lib/video-downloader";
 import { generateAIContent, verifyStory } from "@/lib/gemini";
 import { generateImage } from "@/lib/image-gen";
 import { fetchAllVideoSources, VideoItem, TIKTOK_ACCOUNTS, buildAttribution } from "@/lib/video-sources";
+import { fetchViralTikTokVideos, calculateViralScore, KENYAN_MUSIC_KEYWORDS, isOptimalPostingTime } from "@/lib/viral-intelligence";
 import { Article } from "@/lib/types";
 import { createHash } from "crypto";
 
@@ -219,8 +220,28 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Social credentials not configured" }, { status: 500 });
     }
 
-    const allVideos = await fetchAllVideoSources();
-    if (allVideos.length === 0) {
+    // Fetch from all sources + viral TikTok search in parallel
+    const [allVideos, viralVideos] = await Promise.all([
+      fetchAllVideoSources(),
+      // Every other run, also search for Kenyan music specifically
+      fetchViralTikTokVideos(
+        KENYAN_MUSIC_KEYWORDS.sort(() => Math.random() - 0.5).slice(0, 3)
+      ).catch(() => []),
+    ]);
+
+    // Merge and deduplicate
+    const seenIds = new Set(allVideos.map(v => v.id));
+    const mergedVideos = [
+      ...allVideos,
+      ...viralVideos.filter(v => !seenIds.has(v.id)).map(v => ({
+        id: v.id, title: v.title, url: v.url,
+        directVideoUrl: v.directVideoUrl, thumbnail: v.thumbnail,
+        publishedAt: v.publishedAt, sourceName: v.sourceName,
+        sourceType: v.sourceType as any, category: v.category,
+      })),
+    ];
+
+    if (mergedVideos.length === 0) {
       return NextResponse.json({ posted: 0, message: "No videos found from any source" });
     }
 
@@ -237,7 +258,7 @@ export async function POST(req: NextRequest) {
       }
     } catch { /* non-fatal */ }
 
-    const filteredVideos = allVideos.filter(v => {
+    const filteredVideos = mergedVideos.filter(v => {
       const domain = (() => { try { return new URL(v.url).hostname.toLowerCase(); } catch { return ""; } })();
       const titleLower = v.title.toLowerCase();
       return !blacklistEntries.some(e => {
@@ -263,10 +284,30 @@ export async function POST(req: NextRequest) {
       }
     } catch { /* non-fatal */ }
 
-    const dedupedVideos = filteredVideos.filter(v => {
-      const tl = v.title.toLowerCase();
-      return !recentTitles.some(rt => levenshtein(tl.slice(0, 60), rt.slice(0, 60)) < 10);
-    });
+    const dedupedVideos = filteredVideos
+      .filter(v => {
+        const tl = v.title.toLowerCase();
+        return !recentTitles.some(rt => levenshtein(tl.slice(0, 60), rt.slice(0, 60)) < 10);
+      })
+      .map(v => {
+        // Score each video for viral potential
+        const { viralScore, recencyScore, engagementScore } = calculateViralScore({
+          publishedAt: v.publishedAt,
+          title: v.title,
+          category: v.category,
+        });
+        // Kenyan content gets a 25-point boost — we prioritize local content
+        const isKenyan = /kenya|nairobi|kenyan|harambee|gor mahia|afc leopard|citizen tv|tuko|mpasho|ghafla|spm buzz/i.test(v.title + " " + v.sourceName);
+        const hasDirect = !!v.directVideoUrl; // direct URLs are faster to post
+        const finalScore = viralScore + (isKenyan ? 25 : 0) + (hasDirect ? 10 : 0);
+        return { ...v, _score: finalScore, _isKenyan: isKenyan };
+      })
+      .sort((a, b) => {
+        // Peak time: boost content matching current hour's optimal category
+        const aOptimal = isOptimalPostingTime(a.category) ? 15 : 0;
+        const bOptimal = isOptimalPostingTime(b.category) ? 15 : 0;
+        return (b._score + bOptimal) - (a._score + aOptimal);
+      });
 
     let target: VideoItem | null = null;
     let directUrl: string | null = null;
