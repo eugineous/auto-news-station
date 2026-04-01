@@ -430,8 +430,11 @@ async function fetchTikTokAccountVideos(account: TikTokAccount): Promise<VideoIt
 }
 
 export async function fetchAllVideoSources(): Promise<VideoItem[]> {
-  // Initialize bloom filter once per cold start
-  if (!bloom) bloom = new BloomFilter(BLOOM_CAPACITY, BLOOM_FALSE_POSITIVE);
+  // Initialize bloom filter — use try/catch in case of API changes
+  if (!bloom) {
+    try { bloom = BloomFilter.create(BLOOM_CAPACITY, BLOOM_FALSE_POSITIVE); }
+    catch { bloom = null; }
+  }
 
   const allResults = await Promise.allSettled([
     // YouTube (10 channels)
