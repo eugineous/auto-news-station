@@ -18,10 +18,10 @@ const CAT_COLOR: Record<string, string> = {
 };
 
 interface Post {
-  postedAt: string;
+  posted_at: string;
   category: string;
-  instagram: { success: boolean };
-  facebook: { success: boolean };
+  ig_success: boolean;
+  fb_success: boolean;
   title: string;
 }
 
@@ -52,10 +52,10 @@ export default function IntelligencePage() {
   // Best posting hours (EAT)
   const hourBuckets = Array.from({ length: 24 }, (_, h) => {
     const hourPosts = posts.filter(p => {
-      const eat = (new Date(p.postedAt).getUTCHours() + 3) % 24;
+      const eat = (new Date(p.posted_at).getUTCHours() + 3) % 24;
       return eat === h;
     });
-    const success = hourPosts.filter(p => p.instagram?.success || p.facebook?.success).length;
+    const success = hourPosts.filter(p => p.ig_success || p.fb_success).length;
     return { hour: h, total: hourPosts.length, success, rate: hourPosts.length > 0 ? success / hourPosts.length : 0 };
   });
   const maxHourTotal = Math.max(1, ...hourBuckets.map(h => h.total));
@@ -65,7 +65,7 @@ export default function IntelligencePage() {
   const cats = Object.keys(CAT_COLOR);
   const catStats = cats.map(cat => {
     const catPosts = posts.filter(p => p.category === cat);
-    const success = catPosts.filter(p => p.instagram?.success || p.facebook?.success).length;
+    const success = catPosts.filter(p => p.ig_success || p.fb_success).length;
     return { cat, total: catPosts.length, success, rate: catPosts.length > 0 ? Math.round(success / catPosts.length * 100) : 0 };
   }).filter(c => c.total > 0).sort((a, b) => b.total - a.total);
   const maxCatTotal = Math.max(1, ...catStats.map(c => c.total));
@@ -73,26 +73,26 @@ export default function IntelligencePage() {
   // Day of week performance
   const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const dayStats = DAYS.map((day, i) => {
-    const dayPosts = posts.filter(p => new Date(p.postedAt).getDay() === i);
-    const success = dayPosts.filter(p => p.instagram?.success || p.facebook?.success).length;
+    const dayPosts = posts.filter(p => new Date(p.posted_at).getDay() === i);
+    const success = dayPosts.filter(p => p.ig_success || p.fb_success).length;
     return { day, total: dayPosts.length, success, rate: dayPosts.length > 0 ? Math.round(success / dayPosts.length * 100) : 0 };
   });
   const maxDayTotal = Math.max(1, ...dayStats.map(d => d.total));
 
   // Overall stats
   const total = posts.length;
-  const igSuccess = posts.filter(p => p.instagram?.success).length;
-  const fbSuccess = posts.filter(p => p.facebook?.success).length;
-  const bothSuccess = posts.filter(p => p.instagram?.success && p.facebook?.success).length;
-  const overallRate = total > 0 ? Math.round((posts.filter(p => p.instagram?.success || p.facebook?.success).length / total) * 100) : 0;
+  const igSuccess = posts.filter(p => p.ig_success).length;
+  const fbSuccess = posts.filter(p => p.fb_success).length;
+  const bothSuccess = posts.filter(p => p.ig_success && p.fb_success).length;
+  const overallRate = total > 0 ? Math.round((posts.filter(p => p.ig_success || p.fb_success).length / total) * 100) : 0;
 
   // 7-day trend
   const last7 = Array.from({ length: 7 }, (_, i) => {
     const d = new Date();
     d.setDate(d.getDate() - (6 - i));
     const dateStr = d.toDateString();
-    const dayPosts = posts.filter(p => new Date(p.postedAt).toDateString() === dateStr);
-    return { label: DAYS[d.getDay()], count: dayPosts.length, success: dayPosts.filter(p => p.instagram?.success || p.facebook?.success).length };
+    const dayPosts = posts.filter(p => new Date(p.posted_at).toDateString() === dateStr);
+    return { label: DAYS[d.getDay()], count: dayPosts.length, success: dayPosts.filter(p => p.ig_success || p.fb_success).length };
   });
   const maxDay7 = Math.max(1, ...last7.map(d => d.count));
 

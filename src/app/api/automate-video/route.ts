@@ -11,6 +11,7 @@ import { fetchAllVideoSources, VideoItem, TIKTOK_ACCOUNTS, buildAttribution } fr
 import { fetchViralTikTokVideos, calculateViralScore, KENYAN_MUSIC_KEYWORDS, isOptimalPostingTime } from "@/lib/viral-intelligence";
 import { Article } from "@/lib/types";
 import { createHash } from "crypto";
+import { logPost, isArticleSeen, markArticleSeen, getBlacklist, getPostLog } from "@/lib/supabase";
 
 export const maxDuration = 300;
 
@@ -20,30 +21,13 @@ const WORKER_SECRET = process.env.WORKER_SECRET || "ppptvWorker2024";
 
 async function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)); }
 
-// ── Dedup via CF KV ───────────────────────────────────────────────────────────
+// ── Dedup via Supabase ────────────────────────────────────────────────────────
 async function isVideoSeen(videoId: string): Promise<boolean> {
-  try {
-    const res = await fetch(WORKER_URL + "/seen/check", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },
-      body: JSON.stringify({ ids: [videoId], titles: [] }),
-      signal: AbortSignal.timeout(5000),
-    });
-    if (!res.ok) return false;
-    const { seen } = await res.json() as { seen: string[] };
-    return seen.length > 0;
-  } catch { return false; }
+  return isArticleSeen(videoId);
 }
 
-async function markVideoSeen(videoId: string): Promise<void> {
-  try {
-    await fetch(WORKER_URL + "/seen", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },
-      body: JSON.stringify({ ids: [videoId] }),
-      signal: AbortSignal.timeout(5000),
-    });
-  } catch { /* non-fatal */ }
+async function markVideoSeen(videoId: string, title?: string): Promise<void> {
+  return markArticleSeen(videoId, title);
 }
 
 /**
@@ -245,18 +229,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ posted: 0, message: "No videos found from any source" });
     }
 
-    // ── Blacklist filter ──────────────────────────────────────────────────────
-    let blacklistEntries: { type: string; value: string }[] = [];
-    try {
-      const blRes = await fetch(WORKER_URL + "/blacklist", {
-        headers: { Authorization: "Bearer " + WORKER_SECRET },
-        signal: AbortSignal.timeout(5000),
-      });
-      if (blRes.ok) {
-        const blData = await blRes.json() as any;
-        blacklistEntries = blData.blacklist || [];
-      }
-    } catch { /* non-fatal */ }
+    // ── Blacklist filter (Supabase) ───────────────────────────────────────────
+    const blacklistEntries = await getBlacklist();
 
     const filteredVideos = mergedVideos.filter(v => {
       const domain = (() => { try { return new URL(v.url).hostname.toLowerCase(); } catch { return ""; } })();
@@ -268,21 +242,9 @@ export async function POST(req: NextRequest) {
       });
     });
 
-    // ── Duplicate title detection (Levenshtein distance) ─────────────────────
-    let recentTitles: string[] = [];
-    try {
-      const logRes = await fetch(WORKER_URL + "/post-log?limit=50", {
-        headers: { Authorization: "Bearer " + WORKER_SECRET },
-        signal: AbortSignal.timeout(5000),
-      });
-      if (logRes.ok) {
-        const logData = await logRes.json() as any;
-        const cutoff = Date.now() - 24 * 3600 * 1000;
-        recentTitles = (logData.log || [])
-          .filter((e: any) => new Date(e.postedAt).getTime() > cutoff)
-          .map((e: any) => (e.title || "").toLowerCase());
-      }
-    } catch { /* non-fatal */ }
+    // ── Duplicate title detection (Supabase) ─────────────────────────────────
+    const recentPosts = await getPostLog(50, 1);
+    const recentTitles = recentPosts.map((p: any) => (p.title || "").toLowerCase());
 
     const dedupedVideos = filteredVideos
       .filter(v => {
@@ -388,19 +350,13 @@ export async function POST(req: NextRequest) {
     const verification = await verifyStory(target.title, target.url);
     if (!verification.verified) {
       console.warn(`[verify] BLOCKED: "${target.title}" — ${verification.reason} (confidence: ${verification.confidence})`);
-      // Log the blocked story
-      await fetch(WORKER_URL + "/post-log", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },
-        body: JSON.stringify({
-          articleId: createHash("sha256").update(target.id).digest("hex").slice(0, 16),
-          title: target.title, url: target.url,
-          category: target.category, sourceName: target.sourceName,
-          blocked: true, blockReason: verification.reason,
-          postedAt: new Date().toISOString(), postType: "video",
-        }),
-        signal: AbortSignal.timeout(5000),
-      }).catch(() => {});
+      await logPost({
+        article_id: createHash("sha256").update(target.id).digest("hex").slice(0, 16),
+        title: target.title, url: target.url,
+        category: target.category, source_name: target.sourceName,
+        blocked: true, block_reason: verification.reason,
+        post_type: "video",
+      });
       return NextResponse.json({ posted: 0, message: `Story blocked: ${verification.reason}`, blocked: true });
     }
     if (verification.confidence < 40) {
@@ -493,18 +449,23 @@ export async function POST(req: NextRequest) {
     } catch (err: any) { xResult = { success: false, error: err.message }; }
 
     if (igResult.success || fbResult.success) {
-      await fetch(WORKER_URL + "/post-log", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },
-        body: JSON.stringify({
-          articleId: article.id, title: target.title, url: target.url,
-          category: target.category, sourceName: target.sourceName,
-          sourceType: target.sourceType, thumbnail: target.thumbnail,
-          instagram: igResult, facebook: fbResult, twitter: xResult,
-          postedAt: new Date().toISOString(), postType: "video",
-        }),
-        signal: AbortSignal.timeout(5000),
-      }).catch(() => {});
+      await logPost({
+        article_id: article.id,
+        title: target.title,
+        url: target.url,
+        category: target.category,
+        source_name: target.sourceName,
+        source_type: target.sourceType,
+        thumbnail: target.thumbnail,
+        post_type: "video",
+        ig_success: igResult.success,
+        ig_post_id: igResult.postId,
+        ig_error: igResult.error,
+        fb_success: fbResult.success,
+        fb_post_id: fbResult.postId,
+        fb_error: fbResult.error,
+        posted_at: new Date().toISOString(),
+      });
     }
 
     return NextResponse.json({

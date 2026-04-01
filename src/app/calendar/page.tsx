@@ -19,11 +19,10 @@ interface CalPost {
   id: string;
   title: string;
   category: string;
-  postedAt: string;
-  instagram: { success: boolean };
-  facebook: { success: boolean };
-  postType?: string;
-  scheduledAt?: string;
+  posted_at: string;
+  ig_success: boolean;
+  fb_success: boolean;
+  post_type?: string;
 }
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -61,23 +60,23 @@ export default function CalendarPage() {
 
   function postsForDay(day: number) {
     const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-    return posts.filter(p => (p.postedAt || p.scheduledAt || "").startsWith(dateStr));
+    return posts.filter(p => (p.posted_at || "").startsWith(dateStr));
   }
 
   const today = new Date();
   const isToday = (day: number) =>
     day === today.getDate() && month === today.getMonth() && year === today.getFullYear();
 
-  const selectedPosts = selected ? posts.filter(p => (p.postedAt || "").startsWith(selected)) : [];
+  const selectedPosts = selected ? posts.filter(p => (p.posted_at || "").startsWith(selected)) : [];
 
   // Stats
   const thisMonth = posts.filter(p => {
-    const d = new Date(p.postedAt);
+    const d = new Date(p.posted_at);
     return d.getMonth() === month && d.getFullYear() === year;
   });
-  const igOk = thisMonth.filter(p => p.instagram?.success).length;
-  const fbOk = thisMonth.filter(p => p.facebook?.success).length;
-  const fails = thisMonth.filter(p => !p.instagram?.success && !p.facebook?.success).length;
+  const igOk = thisMonth.filter(p => p.ig_success).length;
+  const fbOk = thisMonth.filter(p => p.fb_success).length;
+  const fails = thisMonth.filter(p => !p.ig_success && !p.fb_success).length;
 
   return (
     <Shell>
@@ -167,13 +166,13 @@ export default function CalendarPage() {
                     <div key={i} style={{ background: "#111", borderRadius: 7, padding: "10px 12px" }}>
                       <div style={{ display: "flex", gap: 5, marginBottom: 5, flexWrap: "wrap" as const }}>
                         <span style={{ background: (CAT_COLOR[p.category] || "#555") + "33", color: CAT_COLOR[p.category] || "#aaa", fontSize: 9, fontWeight: 800, padding: "2px 6px", borderRadius: 3, textTransform: "uppercase" as const }}>{p.category}</span>
-                        {p.postType === "video" && <span style={{ background: PURPLE + "33", color: PURPLE, fontSize: 9, fontWeight: 800, padding: "2px 6px", borderRadius: 3 }}>VIDEO</span>}
+                        {p.post_type === "video" && <span style={{ background: PURPLE + "33", color: PURPLE, fontSize: 9, fontWeight: 800, padding: "2px 6px", borderRadius: 3 }}>VIDEO</span>}
                       </div>
                       <div style={{ fontSize: 12, color: "#ccc", fontWeight: 600, lineHeight: 1.4, marginBottom: 6 }}>{p.title}</div>
                       <div style={{ display: "flex", gap: 8 }}>
-                        <span style={{ fontSize: 10, color: p.instagram?.success ? GREEN : RED, fontWeight: 700 }}>IG {p.instagram?.success ? "✓" : "✗"}</span>
-                        <span style={{ fontSize: 10, color: p.facebook?.success ? GREEN : RED, fontWeight: 700 }}>FB {p.facebook?.success ? "✓" : "✗"}</span>
-                        <span style={{ fontSize: 10, color: "#333", marginLeft: "auto" }}>{new Date(p.postedAt).toLocaleTimeString("en-KE", { hour: "2-digit", minute: "2-digit" })}</span>
+                        <span style={{ fontSize: 10, color: p.ig_success ? GREEN : RED, fontWeight: 700 }}>IG {p.ig_success ? "✓" : "✗"}</span>
+                        <span style={{ fontSize: 10, color: p.fb_success ? GREEN : RED, fontWeight: 700 }}>FB {p.fb_success ? "✓" : "✗"}</span>
+                        <span style={{ fontSize: 10, color: "#333", marginLeft: "auto" }}>{new Date(p.posted_at).toLocaleTimeString("en-KE", { hour: "2-digit", minute: "2-digit" })}</span>
                       </div>
                     </div>
                   ))}

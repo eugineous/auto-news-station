@@ -4,6 +4,7 @@ import { generateAIContent, verifyStory } from "@/lib/gemini";
 import { generateImage } from "@/lib/image-gen";
 import { publish, publishStories, publishVideo } from "@/lib/publisher";
 import { Article, SchedulerResponse } from "@/lib/types";
+import { logPost, isArticleSeen, markArticleSeen, getBlacklist, getPostLog } from "@/lib/supabase";
 
 export const maxDuration = 300;
 
@@ -209,17 +210,7 @@ async function markSeen(id: string, title?: string): Promise<void> {
   } catch { /* non-fatal */ }
 }
 
-async function logPost(entry: object): Promise<void> {
-  if (!WORKER_SECRET) return;
-  try {
-    await fetch(WORKER_URL + "/post-log", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },
-      body: JSON.stringify(entry),
-      signal: AbortSignal.timeout(5000),
-    });
-  } catch { /* non-fatal */ }
-}
+// logPost is now imported from @/lib/supabase
 
 // ── Distributed lock via CF KV — prevents concurrent runs double-posting ──────
 const LOCK_KEY = "pipeline:lock";
@@ -358,7 +349,7 @@ async function postOneArticle(article: Article, isBreaking: boolean): Promise<{ 
 
         if (anySuccess) {
           await Promise.all([
-            logPost({ articleId: article.id, title: clickbaitTitle, url: article.url, category: article.category, instagram: result.instagram, facebook: result.facebook, twitter: result.twitter, postedAt: new Date().toISOString(), isBreaking, postType: "video" }),
+            logPost({ article_id: article.id, title: clickbaitTitle, url: article.url, category: article.category, ig_success: result.instagram.success, ig_post_id: result.instagram.postId, ig_error: result.instagram.error, fb_success: result.facebook.success, fb_post_id: result.facebook.postId, fb_error: result.facebook.error, post_type: "video" }),
             incrementDailyCount(),
             setLastCategory(article.category),
           ]);
@@ -420,11 +411,11 @@ async function postOneArticle(article: Article, isBreaking: boolean): Promise<{ 
 
     await Promise.all([
       logPost({
-        articleId: article.id, title: clickbaitTitle, url: article.url,
-        category: article.category, instagram: result.instagram,
-        facebook: result.facebook, twitter: result.twitter,
-        postedAt: new Date().toISOString(),
-        isBreaking,
+        article_id: article.id, title: clickbaitTitle, url: article.url,
+        category: article.category,
+        ig_success: result.instagram.success, ig_post_id: result.instagram.postId, ig_error: result.instagram.error,
+        fb_success: result.facebook.success, fb_post_id: result.facebook.postId, fb_error: result.facebook.error,
+        post_type: "image",
       }),
       incrementDailyCount(),
       setLastCategory(article.category),
