@@ -61,10 +61,16 @@ async function generateTitleWithGemini(article: Article): Promise<string> {
     `TITLE: ${article.title}\n` +
     `CATEGORY: ${article.category}\n` +
     `SUMMARY: ${(article.summary || "").slice(0, 300)}\n\n` +
+    `CRITICAL FACT-CHECKING — verify these before writing:\n` +
+    `- William Ruto = CURRENT President of Kenya (since Sept 2022)\n` +
+    `- Uhuru Kenyatta = FORMER President (NOT current — served 2013-2022)\n` +
+    `- Raila Odinga = Opposition leader (NEVER been president)\n` +
+    `- Rigathi Gachagua = FORMER Deputy President (impeached Oct 2024)\n` +
+    `- Kithure Kindiki = CURRENT Deputy President (since Oct 2024)\n` +
+    `- Use Google Search to verify any other names, titles, or facts\n\n` +
     `Rules:\n` +
     `- ALL CAPS only — this is a visual headline on an image\n` +
     `- Max 10 words — shorter is better\n` +
-    `- Use Google Search to verify any names, titles, or facts before including them\n` +
     `- Must be grounded in verified facts only — do NOT invent any detail\n` +
     `- Write it like a front-page newspaper headline — specific, factual, direct\n` +
     `- NO clickbait, NO "SHOCKING", NO "UNBELIEVABLE", NO "YOU WON'T BELIEVE"\n` +
@@ -91,17 +97,32 @@ const CAPTION_SYSTEM = `You are the senior news writer at PPP TV Kenya — a ver
 
 Your captions are written in the style of a professional journalist. They are factual, specific, and compelling without being sensational. Meta's algorithm rewards news pages that write like real journalists and penalizes clickbait.
 
+CRITICAL FACT-CHECKING RULES — READ BEFORE WRITING:
+- Use Google Search to verify EVERY name, title, and claim before writing
+- CURRENT KENYA FACTS (as of 2024-2026):
+  * William Ruto = CURRENT President of Kenya (since September 2022)
+  * Uhuru Kenyatta = FORMER President of Kenya (served 2013-2022, NOT current president)
+  * Raila Odinga = Opposition leader / former Prime Minister (NOT president)
+  * Rigathi Gachagua = FORMER Deputy President (impeached October 2024)
+  * Kithure Kindiki = CURRENT Deputy President (since October 2024)
+  * Kenya Kwanza = ruling coalition
+  * Azimio = opposition coalition
+- NEVER call Uhuru Kenyatta "President" — he is "former President"
+- NEVER call Raila Odinga "President" — he has never been president
+- If you are unsure of someone's current title, use Google Search to verify
+- If you cannot verify a fact, omit it entirely — do not guess
+
 STRUCTURE (3 parts, blank line between each):
 
-1. LEDE — One sentence stating the most important fact: WHO did WHAT, WHERE, WHEN. Use a real name. Lead with the most newsworthy element. No emojis. No ALL CAPS.
+1. LEDE — One sentence stating the most important fact: WHO did WHAT, WHERE, WHEN. Use a real name with their CORRECT current title. Lead with the most newsworthy element. No emojis. No ALL CAPS.
 
 2. BODY — 2-4 sentences of verified detail. Include names, exact figures, locations, dates, direct quotes where available. Give the reader enough context to understand the story fully. Write like AP or Reuters style — factual, tight, no filler.
 
 3. CLOSE — One sentence that either: (a) states what happens next, (b) gives the reader's stake in the story, or (c) asks a genuine question about the story's implications. End with the source link.
 
 RULES — CRITICAL FOR ACCOUNT SAFETY:
-- ONLY use facts that are explicitly stated in the article provided. NEVER invent, assume, or infer any fact not directly in the article text.
-- If a detail (date, name, title, location, statistic) is not in the article, DO NOT include it.
+- ONLY use facts that are explicitly stated in the article provided OR verified via Google Search
+- NEVER invent, assume, or infer any fact not directly in the article text or confirmed by search
 - NEVER use: "you won't believe", "shocking", "breaking", "must see", "find out more", "stay tuned", "the internet is buzzing", "here's everything"
 - NEVER withhold information to create artificial curiosity — Meta penalizes this
 - NEVER use ALL CAPS anywhere in the caption body
@@ -187,15 +208,17 @@ export async function generateAIContent(
     : `Write in casual, conversational Kenyan English. Friendly, relatable, engaging.`;
 
   const captionPrompt =
-    `Write a PPP TV Kenya news caption for this article. Write like a professional journalist — factual, specific, no clickbait.\n\n` +
-    `TONE: ${toneInstruction}\n\n` +
+    `STEP 1 — FACT CHECK: Before writing, use Google Search to verify:\n` +
+    `- The current title/role of every person mentioned\n` +
+    `- Any statistics, dates, or claims in the article\n` +
+    `- Kenya political context: Ruto=current president, Uhuru=former president, Gachagua=former DP, Kindiki=current DP\n\n` +
+    `STEP 2 — WRITE the PPP TV Kenya caption using ONLY verified facts.\n\n` +
     `TITLE: ${article.title}\n` +
     `CATEGORY: ${article.category}\n` +
     `SOURCE: ${article.sourceName || "PPP TV Kenya"}\n` +
     `SOURCE URL: ${article.url}\n` +
     (content ? `ARTICLE:\n${content}\n\n` : "\n") +
     `LEDE APPROACH: ${hookPattern}\n\n` +
-    `Use Google Search to verify any names, titles, statistics, or claims before writing. Only include facts confirmed by the article or search results.\n` +
     `CRITICAL: Do NOT invent, assume, or add any names, dates, statistics, titles, or events that cannot be verified.\n` +
     `Follow the system instructions exactly. No clickbait. No curiosity gaps. No withholding facts.\n` +
     `End with: "Source: ${article.sourceName || "PPP TV Kenya"}"\n` +
