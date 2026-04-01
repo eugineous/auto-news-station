@@ -279,9 +279,17 @@ export async function POST(req: NextRequest) {
 
     await markVideoSeen(target.id);
 
-    const videoUrlToResolve = target.directVideoUrl || target.url;
-    const resolved = await resolveVideoUrl(videoUrlToResolve).catch(() => null);
-    const directUrl = resolved?.url || (target.directVideoUrl ?? null);
+    // If we already have a direct video URL (e.g. from TikWM), use it directly
+    // Only resolve if we have a platform page URL (tiktok.com, youtube.com, etc.)
+    let directUrl: string | null = null;
+    if (target.directVideoUrl && /\.(mp4|mov|webm)/i.test(target.directVideoUrl)) {
+      // Already a direct CDN URL — use as-is
+      directUrl = target.directVideoUrl;
+    } else {
+      const videoUrlToResolve = target.directVideoUrl || target.url;
+      const resolved = await resolveVideoUrl(videoUrlToResolve).catch(() => null);
+      directUrl = resolved?.url || (target.directVideoUrl ?? null);
+    }
 
     if (!directUrl) {
       return NextResponse.json({ posted: 0, error: "Could not resolve video URL", source: target.sourceName });
