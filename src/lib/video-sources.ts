@@ -549,8 +549,9 @@ async function fetchTikWMTrending(): Promise<VideoItem[]> {
   const GUARANTEED = [
     { keyword: "nairobi", cat: "ENTERTAINMENT", name: "TikTok Nairobi" },
     { keyword: "kenya entertainment", cat: "ENTERTAINMENT", name: "TikTok Kenya Entertainment" },
+    { keyword: "celebrity news", cat: "CELEBRITY", name: "TikTok Celebrity News" },
   ];
-  const randomTerms = [...SEARCH_TERMS].sort(() => Math.random() - 0.5).slice(0, 3);
+  const randomTerms = [...SEARCH_TERMS].sort(() => Math.random() - 0.5).slice(0, 4);
   const shuffled = [...GUARANTEED, ...randomTerms];
 
   await Promise.allSettled(shuffled.map(async (term) => {

@@ -159,37 +159,24 @@ function scoreArticle(a: Article, trendingTopics: string[]): number {
   return score;
 }
 
-// ── Dedup via CF KV ───────────────────────────────────────────────────────────
+// ── Dedup + Blacklist via Supabase ───────────────────────────────────────────
 async function filterUnseen(articles: Article[]): Promise<Article[]> {
-  if (!WORKER_SECRET || articles.length === 0) return articles;
+  if (articles.length === 0) return articles;
   try {
-    const res = await fetch(WORKER_URL + "/seen/check", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },
-      body: JSON.stringify({ ids: articles.map(a => a.id), titles: articles.map(a => a.title) }),
-      signal: AbortSignal.timeout(8000),
-    });
-    if (!res.ok) return articles;
-    const { seen } = await res.json() as { seen: string[] };
-    const seenSet = new Set(seen);
-    return articles.filter(a => !seenSet.has(a.id));
+    const results = await Promise.all(articles.map(a => isArticleSeen(a.id)));
+    return articles.filter((_, i) => !results[i]);
   } catch { return articles; }
 }
 
 async function filterBlacklisted(articles: Article[]): Promise<Article[]> {
-  if (!WORKER_SECRET || articles.length === 0) return articles;
+  if (articles.length === 0) return articles;
   try {
-    const res = await fetch(WORKER_URL + "/blacklist", {
-      headers: { "Authorization": "Bearer " + WORKER_SECRET },
-      signal: AbortSignal.timeout(5000),
-    });
-    if (!res.ok) return articles;
-    const { blacklist = [] } = await res.json() as { blacklist: { type: string; value: string }[] };
+    const blacklist = await getBlacklist();
     if (blacklist.length === 0) return articles;
     return articles.filter(a => {
       const domain = (() => { try { return new URL(a.url).hostname.toLowerCase(); } catch { return ""; } })();
       const titleLower = a.title.toLowerCase();
-      return !blacklist.some((e: { type: string; value: string }) => {
+      return !blacklist.some(e => {
         if (e.type === "domain") return domain.includes(e.value.toLowerCase());
         if (e.type === "keyword") return titleLower.includes(e.value.toLowerCase());
         return false;
@@ -199,15 +186,7 @@ async function filterBlacklisted(articles: Article[]): Promise<Article[]> {
 }
 
 async function markSeen(id: string, title?: string): Promise<void> {
-  if (!WORKER_SECRET) return;
-  try {
-    await fetch(WORKER_URL + "/seen", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },
-      body: JSON.stringify({ ids: [id] }),
-      signal: AbortSignal.timeout(5000),
-    });
-  } catch { /* non-fatal */ }
+  await markArticleSeen(id, title);
 }
 
 // logPost is now imported from @/lib/supabase
