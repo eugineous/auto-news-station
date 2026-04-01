@@ -208,12 +208,13 @@ export async function generateAIContent(
     : `Write in casual, conversational Kenyan English. Friendly, relatable, engaging.`;
 
   const captionPrompt =
-    `You MUST use Google Search before writing a single word. This is mandatory.\n\n` +
-    `REQUIRED SEARCHES (do all of these before writing):\n` +
-    `1. Search: "${article.title}" — find the latest news and context\n` +
-    `2. Search the full names of every person mentioned — verify their CURRENT title/role as of today\n` +
-    `3. Search any statistics, claims, or events mentioned — verify they are accurate\n\n` +
-    `KNOWN KENYA FACTS (verify these are still current via search):\n` +
+    `You MUST use Google Search for context before writing. This is always required.\n\n` +
+    `REQUIRED SEARCHES (do all before writing):\n` +
+    `1. Search: "${article.title}" — get full context and latest developments\n` +
+    `2. Search every person mentioned — verify their CURRENT title/role today\n` +
+    `3. Search any statistics or claims — confirm accuracy\n` +
+    `4. Search for any related recent news that adds context\n\n` +
+    `KNOWN KENYA FACTS (verify still current via search):\n` +
     `- William Ruto = President of Kenya since September 2022\n` +
     `- Uhuru Kenyatta = FORMER President (left office Sept 2022) — NEVER call him "President"\n` +
     `- Raila Odinga = Opposition leader — has NEVER been president\n` +
@@ -228,8 +229,8 @@ export async function generateAIContent(
     `LEDE APPROACH: ${hookPattern}\n\n` +
     `TONE: ${toneInstruction}\n\n` +
     `RULES:\n` +
+    `- Use your search results to add context and correct any outdated information\n` +
     `- Only write facts confirmed by your Google Search results or the article above\n` +
-    `- Correct any outdated titles or facts using your search results\n` +
     `- No clickbait. No curiosity gaps. No invented details.\n` +
     `- End with: "Source: ${article.sourceName || "PPP TV Kenya"}"\n` +
     `- Reply with ONLY the caption text — no labels, no preamble.`;

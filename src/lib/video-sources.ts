@@ -443,14 +443,133 @@ async function fetchTikTokAccountVideos(account: TikTokAccount): Promise<VideoIt
 // ── 7. TikWM Search — finds fresh videos by keyword ──────────────────────────
 async function fetchTikWMTrending(): Promise<VideoItem[]> {
   const SEARCH_TERMS = [
-    { keyword: "kenya news today",  cat: "NEWS",          name: "TikTok Kenya News" },
-    { keyword: "nairobi viral",     cat: "ENTERTAINMENT", name: "TikTok Nairobi" },
-    { keyword: "kenya celebrity",   cat: "CELEBRITY",     name: "TikTok Kenya Celebrity" },
+    // ── Kenya & East Africa ───────────────────────────────────────────────────
+    { keyword: "kenya news today",        cat: "NEWS",          name: "TikTok Kenya News" },
+    { keyword: "nairobi viral",           cat: "ENTERTAINMENT", name: "TikTok Nairobi" },
+    { keyword: "kenya celebrity gossip",  cat: "CELEBRITY",     name: "TikTok Kenya Celebrity" },
+    { keyword: "kenya entertainment",     cat: "ENTERTAINMENT", name: "TikTok Kenya Entertainment" },
+    { keyword: "kenya music 2025",        cat: "MUSIC",         name: "TikTok Kenya Music" },
+    { keyword: "kenya sports news",       cat: "SPORTS",        name: "TikTok Kenya Sports" },
+    { keyword: "east africa news",        cat: "NEWS",          name: "TikTok East Africa" },
+    { keyword: "harambee stars",          cat: "SPORTS",        name: "TikTok Harambee Stars" },
+    { keyword: "kenyan celebrity",        cat: "CELEBRITY",     name: "TikTok Kenyan Celebrity" },
+    // ── Tanzania ──────────────────────────────────────────────────────────────
+    { keyword: "tanzania news english",   cat: "NEWS",          name: "TikTok Tanzania News" },
+    { keyword: "dar es salaam viral",     cat: "ENTERTAINMENT", name: "TikTok Dar es Salaam" },
+    { keyword: "tanzania celebrity",      cat: "CELEBRITY",     name: "TikTok Tanzania Celebrity" },
+    { keyword: "bongo music 2025",        cat: "MUSIC",         name: "TikTok Bongo Music" },
+    { keyword: "tanzania football",       cat: "SPORTS",        name: "TikTok Tanzania Football" },
+    { keyword: "tanzanian entertainment", cat: "ENTERTAINMENT", name: "TikTok Tanzania Entertainment" },
+    // ── Nigeria & West Africa ─────────────────────────────────────────────────
+    { keyword: "nigeria celebrity news",  cat: "CELEBRITY",     name: "TikTok Nigeria Celebrity" },
+    { keyword: "nollywood 2025",          cat: "TV & FILM",     name: "TikTok Nollywood" },
+    { keyword: "afrobeats viral",         cat: "MUSIC",         name: "TikTok Afrobeats" },
+    { keyword: "lagos viral video",       cat: "ENTERTAINMENT", name: "TikTok Lagos" },
+    { keyword: "nigeria news today",      cat: "NEWS",          name: "TikTok Nigeria News" },
+    { keyword: "ghana celebrity",         cat: "CELEBRITY",     name: "TikTok Ghana Celebrity" },
+    { keyword: "ghana news today",        cat: "NEWS",          name: "TikTok Ghana News" },
+    // ── South Africa ─────────────────────────────────────────────────────────
+    { keyword: "south africa celebrity",  cat: "CELEBRITY",     name: "TikTok SA Celebrity" },
+    { keyword: "south africa news today", cat: "NEWS",          name: "TikTok SA News" },
+    { keyword: "south africa entertainment", cat: "ENTERTAINMENT", name: "TikTok SA Entertainment" },
+    { keyword: "bafana bafana",           cat: "SPORTS",        name: "TikTok Bafana Bafana" },
+    // ── USA Entertainment ─────────────────────────────────────────────────────
+    { keyword: "celebrity news today",    cat: "CELEBRITY",     name: "TikTok Celebrity News" },
+    { keyword: "hollywood gossip 2025",   cat: "CELEBRITY",     name: "TikTok Hollywood" },
+    { keyword: "music video viral",       cat: "MUSIC",         name: "TikTok Music Viral" },
+    { keyword: "nba highlights today",    cat: "SPORTS",        name: "TikTok NBA" },
+    { keyword: "nfl news today",          cat: "SPORTS",        name: "TikTok NFL" },
+    { keyword: "us entertainment news",   cat: "ENTERTAINMENT", name: "TikTok US Entertainment" },
+    { keyword: "american celebrity drama", cat: "CELEBRITY",    name: "TikTok American Celebrity" },
+    { keyword: "grammy awards 2025",      cat: "MUSIC",         name: "TikTok Grammy" },
+    { keyword: "oscar awards 2025",       cat: "TV & FILM",     name: "TikTok Oscars" },
+    { keyword: "new music release",       cat: "MUSIC",         name: "TikTok New Music" },
+    // ── UK Entertainment ──────────────────────────────────────────────────────
+    { keyword: "uk celebrity news",       cat: "CELEBRITY",     name: "TikTok UK Celebrity" },
+    { keyword: "premier league highlights", cat: "SPORTS",      name: "TikTok Premier League" },
+    { keyword: "british celebrity gossip", cat: "CELEBRITY",    name: "TikTok British Celebrity" },
+    { keyword: "uk music chart",          cat: "MUSIC",         name: "TikTok UK Music" },
+    { keyword: "bbc news viral",          cat: "NEWS",          name: "TikTok BBC News" },
+    // ── Sports Global ─────────────────────────────────────────────────────────
+    { keyword: "football news today",     cat: "SPORTS",        name: "TikTok Football News" },
+    { keyword: "champions league",        cat: "SPORTS",        name: "TikTok Champions League" },
+    { keyword: "world cup 2026",          cat: "SPORTS",        name: "TikTok World Cup" },
+    { keyword: "messi ronaldo 2025",      cat: "SPORTS",        name: "TikTok Messi Ronaldo" },
+    { keyword: "boxing news today",       cat: "SPORTS",        name: "TikTok Boxing" },
+    { keyword: "ufc fight news",          cat: "SPORTS",        name: "TikTok UFC" },
+    { keyword: "tennis news today",       cat: "SPORTS",        name: "TikTok Tennis" },
+    { keyword: "cricket news today",      cat: "SPORTS",        name: "TikTok Cricket" },
+    { keyword: "athletics world record",  cat: "SPORTS",        name: "TikTok Athletics" },
+    { keyword: "africa cup of nations",   cat: "SPORTS",        name: "TikTok AFCON" },
+    // ── Global Entertainment ──────────────────────────────────────────────────
+    { keyword: "viral video today",       cat: "ENTERTAINMENT", name: "TikTok Viral Today" },
+    { keyword: "trending news worldwide", cat: "NEWS",          name: "TikTok Trending News" },
+    { keyword: "breaking news today",     cat: "NEWS",          name: "TikTok Breaking News" },
+    { keyword: "entertainment news today", cat: "ENTERTAINMENT", name: "TikTok Entertainment" },
+    { keyword: "celebrity breakup 2025",  cat: "CELEBRITY",     name: "TikTok Celebrity Breakup" },
+    { keyword: "celebrity wedding 2025",  cat: "CELEBRITY",     name: "TikTok Celebrity Wedding" },
+    { keyword: "new movie trailer",       cat: "TV & FILM",     name: "TikTok Movie Trailer" },
+    { keyword: "netflix series 2025",     cat: "TV & FILM",     name: "TikTok Netflix" },
+    { keyword: "award show 2025",         cat: "AWARDS",        name: "TikTok Awards" },
+    // ── Australia & New Zealand ───────────────────────────────────────────────
+    { keyword: "australia celebrity news", cat: "CELEBRITY",    name: "TikTok Australia Celebrity" },
+    { keyword: "australia sports news",   cat: "SPORTS",        name: "TikTok Australia Sports" },
+    // ── Canada ────────────────────────────────────────────────────────────────
+    { keyword: "canada celebrity news",   cat: "CELEBRITY",     name: "TikTok Canada Celebrity" },
+    { keyword: "drake news 2025",         cat: "MUSIC",         name: "TikTok Drake" },
+    // ── Caribbean & Jamaica ───────────────────────────────────────────────────
+    { keyword: "jamaica news today",      cat: "NEWS",          name: "TikTok Jamaica News" },
+    { keyword: "reggae dancehall 2025",   cat: "MUSIC",         name: "TikTok Reggae Dancehall" },
+    { keyword: "caribbean celebrity",     cat: "CELEBRITY",     name: "TikTok Caribbean Celebrity" },
+    // ── India (English) ───────────────────────────────────────────────────────
+    { keyword: "bollywood news english",  cat: "TV & FILM",     name: "TikTok Bollywood" },
+    { keyword: "india cricket news",      cat: "SPORTS",        name: "TikTok India Cricket" },
+    // ── Middle East & Africa ──────────────────────────────────────────────────
+    { keyword: "africa entertainment news", cat: "ENTERTAINMENT", name: "TikTok Africa Entertainment" },
+    { keyword: "african music viral",     cat: "MUSIC",         name: "TikTok African Music" },
+    { keyword: "africa celebrity gossip", cat: "CELEBRITY",     name: "TikTok Africa Celebrity" },
+    // ── Fashion & Lifestyle ───────────────────────────────────────────────────
+    { keyword: "fashion week 2025",       cat: "FASHION",       name: "TikTok Fashion Week" },
+    { keyword: "celebrity fashion",       cat: "FASHION",       name: "TikTok Celebrity Fashion" },
+    // ── Comedy & Viral ────────────────────────────────────────────────────────
+    { keyword: "comedy viral 2025",       cat: "COMEDY",        name: "TikTok Comedy Viral" },
+    { keyword: "funny celebrity moment",  cat: "COMEDY",        name: "TikTok Funny Celebrity" },
+    // ── Technology & Business ─────────────────────────────────────────────────
+    { keyword: "tech news today",         cat: "TECHNOLOGY",    name: "TikTok Tech News" },
+    { keyword: "ai news 2025",            cat: "TECHNOLOGY",    name: "TikTok AI News" },
+    // ── More Africa ───────────────────────────────────────────────────────────
+    { keyword: "uganda news today",       cat: "NEWS",          name: "TikTok Uganda News" },
+    { keyword: "rwanda news today",       cat: "NEWS",          name: "TikTok Rwanda News" },
+    { keyword: "ethiopia news today",     cat: "NEWS",          name: "TikTok Ethiopia News" },
+    { keyword: "zimbabwe news today",     cat: "NEWS",          name: "TikTok Zimbabwe News" },
+    { keyword: "zambia news today",       cat: "NEWS",          name: "TikTok Zambia News" },
+    { keyword: "cameroon news today",     cat: "NEWS",          name: "TikTok Cameroon News" },
+    { keyword: "senegal news today",      cat: "NEWS",          name: "TikTok Senegal News" },
+    // ── More Sports ───────────────────────────────────────────────────────────
+    { keyword: "rugby news today",        cat: "SPORTS",        name: "TikTok Rugby" },
+    { keyword: "formula 1 news",          cat: "SPORTS",        name: "TikTok F1" },
+    { keyword: "basketball highlights",   cat: "SPORTS",        name: "TikTok Basketball" },
+    { keyword: "golf news today",         cat: "SPORTS",        name: "TikTok Golf" },
+    { keyword: "swimming world record",   cat: "SPORTS",        name: "TikTok Swimming" },
+    // ── More Music ────────────────────────────────────────────────────────────
+    { keyword: "amapiano 2025",           cat: "MUSIC",         name: "TikTok Amapiano" },
+    { keyword: "afropop viral",           cat: "MUSIC",         name: "TikTok Afropop" },
+    { keyword: "hip hop news today",      cat: "MUSIC",         name: "TikTok Hip Hop" },
+    { keyword: "rnb music 2025",          cat: "MUSIC",         name: "TikTok RnB" },
+    { keyword: "pop music viral",         cat: "MUSIC",         name: "TikTok Pop Music" },
+    // ── More TV & Film ────────────────────────────────────────────────────────
+    { keyword: "disney plus 2025",        cat: "TV & FILM",     name: "TikTok Disney Plus" },
+    { keyword: "amazon prime series",     cat: "TV & FILM",     name: "TikTok Amazon Prime" },
+    { keyword: "hbo max series 2025",     cat: "TV & FILM",     name: "TikTok HBO" },
+    { keyword: "reality tv drama 2025",   cat: "TV & FILM",     name: "TikTok Reality TV" },
   ];
 
   const items: VideoItem[] = [];
 
-  await Promise.allSettled(SEARCH_TERMS.map(async (term) => {
+  // Pick 5 random search terms each run for variety — avoids Vercel timeout
+  const shuffled = [...SEARCH_TERMS].sort(() => Math.random() - 0.5).slice(0, 5);
+
+  await Promise.allSettled(shuffled.map(async (term) => {
     try {
       const body = new URLSearchParams({ keywords: term.keyword, count: "3", cursor: "0", HD: "1" });
       const res = await fetch("https://www.tikwm.com/api/feed/search", {
