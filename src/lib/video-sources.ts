@@ -167,18 +167,20 @@ async function fetchRedditFeed(feedUrl: string, sourceName: string, category: st
       if (!isEntertainmentTitle(p.title || "")) continue;
       if (!isRecent(new Date(p.created_utc * 1000).toISOString())) continue;
 
-      const videoUrl = p.is_video ? p.media?.reddit_video?.fallback_url : p.url;
+      // Reddit uses url_overridden_by_dest for the actual link
+      const postUrl = p.url_overridden_by_dest || p.url;
+      const videoUrl = p.is_video ? p.media?.reddit_video?.fallback_url : postUrl;
       if (!videoUrl) continue;
 
       items.push({
         id: `reddit:${p.id}`,
         title: p.title,
-        url: `https://reddit.com${p.permalink}`,
+        url: videoUrl,
         directVideoUrl: p.is_video ? videoUrl : undefined,
         thumbnail: p.thumbnail?.startsWith("http") ? p.thumbnail : "",
         publishedAt: new Date(p.created_utc * 1000),
         sourceName,
-        sourceType: "reddit",
+        sourceType: p.is_video ? "reddit" : "youtube",
         category,
       });
     }

@@ -303,7 +303,13 @@ export async function POST(req: NextRequest) {
         }
       } else if (video.directVideoUrl) {
         url = video.directVideoUrl;
-      } else {
+      } else if (video.url.includes("youtube.com") || video.url.includes("youtu.be")) {
+      // For YouTube, try ytdl directly — skip if it fails (don't wait for Cobalt timeout)
+      try {
+        const resolved = await resolveVideoUrl(video.url).catch(() => null);
+        url = resolved?.url || null;
+      } catch {}
+    } else {
         const resolved = await resolveVideoUrl(video.url).catch(() => null);
         url = resolved?.url || null;
       }
