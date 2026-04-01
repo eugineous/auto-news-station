@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { SESSION_COOKIE, SESSION_VALUE } from "@/lib/auth";
 
-const PROTECTED = ["/dashboard", "/composer", "/queue", "/analytics", "/settings", "/accounts", "/content"];
+const PROTECTED = ["/dashboard", "/composer", "/queue", "/analytics", "/settings", "/accounts", "/content", "/trends", "/calendar", "/intelligence", "/factory", "/competitors"];
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;

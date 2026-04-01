@@ -4,20 +4,24 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 
 const NAV = [
-  { href: "/dashboard",  icon: "⚡", label: "Command Center" },
-  { href: "/composer",   icon: "🎬", label: "Composer"       },
-  { href: "/queue",      icon: "📅", label: "Queue"          },
-  { href: "/analytics",  icon: "📊", label: "Analytics"      },
-  { href: "/accounts",   icon: "🔗", label: "Accounts"       },
-  { href: "/content",    icon: "🗂",  label: "Content Library"},
-  { href: "/settings",   icon: "⚙️",  label: "Settings"      },
+  { href: "/dashboard",    icon: "⚡", label: "Command Center" },
+  { href: "/composer",     icon: "🎬", label: "Composer"       },
+  { href: "/trends",       icon: "🧠", label: "Trends"         },
+  { href: "/calendar",     icon: "📅", label: "Calendar"       },
+  { href: "/intelligence", icon: "🎯", label: "Audience"       },
+  { href: "/factory",      icon: "🏭", label: "Content Factory"},
+  { href: "/competitors",  icon: "📡", label: "Competitors"    },
+  { href: "/analytics",    icon: "📊", label: "Analytics"      },
+  { href: "/accounts",     icon: "🔗", label: "Accounts"       },
+  { href: "/settings",     icon: "⚙️",  label: "Settings"      },
 ];
 
 const MOBILE_NAV = [
-  { href: "/dashboard", icon: "⚡", label: "Home"    },
-  { href: "/composer",  icon: "🎬", label: "Compose" },
-  { href: "/queue",     icon: "📅", label: "Queue"   },
-  { href: "/analytics", icon: "📊", label: "Stats"   },
+  { href: "/dashboard",    icon: "⚡", label: "Home"       },
+  { href: "/composer",     icon: "🎬", label: "Compose"    },
+  { href: "/trends",       icon: "🧠", label: "Trends"     },
+  { href: "/calendar",     icon: "📅", label: "Calendar"   },
+  { href: "/competitors",  icon: "📡", label: "Rivals"     },
 ];
 
 export default function Shell({ children }: { children: React.ReactNode }) {
