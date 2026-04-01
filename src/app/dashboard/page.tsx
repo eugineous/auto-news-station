@@ -1,6 +1,7 @@
 ﻿"use client";
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
+import Shell from "../shell";
 const R="#E50914",PK="#FF007A",GR="#4ade80",AM="#f59e0b";
 const CAT:Record<string,{bg:string;text:string}> = {
   CELEBRITY:{bg:"#FF007A",text:"#fff"},POLITICS:{bg:"#FF007A",text:"#fff"},NEWS:{bg:"#FF007A",text:"#fff"},
@@ -81,7 +82,6 @@ export default function Dashboard(){
     tick();const t=setInterval(tick,1000);return()=>clearInterval(t);
   },[]);
 
-  // Build source stats whenever posts change
   useEffect(()=>{
   const stats=posts.reduce<Record<string,{ok:number;fail:number;cat:string}>>((acc,p)=>{
     const src=(p as any).sourceName||"Unknown";
@@ -134,7 +134,6 @@ export default function Dashboard(){
   function showToast(msg:string,type:"ok"|"err"){setToast({msg,type});setTimeout(()=>setToast(null),4000);}
 
   const sorted=[...posts].sort((a,b)=>new Date(b.postedAt).getTime()-new Date(a.postedAt).getTime());
-  const latest=sorted[0]??null;
   const todayPosts=sorted.filter(p=>new Date(p.postedAt).toDateString()===new Date().toDateString());
   const todayCount=todayPosts.length;
   const igOkToday=todayPosts.filter(p=>p.instagram.success).length;
@@ -142,102 +141,36 @@ export default function Dashboard(){
   const failCount=sorted.filter(p=>!p.instagram.success&&!p.facebook.success).length;
   const successRate=sorted.length>0?Math.round(sorted.filter(p=>p.instagram.success||p.facebook.success).length/sorted.length*100):0;
 
-  const NAV=[
-    {href:"/dashboard", icon:"⚡", label:"Cockpit"},
-    {href:"/dashboard/feed", icon:"📡", label:"Live Feed"},
-    {href:"/composer",  icon:"✏️", label:"Compose"},
-    {href:"/queue",     icon:"⚠️", label:"Failures"},
-    {href:"/analytics", icon:"📊", label:"Analytics"},
-    {href:"/settings",  icon:"⚙️", label:"Settings"},
-  ] as const;
-
   return (
-    <div style={{minHeight:"100dvh",background:"#080808",color:"#e5e5e5",fontFamily:"Inter,system-ui,sans-serif",display:"flex"}}>
+    <Shell>
       <style>{`
-        *{box-sizing:border-box;margin:0;padding:0}
         @keyframes spin{to{transform:rotate(360deg)}}
         @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
         @keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
         @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
-        @keyframes slideIn{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:translateX(0)}}
-        @keyframes scanline{0%{transform:translateY(-100%)}100%{transform:translateY(100vh)}}
         .fade{animation:fadeIn .25s ease}
-        .scroll-row{display:flex;gap:10px;overflow-x:auto;padding-bottom:6px;scrollbar-width:none}
-        .scroll-row::-webkit-scrollbar{display:none}
+        .kpi-card{background:#0f0f0f;border:1px solid #1a1a1a;border-radius:10px;padding:16px 18px;transition:border-color .2s}
+        .kpi-card:hover{border-color:#2a2a2a}
+        .post-row{background:#0f0f0f;border:1px solid #1a1a1a;border-radius:8px;padding:12px 14px;display:flex;gap:12px;align-items:center;transition:border-color .15s}
+        .post-row:hover{border-color:#2a2a2a}
         input,button,select,textarea{font-family:inherit}
         ::-webkit-scrollbar{width:3px;height:3px}
         ::-webkit-scrollbar-thumb{background:#2a2a2a;border-radius:2px}
-        .kpi-card{background:#0f0f0f;border:1px solid #1a1a1a;border-radius:10px;padding:16px 18px;transition:border-color .2s}
-        .kpi-card:hover{border-color:#2a2a2a}
-        .nav-btn{display:flex;align-items:center;gap:10px;width:100%;padding:10px 12px;border-radius:8px;background:none;border:none;cursor:pointer;text-align:left;transition:all .15s;border-left:3px solid transparent;font-size:13px}
-        .nav-btn:hover{background:#111;color:#ccc!important}
-        .post-row{background:#0f0f0f;border:1px solid #1a1a1a;border-radius:8px;padding:12px 14px;display:flex;gap:12px;align-items:center;transition:border-color .15s}
-        .post-row:hover{border-color:#2a2a2a}
-        @media(max-width:767px){.sidebar{display:none!important}.mobile-nav{display:flex!important}.main-content{padding-bottom:72px!important}}
-        @media(min-width:768px){.sidebar{display:flex!important}.mobile-nav{display:none!important}}
+        .scroll-row{display:flex;gap:10px;overflow-x:auto;padding-bottom:6px;scrollbar-width:none}
+        .scroll-row::-webkit-scrollbar{display:none}
       `}</style>
-
-      {/* ── Sidebar ── */}
-      <aside className="sidebar" style={{width:220,background:"#050505",borderRight:"1px solid #141414",display:"none",flexDirection:"column",height:"100dvh",position:"sticky",top:0,flexShrink:0}}>
-        <div style={{padding:"20px 16px 16px",borderBottom:"1px solid #141414"}}>
-          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
-            <div style={{width:8,height:8,borderRadius:"50%",background:R,animation:"pulse 2s infinite",boxShadow:`0 0 8px ${R}`}}/>
-            <span style={{fontFamily:"Bebas Neue,sans-serif",fontSize:26,letterSpacing:3,lineHeight:1}}>PPP<span style={{color:R}}>TV</span></span>
-          </div>
-          <div style={{fontSize:9,color:"#333",letterSpacing:4,paddingLeft:16,textTransform:"uppercase",fontWeight:700}}>Command Center</div>
-        </div>
-
-        <nav style={{flex:1,padding:"12px 8px",overflowY:"auto"}}>
-          {NAV.map(n=>(
-            <Link key={n.href} href={n.href} className="nav-btn"
-              style={{color:n.href==="/dashboard"?"#fff":"#555",fontWeight:n.href==="/dashboard"?700:400,background:n.href==="/dashboard"?"#141414":"none",borderLeft:`3px solid ${n.href==="/dashboard"?R:"transparent"}`,textDecoration:"none",display:"flex",alignItems:"center",gap:10}}>
-              <span style={{fontSize:16,width:20,textAlign:"center"}}>{n.icon}</span>
-              <span style={{flex:1}}>{n.label}</span>
-            </Link>
-          ))}
-        </nav>
-
-        <div style={{padding:"14px 12px",borderTop:"1px solid #141414"}}>
-          {/* Next post countdown */}
-          <div style={{background:"#0a0a0a",border:"1px solid #1a1a1a",borderRadius:8,padding:"10px 12px",marginBottom:10}}>
-            <div style={{fontSize:9,color:"#444",letterSpacing:2,textTransform:"uppercase",marginBottom:4}}>Next Post</div>
-            <div style={{fontFamily:"monospace",fontSize:22,color:R,letterSpacing:2,fontWeight:700}}>{nextIn}</div>
-          </div>
-          <div style={{display:"flex",gap:6,marginBottom:10}}>
-            <div style={{flex:1,background:"#0a0a0a",border:"1px solid #1a1a1a",borderRadius:6,padding:"8px",textAlign:"center"}}>
-              <div style={{fontFamily:"Bebas Neue,sans-serif",fontSize:22,color:"#fff",lineHeight:1}}>{todayCount}</div>
-              <div style={{fontSize:9,color:"#444",letterSpacing:1,textTransform:"uppercase",marginTop:2}}>Today</div>
-            </div>
-            <div style={{flex:1,background:"#0a0a0a",border:`1px solid ${failCount>0?"#3a1a1a":"#1a1a1a"}`,borderRadius:6,padding:"8px",textAlign:"center"}}>
-              <div style={{fontFamily:"Bebas Neue,sans-serif",fontSize:22,color:failCount>0?"#f87171":"#555",lineHeight:1}}>{failCount}</div>
-              <div style={{fontSize:9,color:"#444",letterSpacing:1,textTransform:"uppercase",marginTop:2}}>Failed</div>
-            </div>
-          </div>
-          <button onClick={async()=>{await fetch("/api/auth",{method:"DELETE"});window.location.href="/login";}}
-            style={{width:"100%",background:"none",border:"1px solid #1a1a1a",borderRadius:6,padding:"7px",fontSize:11,color:"#444",cursor:"pointer"}}>
-            Sign Out
-          </button>
-        </div>
-      </aside>
-
-      {/* ── Main ── */}
-      <div className="main-content" style={{flex:1,display:"flex",flexDirection:"column",minWidth:0,overflowY:"auto"}}>
-
+      <div style={{padding:"24px",maxWidth:1400,margin:"0 auto"}}>
         {/* Top bar */}
-        <div style={{background:"rgba(8,8,8,0.96)",backdropFilter:"blur(16px)",borderBottom:"1px solid #141414",padding:"0 20px",height:52,display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:30}}>
-          <div style={{display:"flex",alignItems:"center",gap:14}}>
-            <div style={{display:"flex",alignItems:"center",gap:7}}>
-              <div style={{width:7,height:7,borderRadius:"50%",background:R,animation:"pulse 2s infinite",boxShadow:`0 0 6px ${R}`}}/>
-              <span style={{fontFamily:"Bebas Neue,sans-serif",fontSize:17,letterSpacing:2}}>PPP<span style={{color:R}}>TV</span></span>
-              <span style={{fontSize:9,color:"#333",letterSpacing:3,textTransform:"uppercase",fontWeight:700}}>Cockpit</span>
-            </div>
-            <div style={{height:16,width:1,background:"#1a1a1a"}}/>
-            <span style={{fontFamily:"monospace",fontSize:12,color:R,letterSpacing:1}}>{nextIn}</span>
-            <span style={{fontSize:11,color:"#333"}}>next post</span>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20,flexWrap:"wrap",gap:10}}>
+          <div style={{display:"flex",alignItems:"center",gap:12}}>
+            <div style={{width:8,height:8,borderRadius:"50%",background:R,animation:"pulse 2s infinite",boxShadow:`0 0 8px ${R}`}}/>
+            <span style={{fontFamily:"Bebas Neue,sans-serif",fontSize:22,letterSpacing:3}}>Command Center</span>
+            <span style={{fontFamily:"monospace",fontSize:14,color:R,letterSpacing:1}}>{nextIn}</span>
+            <span style={{fontSize:11,color:"#444"}}>next post</span>
           </div>
           <div style={{display:"flex",gap:8,alignItems:"center"}}>
             {failCount>0&&(
-              <Link href="/queue" style={{background:"#1a0808",border:"1px solid #3a1a1a",color:"#f87171",fontSize:11,fontWeight:700,padding:"4px 12px",borderRadius:20,cursor:"pointer",animation:"blink 2s infinite",textDecoration:"none"}}>
+              <Link href="/queue" style={{background:"#1a0808",border:"1px solid #3a1a1a",color:"#f87171",fontSize:11,fontWeight:700,padding:"4px 12px",borderRadius:20,textDecoration:"none",animation:"blink 2s infinite"}}>
                 ⚠ {failCount} failed
               </Link>
             )}
@@ -246,28 +179,15 @@ export default function Dashboard(){
           </div>
         </div>
 
-        <div style={{padding:"20px 24px",maxWidth:1400,margin:"0 auto",width:"100%"}}>
-          <CockpitSection posts={sorted} loading={loading} nextIn={nextIn} todayCount={todayCount} igOkToday={igOkToday} fbOkToday={fbOkToday} failCount={failCount} successRate={successRate} retries={retries} onRetry={doRetry} onTrigger={triggerNow} triggering={triggering} onClear={clearCache} clearing={clearing} onPost={()=>{fetchPosts();showToast("Posted!","ok");}} onCompose={()=>{window.location.href="/composer";}}/>
-        </div>
+        <CockpitSection posts={sorted} loading={loading} nextIn={nextIn} todayCount={todayCount} igOkToday={igOkToday} fbOkToday={fbOkToday} failCount={failCount} successRate={successRate} retries={retries} onRetry={doRetry} onTrigger={triggerNow} triggering={triggering} onClear={clearCache} clearing={clearing} onPost={()=>{fetchPosts();showToast("Posted!","ok");}} onCompose={()=>{window.location.href="/composer";}}/>
       </div>
-
-      {/* Mobile nav */}
-      <nav className="mobile-nav" style={{display:"none",position:"fixed",bottom:0,left:0,right:0,background:"rgba(5,5,5,0.98)",backdropFilter:"blur(16px)",borderTop:"1px solid #141414",zIndex:50}}>
-        {NAV.map(n=>(
-          <Link key={n.href} href={n.href}
-            style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:3,padding:"10px 0",color:"#444",fontSize:9,letterSpacing:1,fontWeight:700,textTransform:"uppercase" as const,textDecoration:"none"}}>
-            <span style={{fontSize:18}}>{n.icon}</span>
-            <span>{n.label}</span>
-          </Link>
-        ))}
-      </nav>
 
       {toast&&(
         <div onClick={()=>setToast(null)} style={{position:"fixed",bottom:80,left:"50%",transform:"translateX(-50%)",background:toast.type==="ok"?"#071a07":"#1a0707",border:`1px solid ${toast.type==="ok"?"#1a3a1a":"#3a1a1a"}`,color:toast.type==="ok"?"#4ade80":"#f87171",padding:"12px 20px",borderRadius:8,fontSize:13,fontWeight:600,zIndex:300,cursor:"pointer",whiteSpace:"nowrap",boxShadow:"0 8px 40px rgba(0,0,0,.8)",animation:"fadeIn .2s ease"}}>
           {toast.type==="ok"?"✓ ":"✗ "}{toast.msg}
         </div>
       )}
-    </div>
+    </Shell>
   );
 }
 
