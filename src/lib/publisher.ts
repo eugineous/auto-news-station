@@ -406,3 +406,73 @@ export async function publishStories(
 
   return { igStory, fbStory };
 }
+
+// ── Video story posting ───────────────────────────────────────────────────────
+// Posts a staged R2 video URL as an IG + FB story (Reel-style story)
+export async function publishVideoStory(
+  stagedVideoUrl: string,
+  coverUrl?: string
+): Promise<{ igStory: { success: boolean; error?: string }; fbStory: { success: boolean; error?: string } }> {
+  const igToken = process.env.INSTAGRAM_ACCESS_TOKEN;
+  const igAccountId = process.env.INSTAGRAM_ACCOUNT_ID;
+  const fbToken = process.env.FACEBOOK_ACCESS_TOKEN;
+  const fbPageId = process.env.FACEBOOK_PAGE_ID;
+
+  const [igStory, fbStory] = await Promise.all([
+    // IG Video Story
+    (async () => {
+      if (!igToken || !igAccountId) return { success: false, error: "IG credentials missing" };
+      try {
+        const createRes = await fetch(`${GRAPH_API}/${igAccountId}/media`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            video_url: stagedVideoUrl,
+            media_type: "STORIES",
+            ...(coverUrl ? { cover_url: coverUrl } : {}),
+            access_token: igToken,
+          }),
+          signal: AbortSignal.timeout(20000),
+        });
+        const createData = await createRes.json() as any;
+        if (!createRes.ok || createData.error) throw new Error(createData.error?.message || "IG video story container failed");
+
+        // Poll for processing
+        for (let i = 0; i < 20; i++) {
+          await sleep(3000);
+          const statusRes = await fetch(`${GRAPH_API}/${createData.id}?fields=status_code&access_token=${igToken}`);
+          const statusData = await statusRes.json() as any;
+          if (statusData.status_code === "FINISHED") break;
+          if (statusData.status_code === "ERROR") throw new Error("IG video story processing failed");
+        }
+
+        const publishRes = await fetch(`${GRAPH_API}/${igAccountId}/media_publish`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ creation_id: createData.id, access_token: igToken }),
+          signal: AbortSignal.timeout(20000),
+        });
+        const publishData = await publishRes.json() as any;
+        if (!publishRes.ok || publishData.error) throw new Error(publishData.error?.message || "IG video story publish failed");
+        return { success: true };
+      } catch (err: any) { return { success: false, error: err.message }; }
+    })(),
+    // FB Video Story
+    (async () => {
+      if (!fbToken || !fbPageId) return { success: false, error: "FB credentials missing" };
+      try {
+        const res = await fetch(`${GRAPH_API}/${fbPageId}/video_stories`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ file_url: stagedVideoUrl, published: true, access_token: fbToken }),
+          signal: AbortSignal.timeout(30000),
+        });
+        const data = await res.json() as any;
+        if (!res.ok || data.error) throw new Error(data.error?.message || "FB video story failed");
+        return { success: true };
+      } catch (err: any) { return { success: false, error: err.message }; }
+    })(),
+  ]);
+
+  return { igStory, fbStory };
+}

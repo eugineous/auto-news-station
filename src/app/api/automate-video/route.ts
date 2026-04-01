@@ -12,6 +12,7 @@ import { fetchViralTikTokVideos, calculateViralScore, KENYAN_MUSIC_KEYWORDS, isO
 import { Article } from "@/lib/types";
 import { createHash } from "crypto";
 import { logPost, isArticleSeen, markArticleSeen, getBlacklist, getPostLog } from "@/lib/supabase";
+import { publishVideoStory } from "@/lib/publisher";
 
 export const maxDuration = 300;
 
@@ -466,6 +467,11 @@ export async function POST(req: NextRequest) {
         fb_error: fbResult.error,
         posted_at: new Date().toISOString(),
       });
+
+      // Fire video story — post the same video to IG + FB stories (fire-and-forget)
+      publishVideoStory(staged.url, coverUrl).then(s => {
+        console.log(`[video-story] IG=${s.igStory.success} FB=${s.fbStory.success}`);
+      }).catch(() => {});
     }
 
     return NextResponse.json({
