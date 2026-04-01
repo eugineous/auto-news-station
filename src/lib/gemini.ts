@@ -93,7 +93,9 @@ async function generateTitleWithGemini(article: Article): Promise<string> {
 }
 
 // ── Caption system prompt (for NVIDIA) ───────────────────────────────────────
-const CAPTION_SYSTEM = `You are the senior news writer at PPP TV Kenya — a verified Kenyan entertainment and news media brand on Instagram and Facebook.
+const CAPTION_SYSTEM = `You are the senior content writer at PPP TV Kenya — Kenya's #1 entertainment and sports media brand on Instagram and Facebook.
+
+PAGE IDENTITY: PPP TV Kenya is the go-to source for entertainment, sports, music, celebrity news, and lifestyle content in Kenya and East Africa. Every caption should reinforce this identity.
 
 Your captions are written in the style of a professional journalist. They are factual, specific, and compelling without being sensational. Meta's algorithm rewards news pages that write like real journalists and penalizes clickbait.
 
@@ -157,17 +159,19 @@ const HASHTAG_BANK: Record<string, string[]> = {
   GENERAL:       ["#Kenya", "#Nairobi", "#PPPTVKenya", "#KenyaNews", "#NairobiLife", "#EastAfrica", "#KenyaToday"],
 };
 
-// ── Engagement CTAs — journalist style, no clickbait ─────────────────────────
+// ── Engagement CTAs — journalist style + follow hooks ────────────────────────
 // Meta penalizes "curiosity gap" CTAs. These are factual and conversational.
 const ENGAGEMENT_CTAS = [
-  { cta: "What are your thoughts on this?", type: "debate" as const },
-  { cta: "Share this with someone following this story.", type: "share" as const },
-  { cta: "Tag someone who should know about this.", type: "tag" as const },
-  { cta: "Save this for later.", type: "save" as const },
-  { cta: "Do you agree with this decision?", type: "debate" as const },
-  { cta: "What do you think happens next?", type: "debate" as const },
-  { cta: "Pass this on to someone who needs to see it.", type: "share" as const },
-  { cta: "Let us know your take in the comments.", type: "debate" as const },
+  { cta: "Follow @ppptvke for daily entertainment & sports. 🔥", type: "share" as const },
+  { cta: "Follow for more content like this. 👇", type: "share" as const },
+  { cta: "Follow @ppptvke — Kenya's #1 entertainment page. ✅", type: "share" as const },
+  { cta: "Follow for part 2 and more updates. 🎬", type: "share" as const },
+  { cta: "Tag someone who needs to see this! 👀", type: "tag" as const },
+  { cta: "What are your thoughts? Drop them below. 💬", type: "debate" as const },
+  { cta: "Follow @ppptvke for the latest from Kenya & beyond. 🌍", type: "share" as const },
+  { cta: "Share this with someone who'd love it! 🔁", type: "share" as const },
+  { cta: "Follow for daily sports & entertainment updates. ⚽🎵", type: "share" as const },
+  { cta: "Save this for later. 🔖", type: "save" as const },
 ];
 
 function getHashtags(category: string): string {

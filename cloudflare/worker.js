@@ -701,7 +701,26 @@ async function triggerAutomate(env) {
         }).catch(e => console.error("[burst] video failed:", e.message))
       : Promise.resolve();
 
-    await Promise.all([imagePromise, videoPromise]);
+    // Carousel pipeline (every 3rd run) — scrapes IG carousels, replaces first image with branded thumb
+    const carouselPromise = nextCount % 3 === 0
+      ? fetch(`${appUrl}/api/automate-carousel`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json" },
+          body: "{}",
+          signal: AbortSignal.timeout(280000),
+        }).then(r => r.json()).then(async d => {
+          console.log(`[burst] carousel: posted=${d.posted} source=${d.source}`);
+          if (d.posted > 0) {
+            const logKey = `agent:log:${Date.now() + 2}`;
+            await env.SEEN_ARTICLES.put(logKey, JSON.stringify({
+              ts: new Date().toISOString(), type: "carousel", posted: d.posted,
+              abVariant, source: d.source,
+            }), { expirationTtl: 7 * 24 * 3600 });
+          }
+        }).catch(e => console.error("[burst] carousel failed:", e.message))
+      : Promise.resolve();
+
+    await Promise.all([imagePromise, videoPromise, carouselPromise]);
   } catch (err) {
     console.error("[auto-ppp-tv] trigger failed:", err.message);
   }
