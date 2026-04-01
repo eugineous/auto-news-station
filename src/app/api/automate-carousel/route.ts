@@ -69,20 +69,20 @@ const CAROUSEL_SOURCES = [
 async function scrapeIGCarousels(username: string): Promise<{ images: string[]; caption: string; postUrl: string }[]> {
   // Map IG usernames to Reddit subreddits with gallery posts
   const REDDIT_MAP: Record<string, string> = {
-    "theshaderoom":        "r/entertainment",
+    "theshaderoom":        "r/popculturechat",
     "complex":             "r/hiphopimages",
-    "worldstar":           "r/PublicFreakout",
-    "espn":                "r/sports",
-    "nba":                 "r/nba",
-    "premierleague":       "r/soccer",
-    "sportsbible":         "r/soccer",
-    "goal":                "r/soccer",
-    "billboard":           "r/Music",
-    "rollingstone":        "r/Music",
-    "audiomackafrica":     "r/AfricanMusic",
+    "worldstar":           "r/popculturechat",
+    "espn":                "r/popculturechat",
+    "nba":                 "r/hiphopimages",
+    "premierleague":       "r/popculturechat",
+    "sportsbible":         "r/popculturechat",
+    "goal":                "r/popculturechat",
+    "billboard":           "r/hiphopimages",
+    "rollingstone":        "r/hiphopimages",
+    "audiomackafrica":     "r/hiphopimages",
     "nairobi_gossip_club": "r/Kenya",
     "mpasho":              "r/Kenya",
-    "ghafla":              "r/Kenya",
+    "ghafla":              "r/popculturechat",
   };
 
   const subreddit = REDDIT_MAP[username];
