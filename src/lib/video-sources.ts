@@ -141,13 +141,15 @@ async function fetchDailymotionFeed(feedUrl: string, sourceName: string, categor
   return items.slice(0, 3);
 }
 
-// ── 3. Reddit JSON API (public, no auth) ─────────────────────────────────────
+// ── 3. Reddit JSON API — focus on subreddits with native video posts ─────────
 const REDDIT_FEEDS = [
-  { url: "https://www.reddit.com/r/Kenya/new.json?limit=25",              name: "r/Kenya",           cat: "NEWS" },
-  { url: "https://www.reddit.com/r/AfricanMusic/new.json?limit=25",       name: "r/AfricanMusic",    cat: "MUSIC" },
-  { url: "https://www.reddit.com/r/Nollywood/new.json?limit=25",          name: "r/Nollywood",       cat: "MOVIES" },
-  { url: "https://www.reddit.com/r/entertainment/new.json?limit=25",      name: "r/Entertainment",   cat: "ENTERTAINMENT" },
+  { url: "https://www.reddit.com/r/videos/new.json?limit=25",             name: "r/Videos",          cat: "ENTERTAINMENT" },
+  { url: "https://www.reddit.com/r/PublicFreakout/new.json?limit=25",     name: "r/PublicFreakout",  cat: "NEWS" },
+  { url: "https://www.reddit.com/r/nextfuckinglevel/new.json?limit=25",   name: "r/NextLevel",       cat: "ENTERTAINMENT" },
+  { url: "https://www.reddit.com/r/sports/new.json?limit=25",             name: "r/Sports",          cat: "SPORTS" },
   { url: "https://www.reddit.com/r/Music/new.json?limit=25",              name: "r/Music",           cat: "MUSIC" },
+  { url: "https://www.reddit.com/r/worldnews/new.json?limit=25",          name: "r/WorldNews",       cat: "NEWS" },
+  { url: "https://www.reddit.com/r/entertainment/new.json?limit=25",      name: "r/Entertainment",   cat: "ENTERTAINMENT" },
 ];
 
 async function fetchRedditFeed(feedUrl: string, sourceName: string, category: string): Promise<VideoItem[]> {
@@ -163,28 +165,30 @@ async function fetchRedditFeed(feedUrl: string, sourceName: string, category: st
 
     for (const post of posts) {
       const p = post.data;
-      if (!p.is_video && !p.url?.includes("youtube") && !p.url?.includes("youtu.be")) continue;
-      // Accept all recent posts with video/YouTube links — don't filter by title
+      const postUrl = p.url_overridden_by_dest || p.url || "";
+
+      // Accept: native Reddit videos (v.redd.it), YouTube links
+      const isNativeVideo = p.is_video && p.media?.reddit_video?.fallback_url;
+      const isYouTube = postUrl.includes("youtube.com") || postUrl.includes("youtu.be");
+      if (!isNativeVideo && !isYouTube) continue;
       if (!isRecent(new Date(p.created_utc * 1000).toISOString())) continue;
 
-      // Reddit uses url_overridden_by_dest for the actual link
-      const postUrl = p.url_overridden_by_dest || p.url;
-      const videoUrl = p.is_video ? p.media?.reddit_video?.fallback_url : postUrl;
+      const videoUrl = isNativeVideo ? p.media.reddit_video.fallback_url : postUrl;
       if (!videoUrl) continue;
 
       items.push({
         id: `reddit:${p.id}`,
         title: p.title,
         url: videoUrl,
-        directVideoUrl: p.is_video ? videoUrl : undefined,
+        directVideoUrl: isNativeVideo ? videoUrl : undefined,
         thumbnail: p.thumbnail?.startsWith("http") ? p.thumbnail : "",
         publishedAt: new Date(p.created_utc * 1000),
         sourceName,
-        sourceType: p.is_video ? "reddit" : "youtube",
+        sourceType: isNativeVideo ? "reddit" : "youtube",
         category,
       });
     }
-    return items.slice(0, 3);
+    return items.slice(0, 5);
   } catch { return []; }
 }
 
