@@ -164,7 +164,7 @@ async function fetchRedditFeed(feedUrl: string, sourceName: string, category: st
     for (const post of posts) {
       const p = post.data;
       if (!p.is_video && !p.url?.includes("youtube") && !p.url?.includes("youtu.be")) continue;
-      if (!isEntertainmentTitle(p.title || "")) continue;
+      // Accept all recent posts with video/YouTube links — don't filter by title
       if (!isRecent(new Date(p.created_utc * 1000).toISOString())) continue;
 
       // Reddit uses url_overridden_by_dest for the actual link
