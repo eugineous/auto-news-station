@@ -48,7 +48,7 @@ function isEntertainmentTitle(title: string): boolean {
   return /music|song|video|celebrity|gossip|entertainment|fashion|award|concert|interview|exclusive|drama|movie|film|tv|show|dance|comedy|viral|trending|nairobi|kenya|africa/i.test(title);
 }
 
-function isRecent(dateStr: string, maxHours = 48): boolean {
+function isRecent(dateStr: string, maxHours = 24): boolean {
   try {
     const d = new Date(dateStr);
     return Date.now() - d.getTime() < maxHours * 3600 * 1000;

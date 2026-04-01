@@ -313,6 +313,54 @@ export default {
       return json({ paused: !!paused, rateLimited: !!rateLimited });
     }
 
+    // ── /agent/status GET ─────────────────────────────────────────────────────
+    if (url.pathname === "/agent/status" && request.method === "GET") {
+      if (!authed) return new Response("Unauthorized", { status: 401 });
+      try {
+        const [enabled, abVariant, igRate, fbRate, lastRun, totalPosts] = await Promise.all([
+          env.SEEN_ARTICLES.get("agent:enabled"),
+          env.SEEN_ARTICLES.get("agent:ab_variant"),
+          env.SEEN_ARTICLES.get("agent:ig_success_rate"),
+          env.SEEN_ARTICLES.get("agent:fb_success_rate"),
+          env.SEEN_ARTICLES.get("agent:last_run"),
+          env.SEEN_ARTICLES.get("agent:total_posts"),
+        ]);
+        return json({
+          enabled: enabled !== "0",
+          abVariant: abVariant || "A",
+          igSuccessRate: igRate ? parseFloat(igRate) : null,
+          fbSuccessRate: fbRate ? parseFloat(fbRate) : null,
+          lastRun: lastRun || null,
+          totalPosts: totalPosts ? parseInt(totalPosts) : 0,
+        });
+      } catch (err) { return json({ error: err.message }, 500); }
+    }
+
+    // ── /agent/toggle POST ────────────────────────────────────────────────────
+    if (url.pathname === "/agent/toggle" && request.method === "POST") {
+      if (!authed) return new Response("Unauthorized", { status: 401 });
+      try {
+        const { enabled } = await request.json();
+        await env.SEEN_ARTICLES.put("agent:enabled", enabled ? "1" : "0", { expirationTtl: 365 * 24 * 3600 });
+        return json({ ok: true, enabled });
+      } catch (err) { return json({ error: err.message }, 500); }
+    }
+
+    // ── /agent/log GET ────────────────────────────────────────────────────────
+    if (url.pathname === "/agent/log" && request.method === "GET") {
+      if (!authed) return new Response("Unauthorized", { status: 401 });
+      try {
+        const list = await env.SEEN_ARTICLES.list({ prefix: "agent:log:" });
+        const entries = await Promise.all(
+          list.keys.slice(-50).map(async k => {
+            const v = await env.SEEN_ARTICLES.get(k.name);
+            try { return JSON.parse(v); } catch { return null; }
+          })
+        );
+        return json({ log: entries.filter(Boolean).reverse() });
+      } catch (err) { return json({ error: err.message }, 500); }
+    }
+
     // ── /pipeline/pause ───────────────────────────────────────────────────────
     if (url.pathname === "/pipeline/pause" && request.method === "POST") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
@@ -456,9 +504,22 @@ async function triggerAutomateWithLock(env) {
 
 // ── Trigger Next.js automate endpoint (Vercel handles the full pipeline) ──────
 async function triggerAutomate(env) {
+  // ── Agent ON/OFF check ────────────────────────────────────────────────────
+  const agentEnabled = await env.SEEN_ARTICLES.get("agent:enabled");
+  if (agentEnabled === "0") {
+    console.log("[agent] Agent is disabled — skipping run");
+    return;
+  }
+
   const appUrl = env.VERCEL_APP_URL || "https://auto-news-station.vercel.app";
   const secret = env.AUTOMATE_SECRET;
   if (!secret) { console.warn("[auto-ppp-tv] AUTOMATE_SECRET not set"); return; }
+
+  // ── A/B testing: rotate caption variant every 10 runs ────────────────────
+  const runCount = parseInt(await env.SEEN_ARTICLES.get("run-count") || "0");
+  const abVariant = runCount % 20 < 10 ? "A" : "B"; // A=breaking style, B=casual style
+  await env.SEEN_ARTICLES.put("agent:ab_variant", abVariant, { expirationTtl: 24 * 3600 });
+  await env.SEEN_ARTICLES.put("agent:last_run", new Date().toISOString(), { expirationTtl: 7 * 24 * 3600 });
 
   try {
     // Random jitter: wait 0–8 minutes before firing so posts don't land at exact :00/:15/:30/:45
@@ -466,32 +527,48 @@ async function triggerAutomate(env) {
     console.log(`[burst] jitter delay: ${Math.round(jitterMs / 1000)}s`);
     await sleep(jitterMs);
 
-    // Every cron tick: fire image pipeline (always) + video pipeline (every 3rd run)
-    const runCount = parseInt(await env.SEEN_ARTICLES.get("run-count") || "0");
     const nextCount = runCount + 1;
     await env.SEEN_ARTICLES.put("run-count", String(nextCount), { expirationTtl: 24 * 3600 });
 
-    const fireVideo = true; // fire video pipeline every run (was every 3rd)
+    const fireVideo = true;
 
-    // Always fire image pipeline (feed post + IG story + FB story)
+    // Image pipeline
     const imagePromise = fetch(`${appUrl}/api/automate`, {
       method: "POST",
-      headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json" },
+      headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json", "X-AB-Variant": abVariant },
       body: "{}",
       signal: AbortSignal.timeout(280000),
-    }).then(r => r.json()).then(d => {
+    }).then(r => r.json()).then(async d => {
       console.log(`[burst] image: posted=${d.posted} errors=${d.errors?.length || 0}`);
+      // Track performance for A/B learning
+      if (d.posted > 0) {
+        const total = parseInt(await env.SEEN_ARTICLES.get("agent:total_posts") || "0") + 1;
+        await env.SEEN_ARTICLES.put("agent:total_posts", String(total), { expirationTtl: 365 * 24 * 3600 });
+        // Log agent activity
+        const logKey = `agent:log:${Date.now()}`;
+        await env.SEEN_ARTICLES.put(logKey, JSON.stringify({
+          ts: new Date().toISOString(), type: "image", posted: d.posted,
+          abVariant, errors: d.errors?.length || 0,
+        }), { expirationTtl: 7 * 24 * 3600 });
+      }
     }).catch(e => console.error("[burst] image failed:", e.message));
 
-    // Fire video pipeline every 3rd run (Reel from YouTube/Reddit/etc.)
+    // Video pipeline
     const videoPromise = fireVideo
       ? fetch(`${appUrl}/api/automate-video`, {
           method: "POST",
-          headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json" },
+          headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json", "X-AB-Variant": abVariant },
           body: "{}",
           signal: AbortSignal.timeout(280000),
-        }).then(r => r.json()).then(d => {
+        }).then(r => r.json()).then(async d => {
           console.log(`[burst] video: posted=${d.posted}`);
+          if (d.posted > 0) {
+            const logKey = `agent:log:${Date.now() + 1}`;
+            await env.SEEN_ARTICLES.put(logKey, JSON.stringify({
+              ts: new Date().toISOString(), type: "video", posted: d.posted,
+              abVariant, source: d.video?.source,
+            }), { expirationTtl: 7 * 24 * 3600 });
+          }
         }).catch(e => console.error("[burst] video failed:", e.message))
       : Promise.resolve();
 

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 import { useState, useRef, useEffect, useCallback } from "react";
 import Shell from "../shell";
 
@@ -633,127 +633,118 @@ function SourcesTab({onCompose}:{onCompose:(url:string)=>void}){
   );
 }
 
-// ── Agent Tab — AI content agent ──────────────────────────────────────────────
+//  Agent Tab  autonomous monitor 
 function AgentTab({onCompose}:{onCompose:(url:string)=>void}){
-  const [posts,setPosts]=useState<any[]>([]);
-  const [suggestions,setSuggestions]=useState<{url:string;title:string;reason:string;score:number}[]>([]);
-  const [analyzing,setAnalyzing]=useState(false);
-  const [agentLog,setAgentLog]=useState<string[]>([]);
-  const [autoRampage,setAutoRampage]=useState(false);
-  const [rampageCount,setRampageCount]=useState(0);
+  const [status,setStatus]=useState<any>(null);
+  const [log,setLog]=useState<any[]>([]);
+  const [loading,setLoading]=useState(true);
+  const [toggling,setToggling]=useState(false);
 
-  useEffect(()=>{
-    fetch(WORKER+"/post-log",{headers:WORKER_AUTH}).then(r=>r.json()).then((d:any)=>setPosts((d.log||[]).filter((p:any)=>p.instagram?.success||p.facebook?.success).slice(0,20))).catch(()=>{});
-  },[]);
-
-  function log(msg:string){setAgentLog(prev=>[`[${new Date().toLocaleTimeString()}] ${msg}`,...prev.slice(0,49)]);}
-
-  async function analyzeAndSuggest(){
-    setAnalyzing(true);setSuggestions([]);
-    log("Analyzing top performing posts…");
+  async function loadStatus(){
     try{
-      // Study top categories
-      const catCounts=posts.reduce<Record<string,number>>((a,p)=>{a[p.category]=(a[p.category]||0)+1;return a;},{});
-      const topCat=Object.entries(catCounts).sort((a,b)=>b[1]-a[1])[0]?.[0]||"ENTERTAINMENT";
-      log(`Top category: ${topCat}`);
-
-      // Fetch trending content in that category
-      const r=await fetch(`/api/trends/news`,{...FETCH_OPTS});
-      if(r.ok){
-        const d=await r.json() as any;
-        const newSuggestions=(d.trends||[]).filter((t:any)=>!posts.some((p:any)=>p.url===t.url)).slice(0,8).map((t:any,i:number)=>({
-          url:t.url,title:t.title,
-          reason:`Trending in ${t.category} · ${t.volume?.toLocaleString()||"?"} mentions`,
-          score:Math.max(60,100-i*5),
-        }));
-        setSuggestions(newSuggestions);
-        log(`Found ${newSuggestions.length} similar content suggestions`);
-      }
-    }catch(e:any){log(`Error: ${e.message}`);}
-    setAnalyzing(false);
+      const[sr,lr]=await Promise.all([
+        fetch(WORKER+"/agent/status",{headers:WORKER_AUTH}),
+        fetch(WORKER+"/agent/log",{headers:WORKER_AUTH}),
+      ]);
+      if(sr.ok)setStatus(await sr.json());
+      if(lr.ok){const d=await lr.json() as any;setLog(d.log||[]);}
+    }catch{}
+    setLoading(false);
   }
 
-  async function autoPostSuggestion(s:{url:string;title:string}){
-    log(`Auto-posting: ${s.title.slice(0,50)}…`);
+  useEffect(()=>{loadStatus();const t=setInterval(loadStatus,15000);return()=>clearInterval(t);},[]);
+
+  async function toggle(){
+    if(!status||toggling)return;
+    setToggling(true);
     try{
-      const previewRes=await fetch("/api/preview-url",{...FETCH_OPTS,method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:s.url})});
-      const preview=await previewRes.json() as any;
-      const headline=(preview.ai?.clickbaitTitle||s.title).toUpperCase().slice(0,120);
-      const caption=preview.ai?.caption||s.title;
-      const resp=await fetch("/api/post-video",{...FETCH_OPTS,method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:s.url,headline,caption,category:preview.category||"GENERAL"})});
-      if(!resp.body)throw new Error("No response");
-      const reader=resp.body.getReader();const decoder=new TextDecoder();let buf="",finalEvt:any=null;
-      while(true){const{done,value}=await reader.read();if(done)break;buf+=decoder.decode(value,{stream:true});const lines=buf.split("\n");buf=lines.pop()||"";for(const line of lines){if(!line.startsWith("data: "))continue;try{const evt=JSON.parse(line.slice(6));if(evt.done)finalEvt=evt;}catch{}}}
-      if(finalEvt?.success){log(`✓ Posted: ${s.title.slice(0,40)}`);setRampageCount(c=>c+1);}
-      else log(`✗ Failed: ${finalEvt?.error||"unknown"}`);
-    }catch(e:any){log(`✗ Error: ${e.message}`);}
+      const r=await fetch(WORKER+"/agent/toggle",{method:"POST",headers:{...WORKER_AUTH,"Content-Type":"application/json"},body:JSON.stringify({enabled:!status.enabled})});
+      if(r.ok)await loadStatus();
+    }catch{}
+    setToggling(false);
   }
+
+  const isOn=status?.enabled!==false;
 
   return(
     <div style={{display:"flex",flexDirection:"column" as const,gap:16}}>
-      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:4}}>
-        <span style={{fontSize:20}}>🤖</span>
-        <div>
-          <div style={{fontFamily:"Bebas Neue,sans-serif",fontSize:20,letterSpacing:2}}>AI Content Agent</div>
-          <div style={{fontSize:11,color:"#555"}}>Studies your top posts · finds similar content · posts autonomously</div>
+      <div style={{display:"flex",alignItems:"center",gap:12}}>
+        <span style={{fontSize:24}}></span>
+        <div style={{flex:1}}>
+          <div style={{fontFamily:"Bebas Neue,sans-serif",fontSize:22,letterSpacing:2}}>Autonomous Agent</div>
+          <div style={{fontSize:11,color:"#555"}}>Runs every 10 min  24h fresh news only  self-optimizes via A/B testing</div>
         </div>
+        <button onClick={toggle} disabled={toggling||loading} style={{background:isOn?`linear-gradient(135deg,${GREEN},#16a34a)`:"#1a1a1a",border:`2px solid ${isOn?GREEN+"66":"#333"}`,color:"#fff",borderRadius:12,padding:"12px 24px",fontSize:14,fontWeight:800,cursor:toggling?"not-allowed":"pointer",letterSpacing:1,textTransform:"uppercase" as const,boxShadow:isOn?`0 0 20px ${GREEN}44`:"none",transition:"all .3s",minWidth:100}}>
+          {toggling?<Spin/>:isOn?" ON":" OFF"}
+        </button>
       </div>
 
-      {/* 5. Auto-rampage mode */}
-      <div style={{background:"#0a0a0a",border:`1px solid ${autoRampage?PINK+"44":"#1a1a1a"}`,borderRadius:10,padding:"14px 16px"}}>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
-          <div>
-            <div style={{fontSize:12,fontWeight:700,color:autoRampage?PINK:"#ccc"}}>🔥 Auto-Rampage Mode</div>
-            <div style={{fontSize:10,color:"#555"}}>Continuously finds and posts entertainment videos — {rampageCount} posted this session</div>
-          </div>
-          <button onClick={()=>setAutoRampage(r=>!r)} style={{background:autoRampage?PINK:"#1a1a1a",border:"none",color:"#fff",borderRadius:8,padding:"8px 16px",fontSize:11,fontWeight:700,cursor:"pointer"}}>
-            {autoRampage?"⏹ Stop":"▶ Start"}
-          </button>
-        </div>
-        {autoRampage&&<div style={{fontSize:10,color:PINK,animation:"pulse 2s infinite"}}>● RAMPAGE ACTIVE — posting every 12 minutes</div>}
-      </div>
-
-      {/* Analyze button */}
-      <button onClick={analyzeAndSuggest} disabled={analyzing} style={{background:analyzing?"#111":PURPLE,border:"none",color:"#fff",borderRadius:8,padding:"12px",fontSize:12,fontWeight:700,cursor:analyzing?"not-allowed":"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
-        {analyzing?<><Spin/>Analyzing top posts…</>:"🧠 Analyze & Find Similar Content"}
-      </button>
-
-      {/* Suggestions */}
-      {suggestions.length>0&&(
-        <div style={{display:"flex",flexDirection:"column" as const,gap:6}}>
-          <div style={{fontSize:10,color:"#555",letterSpacing:2,textTransform:"uppercase" as const,fontWeight:700}}>AI Suggestions ({suggestions.length})</div>
-          {suggestions.map((s,i)=>(
-            <div key={i} style={{background:"#0a0a0a",border:"1px solid #1a1a1a",borderRadius:8,padding:"10px 12px",display:"flex",gap:10,alignItems:"flex-start"}}>
-              <div style={{fontFamily:"Bebas Neue,sans-serif",fontSize:22,color:PURPLE,lineHeight:1,flexShrink:0,width:28,textAlign:"center" as const}}>{s.score}</div>
-              <div style={{flex:1,minWidth:0}}>
-                <div style={{fontSize:12,color:"#ccc",fontWeight:600,marginBottom:3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" as const}}>{s.title}</div>
-                <div style={{fontSize:10,color:"#555"}}>{s.reason}</div>
-              </div>
-              <div style={{display:"flex",gap:5,flexShrink:0}}>
-                <button onClick={()=>autoPostSuggestion(s)} style={{background:PINK,border:"none",color:"#fff",borderRadius:5,padding:"5px 10px",fontSize:10,fontWeight:700,cursor:"pointer"}}>Auto Post</button>
-                <button onClick={()=>onCompose(s.url)} style={{background:"none",border:"1px solid #222",color:"#555",borderRadius:5,padding:"5px 10px",fontSize:10,cursor:"pointer"}}>Edit</button>
-              </div>
+      {status&&(
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
+          {[
+            {label:"Status",value:isOn?"RUNNING":"PAUSED",color:isOn?GREEN:RED},
+            {label:"Total Posts",value:status.totalPosts||0,color:"#fff"},
+            {label:"A/B Variant",value:status.abVariant||"A",color:status.abVariant==="B"?PURPLE:CYAN},
+            {label:"IG Rate",value:status.igSuccessRate!=null?Math.round(status.igSuccessRate*100)+"%":"",color:GREEN},
+            {label:"FB Rate",value:status.fbSuccessRate!=null?Math.round(status.fbSuccessRate*100)+"%":"",color:BLUE},
+            {label:"Last Run",value:status.lastRun?ago(status.lastRun):"Never",color:"#555"},
+          ].map(s=>(
+            <div key={s.label} style={{background:"#0f0f0f",border:"1px solid #1a1a1a",borderRadius:8,padding:"12px 10px",textAlign:"center" as const}}>
+              <div style={{fontFamily:"Bebas Neue,sans-serif",fontSize:22,color:s.color,lineHeight:1}}>{s.value}</div>
+              <div style={{fontSize:9,color:"#444",letterSpacing:2,textTransform:"uppercase" as const,marginTop:3}}>{s.label}</div>
             </div>
           ))}
         </div>
       )}
 
-      {/* 20. Agent activity log */}
-      {agentLog.length>0&&(
-        <div style={{background:"#050505",border:"1px solid #1a1a1a",borderRadius:8,padding:"12px 14px"}}>
-          <div style={{fontSize:9,color:"#444",letterSpacing:2,textTransform:"uppercase" as const,fontWeight:700,marginBottom:8}}>Agent Log</div>
-          <div style={{display:"flex",flexDirection:"column" as const,gap:3,maxHeight:160,overflowY:"auto"}}>
-            {agentLog.map((l,i)=>(
-              <div key={i} style={{fontSize:10,color:l.includes("✓")?"#4ade80":l.includes("✗")?"#f87171":"#555",fontFamily:"monospace"}}>{l}</div>
+      <div style={{background:"#0a0a0a",border:"1px solid #1a1a1a",borderRadius:10,padding:"14px 16px"}}>
+        <div style={{fontSize:10,color:"#555",letterSpacing:2,textTransform:"uppercase" as const,fontWeight:700,marginBottom:10}}>Agent Capabilities</div>
+        <div style={{display:"flex",flexDirection:"column" as const,gap:6}}>
+          {[
+            {icon:"",text:"Runs every 10 minutes via Cloudflare cron  zero button clicks needed"},
+            {icon:"",text:"Only posts content from the last 24 hours  never stale news"},
+            {icon:"",text:"Scores content by virality: recency + Kenya relevance + trending topics"},
+            {icon:"",text:"A/B tests caption styles (breaking vs casual) and learns which converts better"},
+            {icon:"",text:"Deduplicates by URL and title similarity  never posts the same story twice"},
+            {icon:"�",text:"Self-heals: if a video URL returns HTML (expired), re-resolves with backup extractor"},
+            {icon:"🌍",text:"Sources: 40+ RSS feeds, 14 TikTok accounts, YouTube, Reddit, Dailymotion"},
+            {icon:"📸",text:"Always generates a branded PPP TV thumbnail as cover — no blank thumbnails"},
+          ].map((c,i)=>(
+            <div key={i} style={{display:"flex",gap:10,alignItems:"flex-start"}}>
+              <span style={{fontSize:14,flexShrink:0}}>{c.icon}</span>
+              <span style={{fontSize:11,color:"#666",lineHeight:1.5}}>{c.text}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={{background:"#050505",border:"1px solid #1a1a1a",borderRadius:8,padding:"12px 14px"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+          <div style={{fontSize:9,color:"#444",letterSpacing:2,textTransform:"uppercase" as const,fontWeight:700}}>Agent Activity Log</div>
+          <button onClick={loadStatus} style={{background:"none",border:"1px solid #222",color:"#444",borderRadius:4,padding:"2px 8px",fontSize:9,cursor:"pointer"}}></button>
+        </div>
+        {loading?<div style={{textAlign:"center",padding:20,color:"#333"}}><Spin size={14}/></div>
+        :log.length===0?<div style={{fontSize:11,color:"#333",textAlign:"center" as const,padding:16}}>No activity yet  agent logs here when it runs</div>
+        :(
+          <div style={{display:"flex",flexDirection:"column" as const,gap:4,maxHeight:200,overflowY:"auto"}}>
+            {log.map((l:any,i:number)=>(
+              <div key={i} style={{display:"flex",gap:8,alignItems:"center",padding:"5px 0",borderBottom:"1px solid #0f0f0f"}}>
+                <span style={{fontSize:9,color:"#333",fontFamily:"monospace",flexShrink:0}}>{l.ts?new Date(l.ts).toLocaleTimeString("en-KE",{timeZone:"Africa/Nairobi"}):""}</span>
+                <span style={{fontSize:10,color:l.posted>0?GREEN:"#555",flex:1}}>
+                  {l.type==="video"?"":""} {l.posted>0?`Posted ${l.posted} ${l.type}`:`No new ${l.type}`}
+                  {l.abVariant&&<span style={{color:"#444"}}>  Variant {l.abVariant}</span>}
+                </span>
+              </div>
             ))}
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
 
-// ── Queue Tab — post queue with bulk management ───────────────────────────────
+
+// ── Queue Tab ─────────────────────────────────────────────────────────────────
 function QueueTab({onCompose}:{onCompose:(url:string)=>void}){
   const [queue,setQueue]=useState<{id:string;url:string;headline:string;caption:string;category:string;status:"pending"|"posting"|"done"|"error";msg?:string}[]>([]);
   const [newUrl,setNewUrl]=useState("");
@@ -761,18 +752,8 @@ function QueueTab({onCompose}:{onCompose:(url:string)=>void}){
   const [bulkUrls,setBulkUrls]=useState("");
   const [showBulk,setShowBulk]=useState(false);
 
-  function addToQueue(){
-    if(!newUrl.trim())return;
-    setQueue(q=>[...q,{id:Date.now().toString(),url:newUrl.trim(),headline:"",caption:"",category:"GENERAL",status:"pending"}]);
-    setNewUrl("");
-  }
-
-  function addBulk(){
-    const urls=bulkUrls.split("\n").map(u=>u.trim()).filter(Boolean).slice(0,10);
-    setQueue(q=>[...q,...urls.map(url=>({id:Date.now().toString()+Math.random(),url,headline:"",caption:"",category:"GENERAL",status:"pending" as const}))]);
-    setBulkUrls("");setShowBulk(false);
-  }
-
+  function addToQueue(){if(!newUrl.trim())return;setQueue(q=>[...q,{id:Date.now().toString(),url:newUrl.trim(),headline:"",caption:"",category:"GENERAL",status:"pending"}]);setNewUrl("");}
+  function addBulk(){const urls=bulkUrls.split("\n").map(u=>u.trim()).filter(Boolean).slice(0,10);setQueue(q=>[...q,...urls.map(url=>({id:Date.now().toString()+Math.random(),url,headline:"",caption:"",category:"GENERAL",status:"pending" as const}))]);setBulkUrls("");setShowBulk(false);}
   function removeFromQueue(id:string){setQueue(q=>q.filter(item=>item.id!==id));}
 
   async function runQueue(){
@@ -782,14 +763,8 @@ function QueueTab({onCompose}:{onCompose:(url:string)=>void}){
     for(const item of pending){
       setQueue(q=>q.map(i=>i.id===item.id?{...i,status:"posting"}:i));
       try{
-        // Auto-fetch headline/caption if missing
         let headline=item.headline,caption=item.caption;
-        if(!headline||!caption){
-          const r=await fetch("/api/preview-url",{...FETCH_OPTS,method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:item.url})});
-          const d=await r.json() as any;
-          headline=(d.ai?.clickbaitTitle||item.url).toUpperCase().slice(0,120);
-          caption=d.ai?.caption||item.url;
-        }
+        if(!headline||!caption){const r=await fetch("/api/preview-url",{...FETCH_OPTS,method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:item.url})});const d=await r.json() as any;headline=(d.ai?.clickbaitTitle||item.url).toUpperCase().slice(0,120);caption=d.ai?.caption||item.url;}
         const resp=await fetch("/api/post-video",{...FETCH_OPTS,method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:item.url,headline,caption,category:item.category})});
         if(!resp.body)throw new Error("No response");
         const reader=resp.body.getReader();const decoder=new TextDecoder();let buf="",finalEvt:any=null;
@@ -811,47 +786,22 @@ function QueueTab({onCompose}:{onCompose:(url:string)=>void}){
     <div style={{display:"flex",flexDirection:"column" as const,gap:14}}>
       <div style={{display:"flex",alignItems:"center",gap:10}}>
         <span style={{fontSize:20}}>📋</span>
-        <div>
-          <div style={{fontFamily:"Bebas Neue,sans-serif",fontSize:20,letterSpacing:2}}>Post Queue</div>
-          <div style={{fontSize:11,color:"#555"}}>{queue.length} items · {doneCount} done · {pendingCount} pending</div>
-        </div>
+        <div><div style={{fontFamily:"Bebas Neue,sans-serif",fontSize:20,letterSpacing:2}}>Post Queue</div><div style={{fontSize:11,color:"#555"}}>{queue.length} items · {doneCount} done · {pendingCount} pending</div></div>
       </div>
-
-      {/* Add URL */}
       <div style={{display:"flex",gap:8}}>
         <input value={newUrl} onChange={e=>setNewUrl(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addToQueue()} placeholder="Paste video URL to queue…" style={{...inp,flex:1}}/>
         <button onClick={addToQueue} disabled={!newUrl.trim()} style={{background:newUrl.trim()?PINK:"#111",border:"none",color:"#fff",borderRadius:7,padding:"11px 14px",fontSize:12,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap" as const}}>+ Add</button>
-        <button onClick={()=>setShowBulk(s=>!s)} style={{background:"none",border:"1px solid #222",color:"#555",borderRadius:7,padding:"11px 12px",fontSize:11,cursor:"pointer",whiteSpace:"nowrap" as const}}>Bulk</button>
+        <button onClick={()=>setShowBulk(s=>!s)} style={{background:"none",border:"1px solid #222",color:"#555",borderRadius:7,padding:"11px 12px",fontSize:11,cursor:"pointer"}}>Bulk</button>
       </div>
-
-      {showBulk&&(
-        <div style={{background:"#0a0a0a",border:"1px solid #1a1a1a",borderRadius:8,padding:"12px"}}>
-          <label style={lbl}>Paste up to 10 URLs (one per line)</label>
-          <textarea value={bulkUrls} onChange={e=>setBulkUrls(e.target.value)} rows={5} placeholder={"https://tiktok.com/...\nhttps://youtube.com/..."} style={{...inp,resize:"vertical" as const,marginBottom:8}}/>
-          <button onClick={addBulk} disabled={!bulkUrls.trim()} style={{background:PURPLE,border:"none",color:"#fff",borderRadius:6,padding:"8px 16px",fontSize:11,fontWeight:700,cursor:"pointer"}}>Add All to Queue</button>
-        </div>
-      )}
-
-      {/* Run queue */}
-      {pendingCount>0&&(
-        <button onClick={runQueue} disabled={running} style={{background:running?"#111":PINK,border:"none",color:"#fff",borderRadius:8,padding:"12px",fontSize:12,fontWeight:700,cursor:running?"not-allowed":"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
-          {running?<><Spin/>Running queue…</>:`🚀 Run Queue (${pendingCount} pending)`}
-        </button>
-      )}
-
-      {/* Queue items */}
-      {queue.length===0?(
-        <div style={{textAlign:"center" as const,padding:40,color:"#333",fontSize:12}}>Queue is empty — add URLs above</div>
-      ):(
+      {showBulk&&(<div style={{background:"#0a0a0a",border:"1px solid #1a1a1a",borderRadius:8,padding:"12px"}}><label style={lbl}>Paste up to 10 URLs (one per line)</label><textarea value={bulkUrls} onChange={e=>setBulkUrls(e.target.value)} rows={5} style={{...inp,resize:"vertical" as const,marginBottom:8}}/><button onClick={addBulk} style={{background:PURPLE,border:"none",color:"#fff",borderRadius:6,padding:"8px 16px",fontSize:11,fontWeight:700,cursor:"pointer"}}>Add All</button></div>)}
+      {pendingCount>0&&(<button onClick={runQueue} disabled={running} style={{background:running?"#111":PINK,border:"none",color:"#fff",borderRadius:8,padding:"12px",fontSize:12,fontWeight:700,cursor:running?"not-allowed":"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>{running?<><Spin/>Running…</>:`🚀 Run Queue (${pendingCount})`}</button>)}
+      {queue.length===0?(<div style={{textAlign:"center" as const,padding:40,color:"#333",fontSize:12}}>Queue is empty — add URLs above</div>):(
         <div style={{display:"flex",flexDirection:"column" as const,gap:6}}>
           {queue.map((item,i)=>(
             <div key={item.id} style={{background:"#0a0a0a",border:`1px solid ${STATUS_COLOR[item.status]}33`,borderRadius:8,padding:"10px 12px",display:"flex",gap:10,alignItems:"center"}}>
               <div style={{fontFamily:"Bebas Neue,sans-serif",fontSize:18,color:"#333",flexShrink:0,width:24,textAlign:"center" as const}}>{i+1}</div>
               <div style={{flex:1,minWidth:0}}>
-                <div style={{display:"flex",gap:6,marginBottom:4,alignItems:"center"}}>
-                  <span style={{background:STATUS_COLOR[item.status]+"22",color:STATUS_COLOR[item.status],fontSize:9,fontWeight:800,padding:"2px 7px",borderRadius:4,textTransform:"uppercase" as const,letterSpacing:1}}>{STATUS_LABEL[item.status]}</span>
-                  {item.status==="posting"&&<Spin size={10}/>}
-                </div>
+                <div style={{display:"flex",gap:6,marginBottom:4,alignItems:"center"}}><span style={{background:STATUS_COLOR[item.status]+"22",color:STATUS_COLOR[item.status],fontSize:9,fontWeight:800,padding:"2px 7px",borderRadius:4,textTransform:"uppercase" as const}}>{STATUS_LABEL[item.status]}</span>{item.status==="posting"&&<Spin size={10}/>}</div>
                 <div style={{fontSize:11,color:"#555",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" as const}}>{item.url.slice(0,60)}…</div>
                 {item.msg&&<div style={{fontSize:10,color:item.status==="done"?GREEN:RED,marginTop:3}}>{item.msg}</div>}
               </div>
@@ -877,55 +827,29 @@ export default function ComposerPage(){
   function goCompose(url:string){setComposeUrl(url);setTab("compose");}
   function handleProgress(pct:number,step:string){setProgress({pct,step});}
 
-  const TABS:[Tab,string][]=[
-    ["compose","✏️ Compose"],
-    ["cockpit","⚡ Cockpit"],
-    ["sources","📡 Sources"],
-    ["agent","🤖 Agent"],
-    ["queue","📋 Queue"],
-  ];
+  const TABS:[Tab,string][]=[["compose","✏️ Compose"],["cockpit","⚡ Cockpit"],["sources","📡 Sources"],["agent","🤖 Agent"],["queue","📋 Queue"]];
 
   return(
     <Shell>
-      <style>{`
-        @keyframes spin{to{transform:rotate(360deg)}}
-        @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
-        *{box-sizing:border-box}
-        ::-webkit-scrollbar{width:3px;height:3px}
-        ::-webkit-scrollbar-thumb{background:#2a2a2a;border-radius:2px}
-      `}</style>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}} @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}} *{box-sizing:border-box} ::-webkit-scrollbar{width:3px;height:3px} ::-webkit-scrollbar-thumb{background:#2a2a2a;border-radius:2px}`}</style>
       <div style={{maxWidth:720,margin:"0 auto",padding:"24px 16px 100px"}}>
-        {/* Header */}
-        <div style={{marginBottom:20,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-          <div>
-            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:2}}>
-              <span style={{width:8,height:8,borderRadius:"50%",background:PINK,display:"inline-block",boxShadow:`0 0 8px ${PINK}`}}/>
-              <span style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:28,letterSpacing:3}}>VIDEO OPS</span>
-            </div>
-            <p style={{fontSize:11,color:"#333",margin:0}}>Compose · Monitor · Scrape · Agent · Queue</p>
+        <div style={{marginBottom:20}}>
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:2}}>
+            <span style={{width:8,height:8,borderRadius:"50%",background:PINK,display:"inline-block",boxShadow:`0 0 8px ${PINK}`}}/>
+            <span style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:28,letterSpacing:3}}>VIDEO OPS</span>
           </div>
+          <p style={{fontSize:11,color:"#333",margin:0}}>Compose · Monitor · Scrape · Agent · Queue</p>
         </div>
-
-        {/* Tabs */}
         <div style={{display:"flex",gap:3,marginBottom:22,padding:3,background:"#0a0a0a",borderRadius:8,border:"1px solid #1a1a1a"}}>
-          {TABS.map(([t,label])=>(
-            <button key={t} onClick={()=>setTab(t)} style={{flex:1,padding:"9px 0",fontSize:10,fontWeight:800,letterSpacing:1,textTransform:"uppercase" as const,border:"none",borderRadius:6,cursor:"pointer",transition:"all .15s",background:tab===t?PINK:"transparent",color:tab===t?"#fff":"#444"}}>
-              {label}
-            </button>
-          ))}
+          {TABS.map(([t,label])=>(<button key={t} onClick={()=>setTab(t)} style={{flex:1,padding:"9px 0",fontSize:10,fontWeight:800,letterSpacing:1,textTransform:"uppercase" as const,border:"none",borderRadius:6,cursor:"pointer",transition:"all .15s",background:tab===t?PINK:"transparent",color:tab===t?"#fff":"#444"}}>{label}</button>))}
         </div>
-
         {tab==="compose"&&<ComposeTab key={composeUrl} initialUrl={composeUrl} onSuccess={()=>{setRefreshKey(k=>k+1);setTab("cockpit");}} onProgress={handleProgress}/>}
         {tab==="cockpit"&&<CockpitTab key={`cockpit-${refreshKey}`} onCompose={goCompose}/>}
         {tab==="sources"&&<SourcesTab key={`sources-${refreshKey}`} onCompose={goCompose}/>}
         {tab==="agent"&&<AgentTab key={`agent-${refreshKey}`} onCompose={goCompose}/>}
         {tab==="queue"&&<QueueTab key={`queue-${refreshKey}`} onCompose={goCompose}/>}
       </div>
-
-      {/* Floating progress panel */}
-      {progress&&(
-        <ProgressPanel pct={progress.pct} step={progress.step} onDismiss={()=>setProgress(null)}/>
-      )}
+      {progress&&<ProgressPanel pct={progress.pct} step={progress.step} onDismiss={()=>setProgress(null)}/>}
     </Shell>
   );
 }

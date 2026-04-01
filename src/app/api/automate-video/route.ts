@@ -60,29 +60,40 @@ function levenshtein(a: string, b: string): number {
 }
 
 async function stageVideoInR2(videoUrl: string): Promise<{ url: string; key: string } | null> {
-  try {
-    const res = await fetch(videoUrl, {
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; PPPTVBot/1.0)" },
-      signal: AbortSignal.timeout(120000),
-    });
-    if (!res.ok) return null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await fetch(videoUrl, {
+        headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", "Referer": "https://www.tiktok.com/", "Accept": "video/mp4,video/*,*/*" },
+        signal: AbortSignal.timeout(120000),
+      });
+      if (!res.ok) { if (attempt === 1) return null; continue; }
 
-    const buf = new Uint8Array(await res.arrayBuffer());
-    if (buf.length === 0) return null;
+      const contentType = res.headers.get("content-type") || "";
+      const buf = new Uint8Array(await res.arrayBuffer());
 
-    const upload = await fetch(WORKER_URL + "/stage-video-upload", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },
-      body: JSON.stringify({ base64: Buffer.from(buf).toString("base64"), contentType: "video/mp4" }),
-      signal: AbortSignal.timeout(150000),
-    });
-    if (!upload.ok) return null;
-    const data = await upload.json() as any;
-    return data.success ? { url: data.url, key: data.key } : null;
-  } catch (err) {
-    console.error("[stageVideoInR2]", err instanceof Error ? err.message : String(err));
-    return null;
+      // Reject HTML (expired URL)
+      if (contentType.includes("text/html") || (buf.length > 4 && buf[0] === 0x3c)) {
+        console.warn("[stageVideoInR2] Got HTML instead of video — URL expired, re-resolving");
+        if (attempt === 1) return null;
+        continue;
+      }
+      if (buf.length < 1000) { if (attempt === 1) return null; continue; }
+
+      const upload = await fetch(WORKER_URL + "/stage-video-upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },
+        body: JSON.stringify({ base64: Buffer.from(buf).toString("base64"), contentType: "video/mp4" }),
+        signal: AbortSignal.timeout(150000),
+      });
+      if (!upload.ok) { if (attempt === 1) return null; continue; }
+      const data = await upload.json() as any;
+      return data.success ? { url: data.url, key: data.key } : null;
+    } catch (err) {
+      console.error("[stageVideoInR2]", err instanceof Error ? err.message : String(err));
+      if (attempt === 1) return null;
+    }
   }
+  return null;
 }
 
 async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
