@@ -83,6 +83,13 @@ async function scrapeIGCarousels(username: string): Promise<{ images: string[]; 
     "nairobi_gossip_club": "r/Kenya",
     "mpasho":              "r/Kenya",
     "ghafla":              "r/popculturechat",
+    // Extra mappings for more variety
+    "rap":                 "r/hiphopimages",
+    "bars":                "r/hiphopimages",
+    "bet":                 "r/popculturechat",
+    "vibe":                "r/hiphopimages",
+    "xxl":                 "r/hiphopimages",
+    "bossip":              "r/popculturechat",
   };
 
   const subreddit = REDDIT_MAP[username];
@@ -91,7 +98,7 @@ async function scrapeIGCarousels(username: string): Promise<{ images: string[]; 
   try {
     const res = await fetch(`https://www.reddit.com/${subreddit}/hot.json?limit=25`, {
       headers: { "User-Agent": "PPPTVBot/2.0 (carousel aggregator)" },
-      signal: AbortSignal.timeout(10000),
+      signal: AbortSignal.timeout(20000),
     });
     if (!res.ok) return [];
     const data = await res.json() as any;
@@ -180,7 +187,8 @@ export async function POST(req: NextRequest) {
   const MAPPED_SOURCES = CAROUSEL_SOURCES.filter(s => [
     "theshaderoom","complex","worldstar","espn","nba","premierleague",
     "sportsbible","goal","billboard","rollingstone","audiomackafrica",
-    "nairobi_gossip_club","mpasho","ghafla"
+    "nairobi_gossip_club","mpasho","ghafla",
+    "rap","bars","bet","vibe","xxl","bossip"
   ].includes(s.username));
   const shuffled = [...MAPPED_SOURCES].sort(() => Math.random() - 0.5).slice(0, 5);
 
@@ -200,6 +208,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ posted: 0, message: "No new carousels found" });
   }
 
+  // Mark seen AFTER we confirm we have a target (but before posting to avoid double-posts on retry)
   await markCarouselSeen(target.postUrl);
 
   // Generate our branded thumbnail for the FIRST image
