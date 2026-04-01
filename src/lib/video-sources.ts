@@ -440,78 +440,53 @@ async function fetchTikTokAccountVideos(account: TikTokAccount): Promise<VideoIt
   }
 }
 
-// ── 7. TikWM Trending — scrapes known news accounts via single-video API ─────
+// ── 7. TikWM Search — finds fresh videos by keyword ──────────────────────────
 async function fetchTikWMTrending(): Promise<VideoItem[]> {
-  // These are known recent video URLs from verified news accounts
-  // We fetch the account page to get the latest video ID, then use TikWM single-video API
-  const ACCOUNTS = [
-    { username: "citizen.digital",   cat: "NEWS",          name: "Citizen Digital" },
-    { username: "bbcnewsswahili",    cat: "NEWS",          name: "BBC News Swahili" },
-    { username: "aljazeeraenglish",  cat: "NEWS",          name: "Al Jazeera" },
-    { username: "cnn",               cat: "NEWS",          name: "CNN" },
-    { username: "skysportsnews",     cat: "SPORTS",        name: "Sky Sports News" },
-    { username: "espn",              cat: "SPORTS",        name: "ESPN" },
-    { username: "tmz",               cat: "CELEBRITY",     name: "TMZ" },
-    { username: "nbcnews",           cat: "NEWS",          name: "NBC News" },
-    { username: "bbcnews",           cat: "NEWS",          name: "BBC News" },
-    { username: "abcnews",           cat: "NEWS",          name: "ABC News" },
+  const SEARCH_TERMS = [
+    { keyword: "kenya news",        cat: "NEWS",          name: "TikTok Kenya News" },
+    { keyword: "nairobi",           cat: "NEWS",          name: "TikTok Nairobi" },
+    { keyword: "kenya entertainment", cat: "ENTERTAINMENT", name: "TikTok Kenya Entertainment" },
+    { keyword: "kenya celebrity",   cat: "CELEBRITY",     name: "TikTok Kenya Celebrity" },
+    { keyword: "kenya sports",      cat: "SPORTS",        name: "TikTok Kenya Sports" },
+    { keyword: "east africa news",  cat: "NEWS",          name: "TikTok East Africa" },
+    { keyword: "kenya music",       cat: "MUSIC",         name: "TikTok Kenya Music" },
   ];
 
   const items: VideoItem[] = [];
-  const now = new Date().toISOString();
 
-  await Promise.allSettled(ACCOUNTS.map(async (acct) => {
+  await Promise.allSettled(SEARCH_TERMS.map(async (term) => {
     try {
-      // Fetch account page to extract latest video IDs
-      const pageRes = await fetch(`https://www.tiktok.com/@${acct.username}`, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15",
-          "Accept": "text/html,application/xhtml+xml,*/*",
-        },
-        signal: AbortSignal.timeout(10000),
+      const body = new URLSearchParams({ keywords: term.keyword, count: "5", cursor: "0", HD: "1" });
+      const res = await fetch("https://www.tikwm.com/api/feed/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": "Mozilla/5.0 (compatible; PPPTVBot/1.0)" },
+        body: body.toString(),
+        signal: AbortSignal.timeout(12000),
       });
-      if (!pageRes.ok) return;
-      const html = await pageRes.text();
+      if (!res.ok) return;
+      const data = await res.json() as any;
+      if (data.code !== 0 || !data.data?.videos?.length) return;
 
-      // Extract video IDs from the page
-      const videoIds = Array.from(html.matchAll(/"id":"(\d{15,20})"/g))
-        .map(m => m[1])
-        .filter((id, i, arr) => arr.indexOf(id) === i)
-        .slice(0, 3);
+      for (const v of data.data.videos.slice(0, 3)) {
+        const title = v.title || v.desc || "";
+        if (!title || v.is_ad) continue;
+        if (!isRecent(new Date(v.create_time * 1000).toISOString(), 48)) continue;
 
-      if (!videoIds.length) return;
+        // Extract username from author field
+        const username = v.author?.unique_id || v.author?.id || "unknown";
+        const videoUrl = `https://www.tiktok.com/@${username}/video/${v.video_id}`;
 
-      // Resolve each video via TikWM single-video API
-      for (const videoId of videoIds.slice(0, 2)) {
-        try {
-          const videoUrl = `https://www.tiktok.com/@${acct.username}/video/${videoId}`;
-          const body = new URLSearchParams({ url: videoUrl, hd: "1" });
-          const res = await fetch("https://www.tikwm.com/api/", {
-            method: "POST",
-            headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": "Mozilla/5.0 (compatible; PPPTVBot/1.0)" },
-            body: body.toString(),
-            signal: AbortSignal.timeout(10000),
-          });
-          if (!res.ok) continue;
-          const data = await res.json() as any;
-          if (data.code !== 0 || !data.data) continue;
-          const v = data.data;
-          const title = v.title || v.desc || "";
-          if (!title) continue;
-          if (!isRecent(new Date(v.create_time * 1000).toISOString(), 48)) continue;
-
-          items.push({
-            id: `tikwm:${acct.username}:${videoId}`,
-            title: title.slice(0, 200),
-            url: videoUrl,
-            directVideoUrl: v.hdplay || v.play || undefined,
-            thumbnail: v.cover || v.origin_cover || "",
-            publishedAt: new Date(v.create_time * 1000),
-            sourceName: acct.name,
-            sourceType: "direct-mp4",
-            category: acct.cat,
-          });
-        } catch {}
+        items.push({
+          id: `tikwm-search:${v.video_id}`,
+          title: title.slice(0, 200),
+          url: videoUrl,
+          directVideoUrl: v.play || v.wmplay || undefined,
+          thumbnail: v.cover || v.origin_cover || "",
+          publishedAt: new Date(v.create_time * 1000),
+          sourceName: term.name,
+          sourceType: "direct-mp4",
+          category: term.cat,
+        });
       }
     } catch {}
   }));
