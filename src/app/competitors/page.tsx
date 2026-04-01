@@ -54,7 +54,10 @@ function Spin() {
 
 async function fetchYouTubeFeed(channelId: string, sourceName: string): Promise<CompetitorPost[]> {
   try {
-    const r = await fetch(`/api/proxy-feed?url=${encodeURIComponent(`https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`)}`);
+    const r = await fetch(`https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`, {
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; PPPTVBot/2.0)" },
+      signal: AbortSignal.timeout(10000),
+    });
     if (!r.ok) return [];
     const xml = await r.text();
     const items: CompetitorPost[] = [];

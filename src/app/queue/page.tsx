@@ -53,10 +53,10 @@ export default function QueuePage() {
   const fetchFeed = useCallback(async () => {
     setLoading(true); setError(null);
     try {
-      const r = await fetch(`/api/ppptv-feed`);
+      const r = await fetch(`https://ppp-tv-worker.euginemicah.workers.dev/feed?limit=30`);
       if (!r.ok) throw new Error("Feed unavailable");
       const d = await r.json();
-      setItems(d.items || []);
+      setItems(d.articles || d.items || []);
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -75,7 +75,7 @@ export default function QueuePage() {
     const key = item.link;
     setStatuses(s => ({ ...s, [key]: { loading: true } }));
     try {
-      const r = await fetch("/api/post-from-url-proxy", {
+      const r = await fetch("/api/post-from-url", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url: item.link }),

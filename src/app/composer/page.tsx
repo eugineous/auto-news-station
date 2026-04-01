@@ -397,25 +397,7 @@ function ComposeTab({ initialUrl, onSuccess, onProgress }: {
     log.unshift({ ts: new Date().toISOString(), url: url.trim(), headline, caption, category });
     localStorage.setItem("composer:log", JSON.stringify(log.slice(0, 20)));
     try {
-      // Schedule mode: POST to /api/schedule-post instead
-      if (scheduleAt) {
-        const r = await fetch("/api/schedule-post", {
-          ...FETCH_OPTS, method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url: url.trim(), headline: headline.trim(), caption: caption.trim(), category, scheduledAt: scheduleAt }),
-        });
-        const d = await r.json() as any;
-        if (d.ok) {
-          setResult({ scheduled: true, id: d.id });
-          setStatus("success");
-          setTimeout(() => { setUrl(""); setHeadline(""); setCaption(""); setThumbUrl(""); setThumbSrc(null); setResolvedVideoUrl(""); setStatus("idle"); setShowPlayer(false); setSourceMeta(null); setScheduleAt(""); onSuccess(); }, 3000);
-        } else {
-          setResult({ error: d.error || "Schedule failed" });
-          setStatus("error");
-        }
-        return;
-      }
-
+      // Schedule removed — post immediately
       const resp = await fetch("/api/post-video", {
         ...FETCH_OPTS, method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -933,7 +915,7 @@ function SourcesTab({ onCompose }: { onCompose: (url: string) => void }) {
   async function loadVideos() {
     setLoading(true);
     try {
-      const r = await fetch("/api/scrape-videos", { ...FETCH_OPTS, method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer ppptvWorker2024" } });
+      const r = await fetch("/api/automate-video", { ...FETCH_OPTS, method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer ppptvWorker2024" } });
       const d = await r.json() as any;
       setVideos(d.videos || []);
     } catch {}
