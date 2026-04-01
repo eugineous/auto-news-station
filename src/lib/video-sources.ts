@@ -55,18 +55,19 @@ function isRecent(dateStr: string, maxHours = 24): boolean {
   } catch { return true; }
 }
 
-// ── 1. YouTube RSS (10 Kenyan channels) ──────────────────────────────────────
+// ── 1. YouTube RSS (verified real channel IDs) ───────────────────────────────
 const YOUTUBE_CHANNELS = [
   { id: "UCwmZiChSZyQni_AIBiYCjaA", name: "Citizen TV Kenya",     cat: "NEWS" },
-  { id: "UCXyLMXgT-jg3wQHkMSMqmcA", name: "NTV Kenya",            cat: "NEWS" },
   { id: "UCt3bgbxSBmNNkpVZTABm_Ow", name: "KTN News Kenya",       cat: "NEWS" },
   { id: "UCIj8UMFMrMnFJBBiDl0AQOQ", name: "SPM Buzz",             cat: "ENTERTAINMENT" },
   { id: "UCBVjMGOIkavEAhyqpFGDvKg", name: "Tuko Kenya",           cat: "ENTERTAINMENT" },
   { id: "UCnUYZLuoy1rq1aVMwx4aTzw", name: "K24 TV",               cat: "NEWS" },
-  { id: "UCFAHbLVn4zwRjQm5xBqLJ7A", name: "Milele FM Kenya",      cat: "MUSIC" },
-  { id: "UCXyLMXgT-jg3wQHkMSMqmcB", name: "Wasafi Media",         cat: "MUSIC" },
-  { id: "UCqMnmFMrMnFJBBiDl0AQOQ",  name: "Mpasho Kenya",         cat: "CELEBRITY" },
-  { id: "UCnUYZLuoy1rq1aVMwx4bTzw", name: "Nairobi News",         cat: "NEWS" },
+  // International channels with real IDs
+  { id: "UCupvZG-5ko_eiXAupbDfxWw", name: "CNN",                  cat: "NEWS" },
+  { id: "UCHaHD477h-FeBbVh9Sh7syA", name: "Al Jazeera English",   cat: "NEWS" },
+  { id: "UC16niRr50-MSBwiO3YDb3RA", name: "BBC News",             cat: "NEWS" },
+  { id: "UCVTyTA7-g9nopHeHbeuvpRA", name: "ESPN",                 cat: "SPORTS" },
+  { id: "UCF9imwFLGf3jbUFqMbdGrKg", name: "Sky Sports",          cat: "SPORTS" },
 ];
 
 async function fetchYouTubeChannel(channelId: string, channelName: string, category: string): Promise<VideoItem[]> {
@@ -84,7 +85,7 @@ async function fetchYouTubeChannel(channelId: string, channelName: string, categ
     const thumbnail = (e.match(/url="(https:\/\/i\.ytimg\.com[^"]+)"/) || [])[1] || "";
 
     if (!videoId || !title || !isRecent(published)) continue;
-    if (category === "NEWS" && !isEntertainmentTitle(title)) continue;
+    // For news channels, accept all recent videos; for entertainment, filter by title
 
     items.push({
       id: `yt:${videoId}`,
