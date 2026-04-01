@@ -17,7 +17,11 @@ const CAT:Record<string,{bg:string;text:string}> = {
 };
 const cc=(c:string)=>CAT[c?.toUpperCase()]??{bg:"#E50914",text:"#fff"};
 
-interface Post{articleId:string;title:string;url:string;category:string;manualPost?:boolean;isBreaking?:boolean;postType?:string;sourceName?:string;instagram:{success:boolean;postId?:string;error?:string};facebook:{success:boolean;postId?:string;error?:string};postedAt:string;}
+interface Post{article_id?:string;articleId?:string;title:string;url:string;category:string;manualPost?:boolean;isBreaking?:boolean;post_type?:string;postType?:string;source_name?:string;sourceName?:string;ig_success?:boolean;fb_success?:boolean;instagram?:{success:boolean;postId?:string;error?:string};facebook?:{success:boolean;postId?:string;error?:string};posted_at?:string;postedAt?:string;}
+
+// Normalise a post record regardless of whether it came from Supabase (snake_case) or old KV (camelCase)
+function norm(p:Post){return{...p,igOk:p.ig_success??p.instagram?.success??false,fbOk:p.fb_success??p.facebook?.success??false,at:p.posted_at??p.postedAt??"",id:p.article_id??p.articleId??"",type:p.post_type??p.postType??"image"};}
+type NPost=Post&{igOk:boolean;fbOk:boolean;at:string;id:string;type:string};
 interface Retry{loading:boolean;done?:boolean;error?:string}
 
 function ago(iso:string){const m=Math.floor((Date.now()-new Date(iso).getTime())/60000);if(m<1)return"just now";if(m<60)return m+"m ago";const h=Math.floor(m/60);if(h<24)return h+"h ago";return Math.floor(h/24)+"d ago";}
@@ -117,12 +121,12 @@ function CategoryBreakdown({ posts }: { posts: Post[] }) {
 }
 
 // ── 7. Streak counter ─────────────────────────────────────────────────────────
-function StreakCounter({ posts }: { posts: Post[] }) {
+function StreakCounter({ posts }: { posts: NPost[] }) {
   let streak = 0;
   const d = new Date();
   while (true) {
     const ds = d.toDateString();
-    if (!posts.some(p => new Date(p.postedAt).toDateString() === ds)) break;
+    if (!posts.some(p => new Date(p.at||0).toDateString() === ds)) break;
     streak++;
     d.setDate(d.getDate() - 1);
   }
@@ -135,7 +139,7 @@ function StreakCounter({ posts }: { posts: Post[] }) {
 }
 
 // ── 9. Live post ticker ───────────────────────────────────────────────────────
-function LiveTicker({ posts }: { posts: Post[] }) {
+function LiveTicker({ posts }: { posts: NPost[] }) {
   const recent = posts.slice(0, 20);
   return (
     <div style={{ overflow:"hidden", position:"relative" as const, height:28 }}>
@@ -146,7 +150,7 @@ function LiveTicker({ posts }: { posts: Post[] }) {
             <span key={i} style={{ display:"inline-flex", alignItems:"center", gap:6, fontSize:11, color:"#888", flexShrink:0 }}>
               <span style={{ background:bg, color:text, fontSize:8, fontWeight:800, padding:"1px 5px", borderRadius:3, textTransform:"uppercase" as const }}>{p.category}</span>
               {p.title?.slice(0,50)}{(p.title?.length||0)>50?"…":""}
-              <span style={{ color:"#333", fontSize:10 }}>{ago(p.postedAt)}</span>
+              <span style={{ color:"#333", fontSize:10 }}>{ago(p.at||"")}</span>
               <span style={{ color:"#222" }}>·</span>
             </span>
           );
@@ -157,8 +161,8 @@ function LiveTicker({ posts }: { posts: Post[] }) {
 }
 
 // ── 12. Top performing category ───────────────────────────────────────────────
-function TopCategory({ posts }: { posts: Post[] }) {
-  const week = posts.filter(p => Date.now() - new Date(p.postedAt).getTime() < 7*24*3600*1000);
+function TopCategory({ posts }: { posts: NPost[] }) {
+  const week = posts.filter(p => Date.now() - new Date(p.at||0).getTime() < 7*24*3600*1000);
   const counts = week.reduce<Record<string,number>>((a,p)=>{ a[p.category]=(a[p.category]||0)+1; return a; },{});
   const top = Object.entries(counts).sort((a,b)=>b[1]-a[1])[0];
   if (!top) return <div style={{fontSize:11,color:"#333"}}>No data yet</div>;
@@ -175,16 +179,16 @@ function TopCategory({ posts }: { posts: Post[] }) {
 }
 
 // ── 13. Batch retry all failures ──────────────────────────────────────────────
-function BatchRetry({ posts, onDone }: { posts: Post[]; onDone: () => void }) {
+function BatchRetry({ posts, onDone }: { posts: NPost[]; onDone: () => void }) {
   const [running, setRunning] = useState(false);
   const [done, setDone] = useState(false);
-  const failed = posts.filter(p => !p.instagram.success || !p.facebook.success);
+  const failed = posts.filter(p => !p.igOk || !p.fbOk);
   async function retryAll() {
     setRunning(true);
     for (const p of failed.slice(0,5)) {
-      const platform = !p.instagram.success ? "instagram" : "facebook";
+      const platform = !p.igOk ? "instagram" : "facebook";
       try {
-        await fetch("/api/retry-post", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({articleId:p.articleId,title:p.title,caption:p.title,articleUrl:p.url,category:p.category,platform}) });
+        await fetch("/api/retry-post", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({articleId:p.id,title:p.title,caption:p.title,articleUrl:p.url,category:p.category,platform}) });
       } catch {}
       await new Promise(r=>setTimeout(r,2000));
     }
@@ -200,8 +204,8 @@ function BatchRetry({ posts, onDone }: { posts: Post[]; onDone: () => void }) {
 }
 
 // ── 14. Story counter ─────────────────────────────────────────────────────────
-function StoryCounter({ posts }: { posts: Post[] }) {
-  const today = posts.filter(p => new Date(p.postedAt).toDateString() === new Date().toDateString());
+function StoryCounter({ posts }: { posts: NPost[] }) {
+  const today = posts.filter(p => new Date(p.at||0).toDateString() === new Date().toDateString());
   const stories = today.filter(p => (p as any).igStory?.success || (p as any).fbStory?.success).length;
   return (
     <div style={{textAlign:"center" as const}}>
@@ -212,10 +216,10 @@ function StoryCounter({ posts }: { posts: Post[] }) {
 }
 
 // ── 15. System alerts panel ───────────────────────────────────────────────────
-function SystemAlerts({ posts }: { posts: Post[] }) {
-  const recent24 = posts.filter(p => Date.now() - new Date(p.postedAt).getTime() < 24*3600*1000);
-  const igFails = recent24.filter(p => !p.instagram.success);
-  const fbFails = recent24.filter(p => !p.facebook.success);
+function SystemAlerts({ posts }: { posts: NPost[] }) {
+  const recent24 = posts.filter(p => Date.now() - new Date(p.at||0).getTime() < 24*3600*1000);
+  const igFails = recent24.filter(p => !p.igOk);
+  const fbFails = recent24.filter(p => !p.fbOk);
   const alerts = [
     igFails.length > 3 && { level:"warn", msg:`${igFails.length} IG failures in last 24h — check token` },
     fbFails.length > 3 && { level:"warn", msg:`${fbFails.length} FB failures in last 24h` },
@@ -263,10 +267,11 @@ export default function Dashboard() {
   }, []);
 
   async function doRetry(p:Post, platform:"instagram"|"facebook") {
-    const key = p.articleId+"_"+platform;
+    const np = norm(p);
+    const key = np.id+"_"+platform;
     setRetries(s=>({...s,[key]:{loading:true}}));
     try {
-      const r = await fetch("/api/retry-post",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({articleId:p.articleId,title:p.title,caption:p.title,articleUrl:p.url,category:p.category,platform})});
+      const r = await fetch("/api/retry-post",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({articleId:np.id,title:p.title,caption:p.title,articleUrl:p.url,category:p.category,platform})});
       const d = await r.json();
       const ok = platform==="instagram"?d.instagram?.success:d.facebook?.success;
       setRetries(s=>({...s,[key]:{loading:false,done:ok,error:ok?undefined:(d.error||"Failed")}}));
@@ -291,24 +296,19 @@ export default function Dashboard() {
 
   function showToast(msg:string, type:"ok"|"err") { setToast({msg,type}); setTimeout(()=>setToast(null),4000); }
 
-  const sorted = [...posts].sort((a,b)=>new Date(b.postedAt).getTime()-new Date(a.postedAt).getTime());
-  const today = sorted.filter(p=>new Date(p.postedAt).toDateString()===new Date().toDateString());
+  const sorted = [...posts].map(norm).sort((a,b)=>new Date(b.at||0).getTime()-new Date(a.at||0).getTime());
+  const today = sorted.filter(p=>new Date(p.at||0).toDateString()===new Date().toDateString());
   const todayCount = today.length;
-  const igOkToday = today.filter(p=>p.instagram.success).length;
-  const fbOkToday = today.filter(p=>p.facebook.success).length;
-  const failCount = sorted.filter(p=>!p.instagram.success&&!p.facebook.success).length;
-  const successRate = sorted.length>0?Math.round(sorted.filter(p=>p.instagram.success||p.facebook.success).length/sorted.length*100):0;
-  // 2. Post velocity: posts in last hour
-  const velocity = sorted.filter(p=>Date.now()-new Date(p.postedAt).getTime()<3600*1000).length;
-  // 4. Breaking news alert
-  const breaking = sorted.find(p=>p.isBreaking && Date.now()-new Date(p.postedAt).getTime()<3600*1000);
-  // 10. Video posts today
-  const videoToday = today.filter(p=>p.postType==="video").length;
-  // 11. Last post time
-  const lastPost = sorted[0]?.postedAt;
-  // Platform health (simple heuristic: recent success rate)
-  const recentIgOk = sorted.slice(0,10).filter(p=>p.instagram.success).length >= 5;
-  const recentFbOk = sorted.slice(0,10).filter(p=>p.facebook.success).length >= 5;
+  const igOkToday = today.filter(p=>p.igOk).length;
+  const fbOkToday = today.filter(p=>p.fbOk).length;
+  const failCount = sorted.filter(p=>!p.igOk&&!p.fbOk).length;
+  const successRate = sorted.length>0?Math.round(sorted.filter(p=>p.igOk||p.fbOk).length/sorted.length*100):0;
+  const velocity = sorted.filter(p=>Date.now()-new Date(p.at||0).getTime()<3600*1000).length;
+  const breaking = sorted.find(p=>p.isBreaking && Date.now()-new Date(p.at||0).getTime()<3600*1000);
+  const videoToday = today.filter(p=>p.type==="video").length;
+  const lastPost = sorted[0]?.at;
+  const recentIgOk = sorted.slice(0,10).filter(p=>p.igOk).length >= 5;
+  const recentFbOk = sorted.slice(0,10).filter(p=>p.fbOk).length >= 5;
 
   return (
     <Shell>
@@ -348,7 +348,7 @@ export default function Dashboard() {
           <div style={{background:"#1a0000",border:`1px solid ${R}66`,borderRadius:8,padding:"10px 16px",marginBottom:14,display:"flex",alignItems:"center",gap:10,animation:"blink 2s infinite"}}>
             <span style={{background:R,color:"#fff",fontSize:9,fontWeight:800,padding:"2px 8px",borderRadius:3,letterSpacing:1,flexShrink:0}}>🔴 BREAKING</span>
             <span style={{fontSize:12,color:"#ffaaaa",fontWeight:600,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" as const}}>{breaking.title}</span>
-            <span style={{fontSize:10,color:"#555",flexShrink:0}}>{ago(breaking.postedAt)}</span>
+            <span style={{fontSize:10,color:"#555",flexShrink:0}}>{ago(breaking.at||"")}</span>
           </div>
         )}
 
@@ -399,12 +399,12 @@ export default function Dashboard() {
                 <div style={{display:"flex",gap:8,marginBottom:8,flexWrap:"wrap" as const,alignItems:"center"}}>
                   <Pill cat={sorted[0].category}/>
                   {sorted[0].isBreaking&&<span style={{background:R,color:"#fff",fontSize:8,fontWeight:800,padding:"2px 6px",borderRadius:3}}>BREAKING</span>}
-                  {sorted[0].postType==="video"&&<span style={{background:PURPLE+"33",color:PURPLE,fontSize:8,fontWeight:800,padding:"2px 6px",borderRadius:3}}>VIDEO</span>}
+                  {sorted[0].type==="video"&&<span style={{background:PURPLE+"33",color:PURPLE,fontSize:8,fontWeight:800,padding:"2px 6px",borderRadius:3}}>VIDEO</span>}
                 </div>
                 <div style={{fontFamily:"Bebas Neue,sans-serif",fontSize:"clamp(16px,2.5vw,28px)",lineHeight:1.1,letterSpacing:1,marginBottom:10,color:"#fff"}}>{sorted[0].title}</div>
                 <div style={{display:"flex",gap:12,alignItems:"center",flexWrap:"wrap" as const}}>
-                  <span style={{fontSize:11,color:sorted[0].instagram.success?"#4ade80":"#f87171",fontWeight:700}}>{sorted[0].instagram.success?"✓":"✗"} Instagram</span>
-                  <span style={{fontSize:11,color:sorted[0].facebook.success?"#4ade80":"#f87171",fontWeight:700}}>{sorted[0].facebook.success?"✓":"✗"} Facebook</span>
+                  <span style={{fontSize:11,color:sorted[0].igOk?"#4ade80":"#f87171",fontWeight:700}}>{sorted[0].igOk?"✓":"✗"} Instagram</span>
+                  <span style={{fontSize:11,color:sorted[0].fbOk?"#4ade80":"#f87171",fontWeight:700}}>{sorted[0].fbOk?"✓":"✗"} Facebook</span>
                   {sorted[0].url&&<a href={sorted[0].url} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:"#444",textDecoration:"none",border:"1px solid #222",borderRadius:4,padding:"3px 10px",marginLeft:"auto"}}>Source ↗</a>}
                 </div>
               </>
@@ -462,13 +462,13 @@ export default function Dashboard() {
               <BatchRetry posts={sorted} onDone={fetchPosts}/>
             </div>
             <div style={{display:"flex",flexDirection:"column" as const,gap:6}}>
-              {sorted.filter(p=>!p.instagram.success||!p.facebook.success).slice(0,5).map(p=>(
-                <div key={p.articleId} style={{display:"flex",gap:8,alignItems:"center"}}>
+              {sorted.filter(p=>!p.igOk||!p.fbOk).slice(0,5).map(p=>(
+                <div key={p.id||p.title} style={{display:"flex",gap:8,alignItems:"center"}}>
                   <Pill cat={p.category}/>
                   <span style={{flex:1,fontSize:12,color:"#888",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" as const}}>{p.title}</span>
-                  <span style={{fontSize:10,color:"#444",flexShrink:0}}>{ago(p.postedAt)}</span>
-                  {!p.instagram.success&&<button onClick={()=>doRetry(p,"instagram")} disabled={retries[p.articleId+"_instagram"]?.loading} style={{background:PK,color:"#fff",border:"none",borderRadius:4,padding:"3px 8px",fontSize:10,fontWeight:700,cursor:"pointer",flexShrink:0}}>{retries[p.articleId+"_instagram"]?.loading?<Spin/>:"Retry IG"}</button>}
-                  {!p.facebook.success&&<button onClick={()=>doRetry(p,"facebook")} disabled={retries[p.articleId+"_facebook"]?.loading} style={{background:"#1877f2",color:"#fff",border:"none",borderRadius:4,padding:"3px 8px",fontSize:10,fontWeight:700,cursor:"pointer",flexShrink:0}}>{retries[p.articleId+"_facebook"]?.loading?<Spin/>:"Retry FB"}</button>}
+                  <span style={{fontSize:10,color:"#444",flexShrink:0}}>{ago(p.at||"")}</span>
+                  {!p.igOk&&<button onClick={()=>doRetry(p,"instagram")} disabled={retries[(p.id||"")+"_instagram"]?.loading} style={{background:PK,color:"#fff",border:"none",borderRadius:4,padding:"3px 8px",fontSize:10,fontWeight:700,cursor:"pointer",flexShrink:0}}>{retries[(p.id||"")+"_instagram"]?.loading?<Spin/>:"Retry IG"}</button>}
+                  {!p.fbOk&&<button onClick={()=>doRetry(p,"facebook")} disabled={retries[(p.id||"")+"_facebook"]?.loading} style={{background:"#1877f2",color:"#fff",border:"none",borderRadius:4,padding:"3px 8px",fontSize:10,fontWeight:700,cursor:"pointer",flexShrink:0}}>{retries[(p.id||"")+"_facebook"]?.loading?<Spin/>:"Retry FB"}</button>}
                 </div>
               ))}
             </div>
@@ -490,10 +490,10 @@ export default function Dashboard() {
             <div style={{maxHeight:400,overflowY:"auto"}}>
               {sorted.slice(0,20).map((p,i)=>{
                 const {bg}=cc(p.category);
-                const igOk=p.instagram.success||retries[p.articleId+"_instagram"]?.done;
-                const fbOk=p.facebook.success||retries[p.articleId+"_facebook"]?.done;
+                const igOk=p.igOk||retries[(p.id||"")+"_instagram"]?.done;
+                const fbOk=p.fbOk||retries[(p.id||"")+"_facebook"]?.done;
                 return (
-                  <div key={p.articleId} style={{display:"flex",gap:10,alignItems:"center",padding:"9px 16px",borderBottom:i<19?"1px solid #0f0f0f":"none"}}
+                  <div key={p.id||i} style={{display:"flex",gap:10,alignItems:"center",padding:"9px 16px",borderBottom:i<19?"1px solid #0f0f0f":"none"}}
                     onMouseEnter={e=>(e.currentTarget.style.background="#0f0f0f")}
                     onMouseLeave={e=>(e.currentTarget.style.background="transparent")}>
                     <div style={{width:3,height:32,borderRadius:2,background:bg,flexShrink:0}}/>
@@ -501,9 +501,9 @@ export default function Dashboard() {
                       <div style={{fontSize:12,fontWeight:600,color:"#ccc",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" as const,marginBottom:2}}>{p.title}</div>
                       <div style={{display:"flex",gap:6,alignItems:"center"}}>
                         <Pill cat={p.category}/>
-                        {p.postType==="video"&&<span style={{fontSize:8,color:PURPLE,fontWeight:800}}>VIDEO</span>}
+                        {p.type==="video"&&<span style={{fontSize:8,color:PURPLE,fontWeight:800}}>VIDEO</span>}
                         {p.isBreaking&&<span style={{fontSize:8,color:R,fontWeight:800}}>BREAKING</span>}
-                        <span style={{fontSize:10,color:"#444"}}>{ago(p.postedAt)}</span>
+                        <span style={{fontSize:10,color:"#444"}}>{ago(p.at||"")}</span>
                       </div>
                     </div>
                     <div style={{display:"flex",gap:5,alignItems:"center",flexShrink:0}}>
