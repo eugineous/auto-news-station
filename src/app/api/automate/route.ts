@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchArticles } from "@/lib/scraper";
-import { generateAIContent } from "@/lib/gemini";
+import { generateAIContent, verifyStory } from "@/lib/gemini";
 import { generateImage } from "@/lib/image-gen";
 import { publish, publishStories, publishVideo } from "@/lib/publisher";
 import { Article, SchedulerResponse } from "@/lib/types";
@@ -263,6 +263,18 @@ async function getTrendingTopics(): Promise<string[]> {
 }
 
 async function postOneArticle(article: Article, isBreaking: boolean): Promise<{ success: boolean; error?: string }> {
+  // ── Story verification — block fake/unverified stories ───────────────────
+  const verification = await verifyStory(article.title, article.url);
+  if (!verification.verified) {
+    console.warn(`[verify] BLOCKED: "${article.title}" — ${verification.reason}`);
+    return { success: false, error: `Blocked: ${verification.reason}` };
+  }
+  if (verification.confidence < 40) {
+    console.warn(`[verify] LOW CONFIDENCE (${verification.confidence}%): "${article.title}" — skipping`);
+    return { success: false, error: `Low confidence (${verification.confidence}%)` };
+  }
+  console.log(`[verify] APPROVED (${verification.confidence}%): "${article.title}"`);
+
   // Generate AI content — Gemini for headline, NVIDIA for caption
   let clickbaitTitle = article.title;
   let caption = "";

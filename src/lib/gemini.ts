@@ -179,7 +179,58 @@ function getEngagementCTA(): { cta: string; type: "debate" | "tag" | "save" | "s
   return ENGAGEMENT_CTAS[Math.floor(Math.random() * ENGAGEMENT_CTAS.length)];
 }
 
-// ── Main export ───────────────────────────────────────────────────────────────
+// ── Credibility verification — cross-reference before posting ────────────────
+export async function verifyStory(title: string, url: string): Promise<{ verified: boolean; reason: string; confidence: number }> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) return { verified: true, reason: "no gemini key — skipping verification", confidence: 50 };
+
+  const client = getGeminiClient(apiKey);
+  try {
+    const prompt =
+      `You are a fact-checker for PPP TV Kenya. Verify this story before it gets posted.\n\n` +
+      `STORY TITLE: "${title}"\n` +
+      `SOURCE URL: ${url}\n\n` +
+      `INSTRUCTIONS:\n` +
+      `1. Use Google Search to find this story on at least 2 credible news sources\n` +
+      `2. Check if the story is real, satire, misrepresented, or fabricated\n` +
+      `3. Check if key facts (names, titles, events) are accurate\n` +
+      `4. Check if this is a known fake news story or hoax\n\n` +
+      `CREDIBLE SOURCES: BBC, Reuters, AP, CNN, Al Jazeera, Nation Africa, Standard Media, Citizen Digital, NTV Kenya, KTN, Tuko, The Star Kenya, Guardian, NYT, Washington Post\n\n` +
+      `RESPOND IN THIS EXACT FORMAT (JSON only, no other text):\n` +
+      `{"verified": true/false, "confidence": 0-100, "reason": "brief explanation", "sources": ["source1", "source2"]}\n\n` +
+      `verified=true means the story checks out and is safe to post\n` +
+      `verified=false means the story is fake, unverified, or potentially harmful\n` +
+      `confidence=100 means you found it on multiple credible sources\n` +
+      `confidence=0 means you found no credible sources or it's a known hoax`;
+
+    const response = await client.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: prompt,
+      config: {
+        temperature: 0.1,
+        maxOutputTokens: 300,
+        tools: [{ googleSearch: {} }],
+      },
+    });
+
+    const text = response.text?.trim() ?? "";
+    // Extract JSON from response
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return { verified: true, reason: "could not parse verification response", confidence: 50 };
+
+    const result = JSON.parse(jsonMatch[0]);
+    return {
+      verified: result.verified !== false,
+      reason: result.reason || "verified",
+      confidence: result.confidence ?? 50,
+    };
+  } catch (err: any) {
+    console.warn("[verify] story verification failed:", err.message);
+    return { verified: true, reason: "verification error — proceeding with caution", confidence: 40 };
+  }
+}
+
+
 export async function generateAIContent(
   article: Article,
   _options?: { isVideo?: boolean; videoType?: string; tone?: "formal" | "casual" | "hype" | "sheng"; language?: "en" | "sw" }

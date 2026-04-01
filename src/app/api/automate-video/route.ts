@@ -5,7 +5,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { resolveVideoUrl } from "@/lib/video-downloader";
-import { generateAIContent } from "@/lib/gemini";
+import { generateAIContent, verifyStory } from "@/lib/gemini";
 import { generateImage } from "@/lib/image-gen";
 import { fetchAllVideoSources, VideoItem, TIKTOK_ACCOUNTS, buildAttribution } from "@/lib/video-sources";
 import { Article } from "@/lib/types";
@@ -342,6 +342,31 @@ export async function POST(req: NextRequest) {
     if (!target || !directUrl) {
       return NextResponse.json({ posted: 0, message: "No resolvable videos found from any source" });
     }
+
+    // ── Story verification — cross-reference against credible sources ─────────
+    const verification = await verifyStory(target.title, target.url);
+    if (!verification.verified) {
+      console.warn(`[verify] BLOCKED: "${target.title}" — ${verification.reason} (confidence: ${verification.confidence})`);
+      // Log the blocked story
+      await fetch(WORKER_URL + "/post-log", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },
+        body: JSON.stringify({
+          articleId: createHash("sha256").update(target.id).digest("hex").slice(0, 16),
+          title: target.title, url: target.url,
+          category: target.category, sourceName: target.sourceName,
+          blocked: true, blockReason: verification.reason,
+          postedAt: new Date().toISOString(), postType: "video",
+        }),
+        signal: AbortSignal.timeout(5000),
+      }).catch(() => {});
+      return NextResponse.json({ posted: 0, message: `Story blocked: ${verification.reason}`, blocked: true });
+    }
+    if (verification.confidence < 40) {
+      console.warn(`[verify] LOW CONFIDENCE: "${target.title}" — ${verification.reason} (${verification.confidence}%) — skipping`);
+      return NextResponse.json({ posted: 0, message: `Low confidence story skipped (${verification.confidence}%)`, blocked: true });
+    }
+    console.log(`[verify] APPROVED: "${target.title}" — ${verification.reason} (${verification.confidence}%)`);
 
     const staged = await stageVideoInR2(directUrl);
     if (!staged) {
