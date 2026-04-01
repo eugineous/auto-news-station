@@ -636,10 +636,10 @@ async function triggerAutomate(env) {
     console.log(`[throttle] Dead zone (${hourEAT}:00 EAT) — skipping`);
     return;
   }
-  // Peak hours (7am-10pm EAT): 70% chance to post when eligible
-  // Off-peak: 40% chance
+  // Peak hours (7am-10pm EAT): 95% chance to post when eligible
+  // Off-peak: 60% chance — still post regularly outside peak
   const isPeak = hourEAT >= 7 && hourEAT <= 22;
-  const postChance = isPeak ? 0.70 : 0.40;
+  const postChance = isPeak ? 0.95 : 0.60;
   if (Math.random() > postChance) {
     console.log(`[throttle] Random skip (${isPeak ? "peak" : "off-peak"} hour ${hourEAT}:00 EAT)`);
     return;
