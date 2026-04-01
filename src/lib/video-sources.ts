@@ -440,9 +440,11 @@ async function fetchTikTokAccountVideos(account: TikTokAccount): Promise<VideoIt
   }
 }
 
-// ── 7. TikWM Trending — always returns fresh viral videos ────────────────────
+// ── 7. TikWM Trending — scrapes known news accounts via single-video API ─────
 async function fetchTikWMTrending(): Promise<VideoItem[]> {
-  const TRENDING_ACCOUNTS = [
+  // These are known recent video URLs from verified news accounts
+  // We fetch the account page to get the latest video ID, then use TikWM single-video API
+  const ACCOUNTS = [
     { username: "citizen.digital",   cat: "NEWS",          name: "Citizen Digital" },
     { username: "bbcnewsswahili",    cat: "NEWS",          name: "BBC News Swahili" },
     { username: "aljazeeraenglish",  cat: "NEWS",          name: "Al Jazeera" },
@@ -458,35 +460,58 @@ async function fetchTikWMTrending(): Promise<VideoItem[]> {
   const items: VideoItem[] = [];
   const now = new Date().toISOString();
 
-  await Promise.allSettled(TRENDING_ACCOUNTS.map(async (acct) => {
+  await Promise.allSettled(ACCOUNTS.map(async (acct) => {
     try {
-      const body = new URLSearchParams({ unique_id: acct.username, count: "5", cursor: "0" });
-      const res = await fetch("https://www.tikwm.com/api/user/posts", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": "Mozilla/5.0 (compatible; PPPTVBot/1.0)" },
-        body: body.toString(),
-        signal: AbortSignal.timeout(12000),
+      // Fetch account page to extract latest video IDs
+      const pageRes = await fetch(`https://www.tiktok.com/@${acct.username}`, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15",
+          "Accept": "text/html,application/xhtml+xml,*/*",
+        },
+        signal: AbortSignal.timeout(10000),
       });
-      if (!res.ok) return;
-      const data = await res.json() as any;
-      if (data.code !== 0 || !data.data?.videos?.length) return;
+      if (!pageRes.ok) return;
+      const html = await pageRes.text();
 
-      for (const v of data.data.videos.slice(0, 2)) {
-        const title = v.title || v.desc || "";
-        if (!title) continue;
-        if (!isRecent(new Date(v.create_time * 1000).toISOString(), 48)) continue;
-        const videoUrl = `https://www.tiktok.com/@${acct.username}/video/${v.id}`;
-        items.push({
-          id: `tikwm:${acct.username}:${v.id}`,
-          title: title.slice(0, 200),
-          url: videoUrl,
-          directVideoUrl: v.hdplay || v.play || undefined,
-          thumbnail: v.cover || v.origin_cover || "",
-          publishedAt: new Date(v.create_time * 1000),
-          sourceName: acct.name,
-          sourceType: "direct-mp4",
-          category: acct.cat,
-        });
+      // Extract video IDs from the page
+      const videoIds = Array.from(html.matchAll(/"id":"(\d{15,20})"/g))
+        .map(m => m[1])
+        .filter((id, i, arr) => arr.indexOf(id) === i)
+        .slice(0, 3);
+
+      if (!videoIds.length) return;
+
+      // Resolve each video via TikWM single-video API
+      for (const videoId of videoIds.slice(0, 2)) {
+        try {
+          const videoUrl = `https://www.tiktok.com/@${acct.username}/video/${videoId}`;
+          const body = new URLSearchParams({ url: videoUrl, hd: "1" });
+          const res = await fetch("https://www.tikwm.com/api/", {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": "Mozilla/5.0 (compatible; PPPTVBot/1.0)" },
+            body: body.toString(),
+            signal: AbortSignal.timeout(10000),
+          });
+          if (!res.ok) continue;
+          const data = await res.json() as any;
+          if (data.code !== 0 || !data.data) continue;
+          const v = data.data;
+          const title = v.title || v.desc || "";
+          if (!title) continue;
+          if (!isRecent(new Date(v.create_time * 1000).toISOString(), 48)) continue;
+
+          items.push({
+            id: `tikwm:${acct.username}:${videoId}`,
+            title: title.slice(0, 200),
+            url: videoUrl,
+            directVideoUrl: v.hdplay || v.play || undefined,
+            thumbnail: v.cover || v.origin_cover || "",
+            publishedAt: new Date(v.create_time * 1000),
+            sourceName: acct.name,
+            sourceType: "direct-mp4",
+            category: acct.cat,
+          });
+        } catch {}
       }
     } catch {}
   }));

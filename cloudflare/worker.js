@@ -369,22 +369,25 @@ export default {
         const { videoId } = await request.json();
         if (!videoId) return json({ error: "videoId required" }, 400);
 
-        // Use YouTube's internal player API (no key needed)
+        // Use YouTube's iOS client — bypasses bot detection
         const playerRes = await fetch("https://www.youtube.com/youtubei/v1/player", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "User-Agent": "Mozilla/5.0 (Linux; Android 11; Pixel 5) AppleWebKit/537.36",
-            "X-YouTube-Client-Name": "3",
-            "X-YouTube-Client-Version": "17.31.35",
+            "User-Agent": "com.google.ios.youtube/19.29.1 (iPhone16,2; U; CPU iOS 17_5_1 like Mac OS X)",
+            "X-YouTube-Client-Name": "5",
+            "X-YouTube-Client-Version": "19.29.1",
           },
           body: JSON.stringify({
             videoId,
             context: {
               client: {
-                clientName: "ANDROID",
-                clientVersion: "17.31.35",
-                androidSdkVersion: 30,
+                clientName: "IOS",
+                clientVersion: "19.29.1",
+                deviceModel: "iPhone16,2",
+                hl: "en",
+                gl: "US",
+                utcOffsetMinutes: 0,
               }
             }
           }),
@@ -394,18 +397,37 @@ export default {
         if (!playerRes.ok) return json({ error: `YouTube API ${playerRes.status}` }, 500);
         const data = await playerRes.json();
 
+        // Debug: return what we got
+        const streamingKeys = Object.keys(data?.streamingData || {});
+        const formatCount = (data?.streamingData?.formats || []).length;
+        const adaptiveCount = (data?.streamingData?.adaptiveFormats || []).length;
+        const playabilityStatus = data?.playabilityStatus?.status;
+
+        if (playabilityStatus !== "OK") {
+          return json({ error: `Video not playable: ${playabilityStatus}`, reason: data?.playabilityStatus?.reason }, 403);
+        }
+
         const formats = data?.streamingData?.formats || [];
         const adaptiveFormats = data?.streamingData?.adaptiveFormats || [];
-        const allFormats = [...formats, ...adaptiveFormats];
 
-        // Pick best MP4 with audio
-        const mp4 = allFormats
-          .filter(f => f.mimeType?.includes("video/mp4") && f.audioQuality)
-          .sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0));
+        // Prefer combined formats (video+audio), then adaptive video with audio
+        const combined = formats.filter(f => f.mimeType?.includes("video/mp4"));
+        const adaptive = adaptiveFormats.filter(f =>
+          f.mimeType?.includes("video/mp4") && f.audioQuality
+        );
+        const allMp4 = [...combined, ...adaptive].sort((a, b) =>
+          (b.bitrate || 0) - (a.bitrate || 0)
+        );
 
-        if (!mp4.length) return json({ error: "No MP4 streams found" }, 404);
+        if (!allMp4.length) {
+          const anyFormat = [...formats, ...adaptiveFormats].find(f => f.url);
+          if (anyFormat) {
+            return json({ success: true, url: anyFormat.url, quality: anyFormat.qualityLabel || "unknown", mimeType: anyFormat.mimeType });
+          }
+          return json({ error: "No MP4 streams found", formatCount, adaptiveCount, streamingKeys }, 404);
+        }
 
-        const best = mp4[0];
+        const best = allMp4[0];
         return json({
           success: true,
           url: best.url,
