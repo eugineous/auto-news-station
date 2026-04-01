@@ -57,7 +57,30 @@ async function resolveYouTube(url: string): Promise<VideoResolution | null> {
   }
 }
 
-// ── YouTube via yt1s/y2mate style API — fallback when ytdl fails ─────────────
+// ── YouTube via Cloudflare Worker (bypasses Vercel restrictions) ─────────────
+async function resolveYouTubeViaWorker(url: string): Promise<VideoResolution | null> {
+  const videoId = url.match(/(?:v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/)?.[1];
+  if (!videoId) return null;
+  const WORKER_URL = process.env.CLOUDFLARE_WORKER_URL || "https://auto-ppp-tv.euginemicah.workers.dev";
+  const WORKER_SECRET = process.env.WORKER_SECRET || "ppptvWorker2024";
+  try {
+    const res = await fetch(`${WORKER_URL}/resolve-youtube`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${WORKER_SECRET}` },
+      body: JSON.stringify({ videoId }),
+      signal: AbortSignal.timeout(20000),
+    });
+    if (!res.ok) return null;
+    const data = await res.json() as any;
+    if (!data.success || !data.url) return null;
+    return {
+      url: data.url,
+      filename: `${videoId}.mp4`,
+      thumbnail: `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
+      platform: "youtube",
+    };
+  } catch { return null; }
+}
 async function resolveYouTubeViaAPI(url: string): Promise<VideoResolution | null> {
   // Try cobalt first for YouTube as a reliable fallback
   try {
@@ -442,8 +465,11 @@ export async function resolveVideoUrl(sourceUrl: string): Promise<VideoResolutio
     return { url: sourceUrl, platform: "direct" };
   }
 
-  // YouTube — ytdl first, then API fallback, then Cobalt
+  // YouTube — worker resolver first (bypasses Vercel), then ytdl, then Cobalt
   if (isYouTube(sourceUrl)) {
+    const worker = await resolveYouTubeViaWorker(sourceUrl);
+    if (worker) return worker;
+    console.warn("[video-dl] worker YouTube failed, trying ytdl...");
     const yt = await resolveYouTube(sourceUrl);
     if (yt) return yt;
     console.warn("[video-dl] ytdl failed, trying YouTube API fallback...");

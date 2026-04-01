@@ -304,11 +304,26 @@ export async function POST(req: NextRequest) {
       } else if (video.directVideoUrl) {
         url = video.directVideoUrl;
       } else if (video.url.includes("youtube.com") || video.url.includes("youtu.be")) {
-      // For YouTube, try ytdl directly — skip if it fails (don't wait for Cobalt timeout)
-      try {
+      // For YouTube, try worker resolver first (bypasses Vercel restrictions)
+      const videoId = video.url.match(/(?:v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/)?.[1];
+      if (videoId) {
+        try {
+          const wRes = await fetch(`${WORKER_URL}/resolve-youtube`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },
+            body: JSON.stringify({ videoId }),
+            signal: AbortSignal.timeout(20000),
+          });
+          if (wRes.ok) {
+            const wd = await wRes.json() as any;
+            if (wd.success && wd.url) url = wd.url;
+          }
+        } catch {}
+      }
+      if (!url) {
         const resolved = await resolveVideoUrl(video.url).catch(() => null);
         url = resolved?.url || null;
-      } catch {}
+      }
     } else {
         const resolved = await resolveVideoUrl(video.url).catch(() => null);
         url = resolved?.url || null;

@@ -361,6 +361,60 @@ export default {
       } catch (err) { return json({ error: err.message }, 500); }
     }
 
+    // ── /resolve-youtube ──────────────────────────────────────────────────────
+    // Resolves a YouTube video ID to a direct MP4 URL using YouTube's internal API
+    if (url.pathname === "/resolve-youtube" && request.method === "POST") {
+      if (!authed) return new Response("Unauthorized", { status: 401 });
+      try {
+        const { videoId } = await request.json();
+        if (!videoId) return json({ error: "videoId required" }, 400);
+
+        // Use YouTube's internal player API (no key needed)
+        const playerRes = await fetch("https://www.youtube.com/youtubei/v1/player", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Linux; Android 11; Pixel 5) AppleWebKit/537.36",
+            "X-YouTube-Client-Name": "3",
+            "X-YouTube-Client-Version": "17.31.35",
+          },
+          body: JSON.stringify({
+            videoId,
+            context: {
+              client: {
+                clientName: "ANDROID",
+                clientVersion: "17.31.35",
+                androidSdkVersion: 30,
+              }
+            }
+          }),
+          signal: AbortSignal.timeout(15000),
+        });
+
+        if (!playerRes.ok) return json({ error: `YouTube API ${playerRes.status}` }, 500);
+        const data = await playerRes.json();
+
+        const formats = data?.streamingData?.formats || [];
+        const adaptiveFormats = data?.streamingData?.adaptiveFormats || [];
+        const allFormats = [...formats, ...adaptiveFormats];
+
+        // Pick best MP4 with audio
+        const mp4 = allFormats
+          .filter(f => f.mimeType?.includes("video/mp4") && f.audioQuality)
+          .sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0));
+
+        if (!mp4.length) return json({ error: "No MP4 streams found" }, 404);
+
+        const best = mp4[0];
+        return json({
+          success: true,
+          url: best.url,
+          quality: best.qualityLabel,
+          mimeType: best.mimeType,
+        });
+      } catch (err) { return json({ error: err.message }, 500); }
+    }
+
     // ── /pipeline/pause ───────────────────────────────────────────────────────
     if (url.pathname === "/pipeline/pause" && request.method === "POST") {
       if (!authed) return new Response("Unauthorized", { status: 401 });

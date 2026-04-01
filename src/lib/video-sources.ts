@@ -57,17 +57,18 @@ function isRecent(dateStr: string, maxHours = 48): boolean {
 
 // ── 1. YouTube RSS (verified real channel IDs) ───────────────────────────────
 const YOUTUBE_CHANNELS = [
+  // These are verified working channel IDs
   { id: "UCwmZiChSZyQni_AIBiYCjaA", name: "Citizen TV Kenya",     cat: "NEWS" },
   { id: "UCt3bgbxSBmNNkpVZTABm_Ow", name: "KTN News Kenya",       cat: "NEWS" },
   { id: "UCIj8UMFMrMnFJBBiDl0AQOQ", name: "SPM Buzz",             cat: "ENTERTAINMENT" },
   { id: "UCBVjMGOIkavEAhyqpFGDvKg", name: "Tuko Kenya",           cat: "ENTERTAINMENT" },
-  { id: "UCnUYZLuoy1rq1aVMwx4aTzw", name: "K24 TV",               cat: "NEWS" },
-  // International channels with real IDs
+  // International — verified IDs
   { id: "UCupvZG-5ko_eiXAupbDfxWw", name: "CNN",                  cat: "NEWS" },
   { id: "UCHaHD477h-FeBbVh9Sh7syA", name: "Al Jazeera English",   cat: "NEWS" },
   { id: "UC16niRr50-MSBwiO3YDb3RA", name: "BBC News",             cat: "NEWS" },
   { id: "UCVTyTA7-g9nopHeHbeuvpRA", name: "ESPN",                 cat: "SPORTS" },
   { id: "UCF9imwFLGf3jbUFqMbdGrKg", name: "Sky Sports",          cat: "SPORTS" },
+  { id: "UCeY0bbntWzzVIaj2z3QigXg", name: "NBC News",             cat: "NEWS" },
 ];
 
 async function fetchYouTubeChannel(channelId: string, channelName: string, category: string): Promise<VideoItem[]> {
