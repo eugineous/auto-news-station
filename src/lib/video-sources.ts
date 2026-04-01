@@ -71,8 +71,8 @@ const YOUTUBE_CHANNELS = [
 ];
 
 async function fetchYouTubeChannel(channelId: string, channelName: string, category: string): Promise<VideoItem[]> {
-  const xml = await safeFetch(`https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`);
-  if (!xml) return [];
+  const xml = await safeFetch(`https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`, 15000);
+  if (!xml || xml.includes("404") || xml.length < 200) return [];
 
   const items: VideoItem[] = [];
   const entryRegex = /<entry>([\s\S]*?)<\/entry>/g;
@@ -433,6 +433,60 @@ async function fetchTikTokAccountVideos(account: TikTokAccount): Promise<VideoIt
   }
 }
 
+// ── 7. TikWM Trending — always returns fresh viral videos ────────────────────
+async function fetchTikWMTrending(): Promise<VideoItem[]> {
+  const TRENDING_ACCOUNTS = [
+    { username: "citizen.digital",   cat: "NEWS",          name: "Citizen Digital" },
+    { username: "bbcnewsswahili",    cat: "NEWS",          name: "BBC News Swahili" },
+    { username: "aljazeeraenglish",  cat: "NEWS",          name: "Al Jazeera" },
+    { username: "cnn",               cat: "NEWS",          name: "CNN" },
+    { username: "skysportsnews",     cat: "SPORTS",        name: "Sky Sports News" },
+    { username: "espn",              cat: "SPORTS",        name: "ESPN" },
+    { username: "tmz",               cat: "CELEBRITY",     name: "TMZ" },
+    { username: "nbcnews",           cat: "NEWS",          name: "NBC News" },
+    { username: "bbcnews",           cat: "NEWS",          name: "BBC News" },
+    { username: "abcnews",           cat: "NEWS",          name: "ABC News" },
+  ];
+
+  const items: VideoItem[] = [];
+  const now = new Date().toISOString();
+
+  await Promise.allSettled(TRENDING_ACCOUNTS.map(async (acct) => {
+    try {
+      const body = new URLSearchParams({ unique_id: acct.username, count: "5", cursor: "0" });
+      const res = await fetch("https://www.tikwm.com/api/user/posts", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": "Mozilla/5.0 (compatible; PPPTVBot/1.0)" },
+        body: body.toString(),
+        signal: AbortSignal.timeout(12000),
+      });
+      if (!res.ok) return;
+      const data = await res.json() as any;
+      if (data.code !== 0 || !data.data?.videos?.length) return;
+
+      for (const v of data.data.videos.slice(0, 2)) {
+        const title = v.title || v.desc || "";
+        if (!title) continue;
+        if (!isRecent(new Date(v.create_time * 1000).toISOString(), 48)) continue;
+        const videoUrl = `https://www.tiktok.com/@${acct.username}/video/${v.id}`;
+        items.push({
+          id: `tikwm:${acct.username}:${v.id}`,
+          title: title.slice(0, 200),
+          url: videoUrl,
+          directVideoUrl: v.hdplay || v.play || undefined,
+          thumbnail: v.cover || v.origin_cover || "",
+          publishedAt: new Date(v.create_time * 1000),
+          sourceName: acct.name,
+          sourceType: "direct-mp4",
+          category: acct.cat,
+        });
+      }
+    } catch {}
+  }));
+
+  return items;
+}
+
 export async function fetchAllVideoSources(): Promise<VideoItem[]> {
   // Initialize bloom filter — use try/catch in case of API changes
   if (!bloom) {
@@ -441,18 +495,20 @@ export async function fetchAllVideoSources(): Promise<VideoItem[]> {
   }
 
   const allResults = await Promise.allSettled([
-    // YouTube (10 channels)
+    // YouTube (10 channels) — may be blocked server-side
     ...YOUTUBE_CHANNELS.map(ch => fetchYouTubeChannel(ch.id, ch.name, ch.cat)),
     // Dailymotion (4 feeds)
     ...DAILYMOTION_FEEDS.map(f => fetchDailymotionFeed(f.url, f.name, f.cat)),
-    // Reddit (5 subreddits)
+    // Reddit (5 subreddits) — most reliable, no auth needed
     ...REDDIT_FEEDS.map(f => fetchRedditFeed(f.url, f.name, f.cat)),
-    // News RSS with video embeds (20 feeds)
+    // News RSS with video embeds (YouTube embeds + MP4 enclosures only)
     ...NEWS_RSS_FEEDS.map(f => fetchNewsRSSWithVideo(f.url, f.name, f.cat)),
     // Vimeo (2 feeds)
     ...VIMEO_FEEDS.map(f => fetchVimeoFeed(f.url, f.name, f.cat)),
-    // TikTok accounts (14 accounts, 1 video/day each at staggered hours)
+    // TikTok accounts via TikWM
     ...TIKTOK_ACCOUNTS.map(a => fetchTikTokAccountVideos(a)),
+    // TikWM trending — always returns fresh videos
+    fetchTikWMTrending(),
   ]);
 
   const all: VideoItem[] = [];
