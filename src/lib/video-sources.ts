@@ -257,10 +257,13 @@ async function fetchNewsRSSWithVideo(feedUrl: string, sourceName: string, catego
     if (!title || !link || !isRecent(pubDate)) continue;
 
     // Use YouTube embed if found, else mp4 enclosure, else the article link itself
-    // (post-video can resolve YouTube from article pages via scraping)
+    // Only include items with a real video URL — YouTube embed or direct MP4
+    // Skip plain article links — they can't be resolved as videos
+    if (!ytVideoId && !enclosureUrl) continue;
+
     const videoUrl = ytVideoId
       ? `https://www.youtube.com/watch?v=${ytVideoId}`
-      : enclosureUrl || link;
+      : enclosureUrl;
 
     const thumbUrl = ytVideoId
       ? `https://img.youtube.com/vi/${ytVideoId}/maxresdefault.jpg`
@@ -269,11 +272,11 @@ async function fetchNewsRSSWithVideo(feedUrl: string, sourceName: string, catego
     items.push({
       id: `rss:${link}`,
       title,
-      url: videoUrl,
+      url: videoUrl!,
       thumbnail: thumbUrl,
       publishedAt: new Date(pubDate),
       sourceName,
-      sourceType: ytVideoId ? "youtube" : enclosureUrl ? "rss-video" : "youtube",
+      sourceType: ytVideoId ? "youtube" : "rss-video",
       category,
       directVideoUrl: enclosureUrl || undefined,
     });
