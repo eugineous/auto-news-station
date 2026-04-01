@@ -279,11 +279,14 @@ export async function POST(req: NextRequest) {
 
     await markVideoSeen(target.id);
 
-    // If we already have a direct video URL (e.g. from TikWM), use it directly
-    // Only resolve if we have a platform page URL (tiktok.com, youtube.com, etc.)
+    // If we already have a direct video URL (CDN), use it directly without re-resolving
+    // TikWM returns CDN URLs like v19-webapp.tiktok.com or tikcdn.io
     let directUrl: string | null = null;
-    if (target.directVideoUrl && /\.(mp4|mov|webm)/i.test(target.directVideoUrl)) {
-      // Already a direct CDN URL — use as-is
+    const isCdnUrl = (u: string) => /\.(mp4|mov|webm)/i.test(u) ||
+      /v\d+-webapp\.tiktok\.com|tikcdn\.io|tiktokcdn\.com|v16-webapp|v19-webapp|v26-webapp/i.test(u) ||
+      /googlevideo\.com|cdninstagram\.com|video\.twimg\.com/i.test(u);
+
+    if (target.directVideoUrl && isCdnUrl(target.directVideoUrl)) {
       directUrl = target.directVideoUrl;
     } else {
       const videoUrlToResolve = target.directVideoUrl || target.url;
