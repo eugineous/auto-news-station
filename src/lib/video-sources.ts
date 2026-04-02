@@ -545,17 +545,19 @@ async function fetchTikWMTrending(): Promise<VideoItem[]> {
 
   const items: VideoItem[] = [];
 
-  // Always include 2 guaranteed Kenya terms + 3 random global terms for variety
+  // Always include 4 guaranteed terms + 6 random global terms for variety
   const GUARANTEED = [
-    { keyword: "nairobi", cat: "ENTERTAINMENT", name: "TikTok Nairobi" },
-    { keyword: "celebrity news", cat: "CELEBRITY", name: "TikTok Celebrity News" },
+    { keyword: "nairobi viral", cat: "ENTERTAINMENT", name: "TikTok Nairobi" },
+    { keyword: "celebrity news today", cat: "CELEBRITY", name: "TikTok Celebrity News" },
+    { keyword: "viral video trending", cat: "ENTERTAINMENT", name: "TikTok Viral Trending" },
+    { keyword: "africa entertainment viral", cat: "ENTERTAINMENT", name: "TikTok Africa Entertainment" },
   ];
-  const randomTerms = [...SEARCH_TERMS].sort(() => Math.random() - 0.5).slice(0, 2);
+  const randomTerms = [...SEARCH_TERMS].sort(() => Math.random() - 0.5).slice(0, 6);
   const shuffled = [...GUARANTEED, ...randomTerms];
 
-  // Run searches sequentially — stops early when we have 5+ videos to avoid Vercel timeout
+  // Run searches sequentially — collect up to 20 videos
   for (const term of shuffled) {
-    if (items.length >= 5) break;
+    if (items.length >= 20) break;
     try {
       const body = new URLSearchParams({ keywords: term.keyword, count: "5", cursor: "0", HD: "1" });
       const res = await fetch("https://www.tikwm.com/api/feed/search", {

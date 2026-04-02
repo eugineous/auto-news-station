@@ -352,8 +352,7 @@ export async function POST(req: NextRequest) {
         await markVideoSeen(video.id);
         break;
       }
-      // Can't resolve this one — mark seen and try next
-      await markVideoSeen(video.id);
+      // Can't resolve URL — do NOT mark seen, so we can retry next run
     }
 
     if (!target || !directUrl) {

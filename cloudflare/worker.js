@@ -6,7 +6,7 @@
  */
 
 const TTL_SECONDS = 30 * 24 * 60 * 60;
-const FEED_URL = "https://ppp-tv-worker.euginemicah.workers.dev/feed?limit=50";
+const FEED_URL = "https://auto-ppp-tv.euginemicah.workers.dev/feed?limit=50";
 const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
 const NVIDIA_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
 const PUB_BASE = "https://pub-8244b5f99b024cda91b74e1131378a14.r2.dev";
