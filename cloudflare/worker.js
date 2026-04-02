@@ -528,6 +528,26 @@ export default {
       } catch (err) { return json({ error: err.message }, 500); }
     }
 
+    // ── /tikwm-search ─────────────────────────────────────────────────────────
+    // Proxies TikWM search through the worker to bypass Vercel IP blocks
+    if (url.pathname === "/tikwm-search" && request.method === "POST") {
+      if (!authed) return new Response("Unauthorized", { status: 401 });
+      try {
+        const { keywords, count = "10", cursor = "0" } = await request.json();
+        if (!keywords) return json({ error: "keywords required" }, 400);
+        const body = new URLSearchParams({ keywords, count: String(count), cursor: String(cursor), HD: "1", sort_type: "1" });
+        const r = await fetch("https://www.tikwm.com/api/feed/search", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": "Mozilla/5.0 (compatible; PPPTVBot/2.0)" },
+          body: body.toString(),
+          signal: AbortSignal.timeout(12000),
+        });
+        if (!r.ok) return json({ error: `TikWM ${r.status}` }, 502);
+        const data = await r.json();
+        return json(data);
+      } catch (err) { return json({ error: err.message }, 500); }
+    }
+
     // ── /r2-health ────────────────────────────────────────────────────────────
     if (url.pathname === "/r2-health") {
       if (!authed) return new Response("Unauthorized", { status: 401 });

@@ -67,18 +67,18 @@ function isRecent(dateStr: string, maxHours = 48): boolean {
 
 // ── 1. YouTube RSS (verified real channel IDs) ───────────────────────────────
 const YOUTUBE_CHANNELS = [
-  // These are verified working channel IDs
-  { id: "UCwmZiChSZyQni_AIBiYCjaA", name: "Citizen TV Kenya",     cat: "NEWS" },
-  { id: "UCt3bgbxSBmNNkpVZTABm_Ow", name: "KTN News Kenya",       cat: "NEWS" },
+  // Kenya Entertainment
   { id: "UCIj8UMFMrMnFJBBiDl0AQOQ", name: "SPM Buzz",             cat: "ENTERTAINMENT" },
   { id: "UCBVjMGOIkavEAhyqpFGDvKg", name: "Tuko Kenya",           cat: "ENTERTAINMENT" },
-  // International — verified IDs
-  { id: "UCupvZG-5ko_eiXAupbDfxWw", name: "CNN",                  cat: "NEWS" },
-  { id: "UCHaHD477h-FeBbVh9Sh7syA", name: "Al Jazeera English",   cat: "NEWS" },
-  { id: "UC16niRr50-MSBwiO3YDb3RA", name: "BBC News",             cat: "NEWS" },
+  { id: "UCwmZiChSZyQni_AIBiYCjaA", name: "Citizen TV Kenya",     cat: "ENTERTAINMENT" },
+  { id: "UCt3bgbxSBmNNkpVZTABm_Ow", name: "KTN News Kenya",       cat: "ENTERTAINMENT" },
+  // International Entertainment & Sports
   { id: "UCVTyTA7-g9nopHeHbeuvpRA", name: "ESPN",                 cat: "SPORTS" },
   { id: "UCF9imwFLGf3jbUFqMbdGrKg", name: "Sky Sports",          cat: "SPORTS" },
-  { id: "UCeY0bbntWzzVIaj2z3QigXg", name: "NBC News",             cat: "NEWS" },
+  { id: "UCupvZG-5ko_eiXAupbDfxWw", name: "CNN",                  cat: "ENTERTAINMENT" },
+  { id: "UCHaHD477h-FeBbVh9Sh7syA", name: "Al Jazeera English",   cat: "ENTERTAINMENT" },
+  { id: "UC16niRr50-MSBwiO3YDb3RA", name: "BBC News",             cat: "ENTERTAINMENT" },
+  { id: "UCeY0bbntWzzVIaj2z3QigXg", name: "NBC News",             cat: "ENTERTAINMENT" },
 ];
 
 async function fetchYouTubeChannel(channelId: string, channelName: string, category: string): Promise<VideoItem[]> {
@@ -559,12 +559,14 @@ async function fetchTikWMTrending(): Promise<VideoItem[]> {
   for (const term of shuffled) {
     if (items.length >= 20) break;
     try {
-      const body = new URLSearchParams({ keywords: term.keyword, count: "5", cursor: "0", HD: "1" });
-      const res = await fetch("https://www.tikwm.com/api/feed/search", {
+      // Route through Cloudflare Worker to bypass Vercel IP blocks on TikWM
+      const WORKER_URL = process.env.CLOUDFLARE_WORKER_URL || "https://auto-ppp-tv.euginemicah.workers.dev";
+      const WORKER_SECRET = process.env.WORKER_SECRET || "ppptvWorker2024";
+      const res = await fetch(`${WORKER_URL}/tikwm-search`, {
         method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": "Mozilla/5.0 (compatible; PPPTVBot/1.0)" },
-        body: body.toString(),
-        signal: AbortSignal.timeout(6000),
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${WORKER_SECRET}` },
+        body: JSON.stringify({ keywords: term.keyword, count: "10", cursor: "0" }),
+        signal: AbortSignal.timeout(15000),
       });
       if (!res.ok) continue;
       const data = await res.json() as any;
@@ -604,12 +606,16 @@ export async function fetchAllVideoSources(): Promise<VideoItem[]> {
   }
 
   const allResults = await Promise.allSettled([
-    // TikWM search — most reliable, returns direct CDN URLs
+    // TikWM search via worker proxy
     fetchTikWMTrending(),
-    // Reddit native videos — only 2 feeds to stay under timeout
-    ...REDDIT_FEEDS.slice(0, 2).map(f => fetchRedditFeed(f.url, f.name, f.cat)),
-    // YouTube RSS — only 2 channels
-    ...YOUTUBE_CHANNELS.slice(0, 2).map(ch => fetchYouTubeChannel(ch.id, ch.name, ch.cat)),
+    // YouTube RSS — all channels (most reliable, no rate limits)
+    ...YOUTUBE_CHANNELS.map(ch => fetchYouTubeChannel(ch.id, ch.name, ch.cat)),
+    // Reddit native videos
+    ...REDDIT_FEEDS.slice(0, 3).map(f => fetchRedditFeed(f.url, f.name, f.cat)),
+    // Dailymotion
+    ...DAILYMOTION_FEEDS.slice(0, 2).map(f => fetchDailymotionFeed(f.url, f.name, f.cat)),
+    // News RSS with video embeds
+    ...NEWS_RSS_FEEDS.slice(0, 5).map(f => fetchNewsRSSWithVideo(f.url, f.name, f.cat)),
   ]);
 
   const all: VideoItem[] = [];

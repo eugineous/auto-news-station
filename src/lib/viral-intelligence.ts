@@ -82,12 +82,13 @@ export async function fetchViralTikTokVideos(keywords: string[]): Promise<ViralI
 
   await Promise.allSettled(keywords.map(async (keyword) => {
     try {
-      const body = new URLSearchParams({ keywords: keyword, count: "10", cursor: "0", HD: "1", sort_type: "1" }); // sort_type=1 = most liked
-      const res = await fetch("https://www.tikwm.com/api/feed/search", {
+      const WORKER_URL = process.env.CLOUDFLARE_WORKER_URL || "https://auto-ppp-tv.euginemicah.workers.dev";
+      const WORKER_SECRET = process.env.WORKER_SECRET || "ppptvWorker2024";
+      const res = await fetch(`${WORKER_URL}/tikwm-search`, {
         method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": UA },
-        body: body.toString(),
-        signal: AbortSignal.timeout(8000),
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${WORKER_SECRET}` },
+        body: JSON.stringify({ keywords: keyword, count: "10", cursor: "0" }),
+        signal: AbortSignal.timeout(12000),
       });
       if (!res.ok) return;
       const data = await res.json() as any;
