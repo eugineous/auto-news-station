@@ -49,11 +49,13 @@ export default function QueuePage() {
   const [filterCat, setFilterCat] = useState("ALL");
   const [statuses, setStatuses] = useState<Record<string, PostStatus>>({});
   const [toast, setToast] = useState<{ msg: string; type: "ok" | "err" } | null>(null);
+  const [postingAll, setPostingAll] = useState(false);
+  const [postAllProgress, setPostAllProgress] = useState<{ current: number; total: number } | null>(null);
 
   const fetchFeed = useCallback(async () => {
     setLoading(true); setError(null);
     try {
-      const r = await fetch(`https://ppp-tv-worker.euginemicah.workers.dev/feed?limit=30`);
+      const r = await fetch(`https://auto-ppp-tv.euginemicah.workers.dev/feed?limit=30`);
       if (!r.ok) throw new Error("Feed unavailable");
       const d = await r.json();
       setItems(d.articles || d.items || []);
@@ -92,6 +94,19 @@ export default function QueuePage() {
     }
   }
 
+  async function postAllVisible() {
+    const toPost = filtered.filter(item => !statuses[item.link]?.ok);
+    if (!toPost.length) return;
+    setPostingAll(true);
+    for (let i = 0; i < toPost.length; i++) {
+      setPostAllProgress({ current: i + 1, total: toPost.length });
+      await postItem(toPost[i]);
+      if (i < toPost.length - 1) await new Promise(r => setTimeout(r, 3000));
+    }
+    setPostingAll(false);
+    setPostAllProgress(null);
+  }
+
   const filtered = items.filter(item => {
     if (search && !item.title.toLowerCase().includes(search.toLowerCase())) return false;
     if (filterCat !== "ALL" && item.category?.toUpperCase() !== filterCat) return false;
@@ -118,9 +133,21 @@ export default function QueuePage() {
               </p>
             </div>
           </div>
-          <button onClick={fetchFeed} style={{ background: "#1f1f1f", border: "1px solid #2a2a2a", color: "#888", borderRadius: 6, padding: "8px 14px", fontSize: 12, cursor: "pointer" }}>
-            ↻ Refresh
-          </button>
+          <div style={{ display: "flex", gap: 8 }}>
+            {filtered.length > 0 && !postingAll && (
+              <button onClick={postAllVisible} style={{ background: PINK, border: "none", color: "#fff", borderRadius: 6, padding: "8px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                Post All ({filtered.filter(i => !statuses[i.link]?.ok).length})
+              </button>
+            )}
+            {postingAll && postAllProgress && (
+              <span style={{ fontSize: 12, color: "#888", alignSelf: "center" }}>
+                Posting {postAllProgress.current} of {postAllProgress.total}…
+              </span>
+            )}
+            <button onClick={fetchFeed} style={{ background: "#1f1f1f", border: "1px solid #2a2a2a", color: "#888", borderRadius: 6, padding: "8px 14px", fontSize: 12, cursor: "pointer" }}>
+              ↻ Refresh
+            </button>
+          </div>
         </div>
 
         {/* Filters */}

@@ -347,24 +347,30 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ posted: 0, message: "No resolvable videos found from any source" });
     }
 
-    // ── Story verification — cross-reference against credible sources ─────────
-    const verification = await verifyStory(target.title, target.url);
-    if (!verification.verified) {
-      console.warn(`[verify] BLOCKED: "${target.title}" — ${verification.reason} (confidence: ${verification.confidence})`);
-      await logPost({
-        article_id: createHash("sha256").update(target.id).digest("hex").slice(0, 16),
-        title: target.title, url: target.url,
-        category: target.category, source_name: target.sourceName,
-        blocked: true, block_reason: verification.reason,
-        post_type: "video",
-      });
-      return NextResponse.json({ posted: 0, message: `Story blocked: ${verification.reason}`, blocked: true });
+    // ── Story verification — only apply to news/politics, skip entertainment/viral ─
+    const NEWS_CATS = new Set(["NEWS", "POLITICS", "BUSINESS", "TECHNOLOGY", "HEALTH", "SCIENCE"]);
+    const needsVerification = NEWS_CATS.has(target.category?.toUpperCase());
+    if (needsVerification) {
+      const verification = await verifyStory(target.title, target.url);
+      if (!verification.verified) {
+        console.warn(`[verify] BLOCKED: "${target.title}" — ${verification.reason} (confidence: ${verification.confidence})`);
+        await logPost({
+          article_id: createHash("sha256").update(target.id).digest("hex").slice(0, 16),
+          title: target.title, url: target.url,
+          category: target.category, source_name: target.sourceName,
+          blocked: true, block_reason: verification.reason,
+          post_type: "video",
+        });
+        return NextResponse.json({ posted: 0, message: `Story blocked: ${verification.reason}`, blocked: true });
+      }
+      if (verification.confidence < 40) {
+        console.warn(`[verify] LOW CONFIDENCE: "${target.title}" — ${verification.reason} (${verification.confidence}%) — skipping`);
+        return NextResponse.json({ posted: 0, message: `Low confidence story skipped (${verification.confidence}%)`, blocked: true });
+      }
+      console.log(`[verify] APPROVED: "${target.title}" — ${verification.reason} (${verification.confidence}%)`);
+    } else {
+      console.log(`[verify] SKIPPED for entertainment/viral content: "${target.title}" (${target.category})`);
     }
-    if (verification.confidence < 40) {
-      console.warn(`[verify] LOW CONFIDENCE: "${target.title}" — ${verification.reason} (${verification.confidence}%) — skipping`);
-      return NextResponse.json({ posted: 0, message: `Low confidence story skipped (${verification.confidence}%)`, blocked: true });
-    }
-    console.log(`[verify] APPROVED: "${target.title}" — ${verification.reason} (${verification.confidence}%)`);
 
     const staged = await stageVideoInR2(directUrl);
     if (!staged) {

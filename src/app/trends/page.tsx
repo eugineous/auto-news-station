@@ -174,7 +174,7 @@ export default function TrendsPage() {
                 </div>
 
                 <div style={{ display: "flex", flexDirection: "column" as const, gap: 6, flexShrink: 0 }}>
-                  <button onClick={() => postTrend(trend)} disabled={composing === trend.id} style={{ background: PINK, border: "none", color: "#fff", borderRadius: 6, padding: "7px 14px", fontSize: 11, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" as const, display: "flex", alignItems: "center", gap: 5 }}>
+                  <button onClick={() => postTrend(trend)} disabled={composing === trend.id || !trend.url} title={!trend.url ? "No URL available" : undefined} style={{ background: PINK, border: "none", color: "#fff", borderRadius: 6, padding: "7px 14px", fontSize: 11, fontWeight: 700, cursor: (!trend.url || composing === trend.id) ? "not-allowed" : "pointer", whiteSpace: "nowrap" as const, display: "flex", alignItems: "center", gap: 5, opacity: !trend.url ? 0.4 : 1 }}>
                     {composing === trend.id ? <><Spin /> …</> : "▶ Post This"}
                   </button>
                   {trend.url && (

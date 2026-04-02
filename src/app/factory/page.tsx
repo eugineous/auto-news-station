@@ -68,6 +68,37 @@ export default function FactoryPage() {
     }
   }
 
+  async function repostItem(i: number) {
+    setRunning(true);
+    setItems(prev => prev.map((item, idx) => idx === i ? { ...item, status: "posting" } : item));
+    try {
+      const item = items[i];
+      const resp = await fetch("/api/post-video", {
+        credentials: "include", method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: item.url, headline: item.headline, caption: item.caption + `\n\nSource: ${item.url}`, category: item.category }),
+      });
+      if (!resp.body) throw new Error("No response body");
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "", finalEvt: any = null;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split("\n"); buf = lines.pop() || "";
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          try { const evt = JSON.parse(line.slice(6)); if (evt.done) finalEvt = evt; } catch {}
+        }
+      }
+      updateItem(i, { status: finalEvt?.success ? "done" : "error", ig: finalEvt?.instagram?.success, fb: finalEvt?.facebook?.success, error: finalEvt?.error });
+    } catch (e: any) {
+      updateItem(i, { status: "error", error: e.message });
+    }
+    setRunning(false);
+  }
+
   async function postAll() {
     setRunning(true);
     const readyItems = items.filter(it => it.status === "ready");
@@ -159,7 +190,7 @@ export default function FactoryPage() {
 
             {items.length > 0 && (
               <div style={{ display: "flex", flexDirection: "column" as const, gap: 8 }}>
-                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <div style={{ position: "sticky" as const, top: 0, zIndex: 10, background: "#0a0a0a", border: "1px solid #1a1a1a", borderRadius: 7, padding: "8px 14px", display: "flex", gap: 8, alignItems: "center" }}>
                   <span style={{ fontSize: 11, color: "#555" }}>{items.length} items · {doneCount} posted · {readyCount} ready</span>
                 </div>
                 {items.map((item, i) => (
@@ -185,7 +216,10 @@ export default function FactoryPage() {
                             </div>
                           </div>
                         ) : item.status === "error" ? (
-                          <div style={{ fontSize: 11, color: RED }}>{item.error}</div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <div style={{ fontSize: 11, color: RED }}>{item.error}</div>
+                            <button onClick={() => repostItem(i)} disabled={running} style={{ background: RED + "22", border: `1px solid ${RED}44`, color: RED, borderRadius: 5, padding: "4px 10px", fontSize: 10, fontWeight: 700, cursor: running ? "not-allowed" : "pointer" }}>↺ Retry</button>
+                          </div>
                         ) : null}
                       </div>
                     </div>

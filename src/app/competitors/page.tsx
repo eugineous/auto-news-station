@@ -54,10 +54,7 @@ function Spin() {
 
 async function fetchYouTubeFeed(channelId: string, sourceName: string): Promise<CompetitorPost[]> {
   try {
-    const r = await fetch(`https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`, {
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; PPPTVBot/2.0)" },
-      signal: AbortSignal.timeout(10000),
-    });
+    const r = await fetch(`/api/competitors/feed?channelId=${channelId}`);
     if (!r.ok) return [];
     const xml = await r.text();
     const items: CompetitorPost[] = [];
@@ -105,8 +102,8 @@ export default function CompetitorsPage() {
   }
 
   useEffect(() => {
-    // Load all competitors on mount
-    competitors.forEach(c => loadCompetitor(c));
+    // Lazy load: only load first competitor on mount
+    loadCompetitor(competitors[0]);
   }, []);
 
   function addCompetitor() {
@@ -142,9 +139,14 @@ export default function CompetitorsPage() {
             <span style={{ fontSize: 24 }}>📡</span>
             <h1 style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 32, letterSpacing: 3, margin: 0 }}>Competitor Monitor</h1>
           </div>
-          <button onClick={() => setShowAdd(s => !s)} style={{ background: showAdd ? "#222" : PINK, border: "none", color: "#fff", borderRadius: 8, padding: "9px 18px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
-            {showAdd ? "✕ Cancel" : "+ Add Competitor"}
-          </button>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={() => competitors.forEach(c => loadCompetitor(c))} style={{ background: "#111", border: "1px solid #222", color: "#888", borderRadius: 8, padding: "9px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+              ↻ Refresh All
+            </button>
+            <button onClick={() => setShowAdd(s => !s)} style={{ background: showAdd ? "#222" : PINK, border: "none", color: "#fff", borderRadius: 8, padding: "9px 18px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+              {showAdd ? "✕ Cancel" : "+ Add Competitor"}
+            </button>
+          </div>
         </div>
 
         {showAdd && (

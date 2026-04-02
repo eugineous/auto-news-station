@@ -379,9 +379,10 @@ function CockpitTab({onCompose}:{onCompose:(url:string)=>void}){
   const [autoPosting,setAutoPosting]=useState(false);
   const [lastRefresh,setLastRefresh]=useState<Date|null>(null);
   const [viewMode,setViewMode]=useState<"all"|"video"|"top">("all");
+  const [toast,setToast]=useState<{msg:string;type:"ok"|"err"}|null>(null);
 
   const load=useCallback(async()=>{
-    try{const r=await fetch(WORKER+"/post-log",{headers:WORKER_AUTH});const d=await r.json() as any;setPosts((d.log||[]).sort((a:any,b:any)=>new Date(b.postedAt).getTime()-new Date(a.postedAt).getTime()));setLastRefresh(new Date());}catch{}
+    try{const r=await fetch("/api/post-log?limit=60",{credentials:"include"});const d=await r.json() as any;setPosts((d.log||[]).sort((a:any,b:any)=>new Date(b.posted_at??b.postedAt??0).getTime()-new Date(a.posted_at??a.postedAt??0).getTime()));setLastRefresh(new Date());}catch{}
     setLoading(false);
   },[]);
 
@@ -389,7 +390,19 @@ function CockpitTab({onCompose}:{onCompose:(url:string)=>void}){
 
   async function triggerAutoPost(){
     setAutoPosting(true);
-    try{await fetch("/api/automate-video",{...FETCH_OPTS,method:"POST",headers:{"Content-Type":"application/json"}});await load();}catch{}
+    const prevIds=new Set(posts.map((p:any)=>p.article_id??p.articleId));
+    try{
+      const r=await fetch("/api/automate-video",{...FETCH_OPTS,method:"POST",headers:{"Content-Type":"application/json"}});
+      const d=await r.json() as any;
+      await load();
+      const newPost=posts.find((p:any)=>!prevIds.has(p.article_id??p.articleId));
+      const msg=newPost?.title?`Posted: ${newPost.title.slice(0,50)}`:(d.error?d.error:"Auto-post triggered ✓");
+      setToast({msg,type:d.error?"err":"ok"});
+      setTimeout(()=>setToast(null),4000);
+    }catch(e:any){
+      setToast({msg:e.message||"Auto-post failed",type:"err"});
+      setTimeout(()=>setToast(null),4000);
+    }
     setAutoPosting(false);
   }
 
@@ -399,14 +412,14 @@ function CockpitTab({onCompose}:{onCompose:(url:string)=>void}){
     return()=>clearInterval(t);
   },[autoPost]);
 
-  const today=posts.filter(p=>new Date(p.postedAt).toDateString()===new Date().toDateString());
-  const videoToday=today.filter(p=>p.postType==="video");
-  const igOk=today.filter(p=>p.instagram?.success).length;
-  const fbOk=today.filter(p=>p.facebook?.success).length;
-  const fails=today.filter(p=>!p.instagram?.success&&!p.facebook?.success).length;
+  const today=posts.filter(p=>new Date(p.posted_at??p.postedAt).toDateString()===new Date().toDateString());
+  const videoToday=today.filter(p=>p.post_type==="video"||p.postType==="video");
+  const igOk=today.filter(p=>p.ig_success??p.instagram?.success).length;
+  const fbOk=today.filter(p=>p.fb_success??p.facebook?.success).length;
+  const fails=today.filter(p=>!(p.ig_success??p.instagram?.success)&&!(p.fb_success??p.facebook?.success)).length;
 
   // 3. Top performing: most recent successful video posts
-  const topVideos=posts.filter(p=>p.postType==="video"&&(p.instagram?.success||p.facebook?.success)).slice(0,10);
+  const topVideos=posts.filter(p=>(p.post_type==="video"||p.postType==="video")&&((p.ig_success??p.instagram?.success)||(p.fb_success??p.facebook?.success))).slice(0,10);
 
   const filtered=viewMode==="top"?topVideos:viewMode==="video"?posts.filter(p=>p.postType==="video").slice(0,60):posts.slice(0,60);
 
@@ -461,10 +474,10 @@ function CockpitTab({onCompose}:{onCompose:(url:string)=>void}){
             {p.thumbnail&&<img src={p.thumbnail} alt="" style={{width:48,height:60,objectFit:"cover",borderRadius:5,flexShrink:0}} onError={e=>{(e.target as HTMLImageElement).style.display="none";}}/>}
             <div style={{flex:1,minWidth:0}}>
               <div style={{display:"flex",gap:5,marginBottom:4,flexWrap:"wrap" as const,alignItems:"center"}}>
-                {p.postType==="video"&&<Badge label="🎬 video" color={PURPLE}/>}
+                {(p.post_type==="video"||p.postType==="video")&&<Badge label="🎬 video" color={PURPLE}/>}
                 <Badge label={p.category||"GENERAL"} color={CAT_COLORS[p.category]||"#555"}/>
                 {p.sourceName&&<Badge label={p.sourceName} color="#333"/>}
-                <span style={{fontSize:10,color:"#333"}}>{ago(p.postedAt)}</span>
+                <span style={{fontSize:10,color:"#333"}}>{ago(p.posted_at??p.postedAt)}</span>
               </div>
               <div style={{fontSize:12,color:"#ccc",fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" as const}}>{p.title}</div>
               {p.url&&(
@@ -476,12 +489,24 @@ function CockpitTab({onCompose}:{onCompose:(url:string)=>void}){
               )}
             </div>
             <div style={{display:"flex",flexDirection:"column" as const,gap:3,flexShrink:0,alignItems:"flex-end"}}>
-              <span style={{fontSize:11,color:p.instagram?.success?GREEN:RED,fontWeight:800}}>IG {p.instagram?.success?"✓":"✗"}</span>
-              <span style={{fontSize:11,color:p.facebook?.success?GREEN:RED,fontWeight:800}}>FB {p.facebook?.success?"✓":"✗"}</span>
+              <span style={{fontSize:11,color:(p.ig_success??p.instagram?.success)?GREEN:RED,fontWeight:800}}>IG {(p.ig_success??p.instagram?.success)?"✓":"✗"}</span>
+              <span style={{fontSize:11,color:(p.fb_success??p.facebook?.success)?GREEN:RED,fontWeight:800}}>FB {(p.fb_success??p.facebook?.success)?"✓":"✗"}</span>
+              {(!(p.ig_success??p.instagram?.success)||!(p.fb_success??p.facebook?.success))&&(p.article_id??p.articleId)&&(
+                <button onClick={async()=>{
+                  const platform=!(p.ig_success??p.instagram?.success)?"instagram":"facebook";
+                  await fetch("/api/retry-post",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({article_id:p.article_id??p.articleId,platform})});
+                  load();
+                }} style={{background:RED+"22",border:`1px solid ${RED}44`,color:RED,borderRadius:4,padding:"2px 7px",fontSize:9,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap" as const}}>↺ Retry</button>
+              )}
             </div>
           </div>
         ))}
       </div>
+      {toast && (
+        <div style={{position:"fixed",bottom:80,left:"50%",transform:"translateX(-50%)",background:toast.type==="ok"?"#0d2a0d":"#2a0d0d",border:`1px solid ${toast.type==="ok"?"#1a4a1a":"#4a1a1a"}`,color:toast.type==="ok"?"#4ade80":"#f87171",padding:"12px 20px",borderRadius:8,fontSize:13,fontWeight:600,zIndex:300,whiteSpace:"nowrap",boxShadow:"0 8px 32px rgba(0,0,0,.6)"}}>
+          {toast.type==="ok"?"✓ ":"✗ "}{toast.msg}
+        </div>
+      )}
     </div>
   );
 }

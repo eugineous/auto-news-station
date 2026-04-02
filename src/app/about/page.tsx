@@ -7,6 +7,11 @@ export const metadata: Metadata = {
 
 export default function AboutPage() {
   return (
+    <div>
+      <div style={{ background: "#0a0a0a", borderBottom: "1px solid #1f1f1f", padding: "0 24px", height: 52, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <span style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 20, letterSpacing: 2 }}>PPP<span style={{ color: "#E50914" }}>TV</span></span>
+        <a href="/dashboard" style={{ fontSize: 12, color: "#888", textDecoration: "none", fontWeight: 600 }}>← Dashboard</a>
+      </div>
     <main id="main-content" style={{ maxWidth: 720, margin: "0 auto", padding: "48px 24px 80px", color: "#e5e5e5", fontFamily: "Inter, system-ui, sans-serif" }}>
       <h1 style={{ fontSize: 32, fontWeight: 800, marginBottom: 8 }}>About</h1>
 
@@ -28,5 +33,6 @@ export default function AboutPage() {
 
       <a href="/dashboard" style={{ display: "inline-block", marginTop: 16, color: "#E50914", fontSize: 14, fontWeight: 600 }}>← Back to Dashboard</a>
     </main>
+    </div>
   );
 }
