@@ -327,9 +327,11 @@ function extractJSON(raw: string): string | null {
   let text = raw.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
   // Remove ALL markdown code fences anywhere in the string
   text = text.replace(/```(?:json)?/gi, "").trim();
-  // Find the outermost JSON object
-  const match = text.match(/\{[\s\S]*\}/);
-  return match ? match[0] : null;
+  // Find the outermost JSON object - use a greedy match from first { to last }
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start === -1 || end === -1 || end <= start) return null;
+  return text.slice(start, end + 1);
 }
 
 function fmtSec(s: number) { return `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`; }
