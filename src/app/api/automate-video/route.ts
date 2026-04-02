@@ -208,9 +208,14 @@ export async function POST(req: NextRequest) {
     // Fetch from all sources + viral TikTok search in parallel
     const [allVideos, viralVideos] = await Promise.all([
       fetchAllVideoSources(),
-      // Every other run, also search for Kenyan music specifically
+      // Search for high-view viral videos (1M+ views target)
       fetchViralTikTokVideos(
-        KENYAN_MUSIC_KEYWORDS.sort(() => Math.random() - 0.5).slice(0, 3)
+        [
+          ...KENYAN_MUSIC_KEYWORDS.sort(() => Math.random() - 0.5).slice(0, 3),
+          "viral video 1 million views",
+          "trending video today million views",
+          "celebrity viral 2025",
+        ]
       ).catch(() => []),
     ]);
 
@@ -218,12 +223,17 @@ export async function POST(req: NextRequest) {
     const seenIds = new Set(allVideos.map(v => v.id));
     const mergedVideos = [
       ...allVideos,
-      ...viralVideos.filter(v => !seenIds.has(v.id)).map(v => ({
-        id: v.id, title: v.title, url: v.url,
-        directVideoUrl: v.directVideoUrl, thumbnail: v.thumbnail,
-        publishedAt: v.publishedAt, sourceName: v.sourceName,
-        sourceType: v.sourceType as any, category: v.category,
-      })),
+      ...viralVideos
+        .filter(v => !seenIds.has(v.id))
+        // Only include viral TikTok videos with 200K+ views (or 1M+ for top priority)
+        .filter(v => !v.playCount || v.playCount >= 200000)
+        .map(v => ({
+          id: v.id, title: v.title, url: v.url,
+          directVideoUrl: v.directVideoUrl, thumbnail: v.thumbnail,
+          publishedAt: v.publishedAt, sourceName: v.sourceName,
+          sourceType: v.sourceType as any, category: v.category,
+          _playCount: v.playCount,
+        })),
     ];
 
     if (mergedVideos.length === 0) {
@@ -261,8 +271,11 @@ export async function POST(req: NextRequest) {
         });
         // Kenyan content gets a 25-point boost — we prioritize local content
         const isKenyan = /kenya|nairobi|kenyan|harambee|gor mahia|afc leopard|citizen tv|tuko|mpasho|ghafla|spm buzz/i.test(v.title + " " + v.sourceName);
-        const hasDirect = !!v.directVideoUrl; // direct URLs are faster to post
-        const finalScore = viralScore + (isKenyan ? 25 : 0) + (hasDirect ? 10 : 0);
+        const hasDirect = !!v.directVideoUrl;
+        // Boost high-view videos: 1M+ gets +40, 200K+ gets +20
+        const playCount = (v as any)._playCount || 0;
+        const viewBoost = playCount >= 1000000 ? 40 : playCount >= 200000 ? 20 : 0;
+        const finalScore = viralScore + (isKenyan ? 25 : 0) + (hasDirect ? 10 : 0) + viewBoost;
         return { ...v, _score: finalScore, _isKenyan: isKenyan };
       })
       .sort((a, b) => {

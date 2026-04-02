@@ -614,39 +614,41 @@ async function triggerAutomate(env) {
   // Time-based throttle: enforce minimum gap between posts
   // As day fills up, increase minimum gap to spread posts evenly
   const lastPostTime = await env.SEEN_ARTICLES.get("last:post:time");
-  if (lastPostTime) {
-    const msSinceLast = Date.now() - parseInt(lastPostTime);
-    // Minimum gap scales with how many posts we've made today
-    // Early in day: 15 min min gap. Later: 30 min min gap.
-    const minGapMs = todayCount < 10
-      ? 15 * 60 * 1000   // first 10 posts: min 15 min gap
-      : 30 * 60 * 1000;  // after 10 posts: min 30 min gap
+  const msSinceLast = lastPostTime ? Date.now() - parseInt(lastPostTime) : Infinity;
+  const hoursSinceLast = msSinceLast / 3600000;
 
+  // FORCE POST if no video in last 3 hours — override all throttles
+  const forcePost = hoursSinceLast >= 3;
+
+  if (!forcePost) {
+    // Minimum gap: 8 minutes (allows ~10-min cadence with some jitter)
+    const minGapMs = 8 * 60 * 1000;
     if (msSinceLast < minGapMs) {
-      console.log(`[throttle] Too soon since last post (${Math.round(msSinceLast/60000)}m ago, min ${Math.round(minGapMs/60000)}m) — skipping`);
+      console.log(`[throttle] Too soon since last post (${Math.round(msSinceLast/60000)}m ago, min 8m) — skipping`);
       return;
     }
+  } else {
+    console.log(`[throttle] FORCE POST — no video in ${Math.round(hoursSinceLast * 60)}m`);
   }
 
-  // Random skip: even when gap is met, randomly skip ~40% of eligible ticks
-  // This creates natural-looking irregular posting patterns
+  // Random skip: only skip during off-peak, and only if not a force post
   const hourEAT = (new Date().getUTCHours() + 3) % 24;
-  // Dead zone: 1am-5am EAT — skip entirely
-  if (hourEAT >= 1 && hourEAT < 5) {
+  // Dead zone: 1am-5am EAT — skip entirely (unless force post)
+  if (!forcePost && hourEAT >= 1 && hourEAT < 5) {
     console.log(`[throttle] Dead zone (${hourEAT}:00 EAT) — skipping`);
     return;
   }
-  // Peak hours (7am-10pm EAT): 95% chance to post when eligible
-  // Off-peak: 60% chance — still post regularly outside peak
+  // Peak hours (7am-10pm EAT): always post when eligible
+  // Off-peak: 80% chance — still post regularly outside peak
   const isPeak = hourEAT >= 7 && hourEAT <= 22;
-  const postChance = isPeak ? 0.95 : 0.60;
-  if (Math.random() > postChance) {
-    console.log(`[throttle] Random skip (${isPeak ? "peak" : "off-peak"} hour ${hourEAT}:00 EAT)`);
+  const postChance = isPeak ? 1.0 : 0.80;
+  if (!forcePost && Math.random() > postChance) {
+    console.log(`[throttle] Random skip (off-peak hour ${hourEAT}:00 EAT)`);
     return;
   }
 
-  // Record this post attempt time
-  await env.SEEN_ARTICLES.put("last:post:time", String(Date.now()), { expirationTtl: 24 * 3600 });
+  // Record this post attempt time only after confirmed success (updated below)
+  // await env.SEEN_ARTICLES.put("last:post:time", ...) — moved to after pipeline fires
 
   // ── A/B testing: rotate caption variant every 10 runs ────────────────────
   const runCount = parseInt(await env.SEEN_ARTICLES.get("run-count") || "0");
@@ -692,6 +694,8 @@ async function triggerAutomate(env) {
         }).then(r => r.json()).then(async d => {
           console.log(`[burst] video: posted=${d.posted}`);
           if (d.posted > 0) {
+            // Record successful post time — used for 3h force-post check
+            await env.SEEN_ARTICLES.put("last:post:time", String(Date.now()), { expirationTtl: 24 * 3600 });
             const logKey = `agent:log:${Date.now() + 1}`;
             await env.SEEN_ARTICLES.put(logKey, JSON.stringify({
               ts: new Date().toISOString(), type: "video", posted: d.posted,
