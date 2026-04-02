@@ -320,6 +320,20 @@ export async function POST(req: NextRequest) {
         }
       } else if (video.directVideoUrl) {
         url = video.directVideoUrl;
+      } else if (video.url.includes("dailymotion.com")) {
+        // Dailymotion via worker resolver
+        try {
+          const dmRes = await fetch(`${WORKER_URL}/resolve-dailymotion`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },
+            body: JSON.stringify({ videoUrl: video.url }),
+            signal: AbortSignal.timeout(15000),
+          });
+          if (dmRes.ok) {
+            const dd = await dmRes.json() as any;
+            if (dd.success && dd.url) url = dd.url;
+          }
+        } catch {}
       } else if (video.url.includes("twitter.com") || video.url.includes("x.com")) {
         // Twitter/X videos via Cobalt
         try {

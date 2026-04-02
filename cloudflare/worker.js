@@ -647,11 +647,15 @@ export default {
               const thumbnail = (e.match(/url="([^"]+\.(?:jpg|jpeg|png))"/) || [])[1] || "";
               const videoId = link.match(/video\/([a-z0-9]+)/i)?.[1] || "";
               if (!title || !link) continue;
+              // Filter out TV show episodes, pirated content, non-entertainment
+              const cleanTitle = title.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
+              const isJunk = /s\d+e\d+|season \d+|episode \d+|full episode|full movie|watch online|free download|720p|1080p|hdrip|bluray|webrip/i.test(cleanTitle);
+              if (isJunk) continue;
               const ageHours = pubDate ? (Date.now() - new Date(pubDate).getTime()) / 3600000 : 0;
               if (ageHours > 72) continue;
               videos.push({
                 id: `dm:${videoId || link}`,
-                title: title.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">"),
+                title: cleanTitle,
                 url: link,
                 directVideoUrl: null,
                 thumbnail,
@@ -665,6 +669,35 @@ export default {
         }));
 
         return json({ videos, count: videos.length });
+      } catch (err) { return json({ error: err.message }, 500); }
+    }
+
+    // ── /resolve-dailymotion ──────────────────────────────────────────────────
+    // Resolves a Dailymotion video page URL to a direct MP4 stream
+    if (url.pathname === "/resolve-dailymotion" && request.method === "POST") {
+      if (!authed) return new Response("Unauthorized", { status: 401 });
+      try {
+        const { videoUrl } = await request.json();
+        if (!videoUrl) return json({ error: "videoUrl required" }, 400);
+        const videoId = videoUrl.match(/video\/([a-z0-9]+)/i)?.[1];
+        if (!videoId) return json({ error: "Could not extract video ID" }, 400);
+        // Dailymotion embed API — returns stream URLs
+        const r = await fetch(`https://www.dailymotion.com/player/metadata/video/${videoId}?embedder=https://www.dailymotion.com&locale=en_US&dmV1st=&dmTs=&is_native_app=0`, {
+          headers: { "User-Agent": "Mozilla/5.0 (compatible; PPPTVBot/2.0)", "Referer": "https://www.dailymotion.com/" },
+          signal: AbortSignal.timeout(12000),
+        });
+        if (!r.ok) return json({ error: `DM API ${r.status}` }, 502);
+        const data = await r.json();
+        const qualities = data?.qualities?.auto || data?.qualities?.["1080"] || data?.qualities?.["720"] || data?.qualities?.["480"] || [];
+        const stream = qualities.find(q => q?.type === "application/x-mpegURL" || q?.type === "video/mp4");
+        if (stream?.url) return json({ success: true, url: stream.url, type: stream.type });
+        // Try direct qualities
+        for (const q of ["1080", "720", "480", "380", "240"]) {
+          const qs = data?.qualities?.[q] || [];
+          const s = qs.find(x => x?.url);
+          if (s?.url) return json({ success: true, url: s.url });
+        }
+        return json({ error: "No stream URL found" }, 404);
       } catch (err) { return json({ error: err.message }, 500); }
     }
 
