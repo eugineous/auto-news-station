@@ -112,9 +112,11 @@ async function scrapeIGCarousels(username: string): Promise<{ images: string[]; 
       const images = Object.values(p.media_metadata as Record<string, any>)
         .filter((m: any) => m.status === "valid" && m.e === "Image")
         .map((m: any) => {
-          // Use the highest resolution available, decode HTML entities
-          const src = m.s?.u || m.p?.slice(-1)[0]?.u || "";
-          return src.replace(/&amp;/g, "&");
+          // Prefer i.redd.it direct URLs (no auth needed) over preview.redd.it
+          const directUrl = `https://i.redd.it/${m.id}.${m.m?.split("/")[1] || "jpg"}`;
+          const previewUrl = (m.s?.u || m.p?.slice(-1)[0]?.u || "").replace(/&amp;/g, "&");
+          // Use direct URL if available, fallback to preview
+          return m.id ? directUrl : previewUrl;
         })
         .filter(Boolean)
         .slice(0, 10);
