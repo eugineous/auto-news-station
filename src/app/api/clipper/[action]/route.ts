@@ -323,15 +323,31 @@ Respond ONLY with valid JSON:
 
 // Strip thinking tags and markdown code fences, then extract JSON
 function extractJSON(raw: string): string | null {
-  // Remove thinking blocks
+  // Remove thinking blocks and markdown fences
   let text = raw.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
-  // Remove ALL markdown code fences anywhere in the string
   text = text.replace(/```(?:json)?/gi, "").trim();
-  // Find the outermost JSON object - use a greedy match from first { to last }
+  // Find outermost JSON object
   const start = text.indexOf("{");
   const end = text.lastIndexOf("}");
   if (start === -1 || end === -1 || end <= start) return null;
-  return text.slice(start, end + 1);
+  let jsonStr = text.slice(start, end + 1);
+  // Repair: replace literal tab/newline/carriage-return inside JSON strings
+  // This handles Gemini occasionally putting real newlines inside string values
+  jsonStr = jsonStr.replace(/\t/g, " ").replace(/\r/g, "");
+  // Replace unescaped newlines that appear inside string values (between quotes)
+  // Simple approach: replace \n that are NOT at structural positions
+  let inString = false;
+  let escaped = false;
+  let result = "";
+  for (let i = 0; i < jsonStr.length; i++) {
+    const ch = jsonStr[i];
+    if (escaped) { result += ch; escaped = false; continue; }
+    if (ch === "\\") { result += ch; escaped = true; continue; }
+    if (ch === '"') { inString = !inString; result += ch; continue; }
+    if (inString && ch === "\n") { result += "\\n"; continue; }
+    result += ch;
+  }
+  return result;
 }
 
 function fmtSec(s: number) { return `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`; }
