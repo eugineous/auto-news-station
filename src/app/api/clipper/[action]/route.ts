@@ -17,11 +17,9 @@ async function handleAnalyze(req: NextRequest) {
   const { url } = await req.json() as { url: string };
   if (!url) return NextResponse.json({ error: "URL required" }, { status: 400 });
 
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) return NextResponse.json({ error: "GEMINI_API_KEY not configured" }, { status: 500 });
-
-  const { GoogleGenAI } = await import("@google/genai");
-  const genAI = new GoogleGenAI({ apiKey });
+  const geminiKey = process.env.GEMINI_API_KEY;
+  const nvidiaKey = process.env.NVIDIA_API_KEY;
+  if (!geminiKey && !nvidiaKey) return NextResponse.json({ error: "No AI API key configured (GEMINI_API_KEY or NVIDIA_API_KEY)" }, { status: 500 });
 
   // Detect if it's a YouTube URL — Gemini supports these natively (no upload needed)
   const isYouTube = /youtube\.com|youtu\.be/.test(url);
@@ -92,7 +90,6 @@ Respond ONLY with valid JSON, no markdown, no explanation:
     let contents: any;
 
     if (isYouTube) {
-      // YouTube: pass URL in the prompt text — Gemini fetches it natively
       contents = `${analysisPrompt}\n\nYouTube URL to analyze: ${url}`;
     } else {
       contents = [
@@ -100,13 +97,33 @@ Respond ONLY with valid JSON, no markdown, no explanation:
       ];
     }
 
-    const result = await genAI.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents,
-      config: { temperature: 0.3, maxOutputTokens: 2000 },
-    });
+    let text = "";
 
-    const text = (result.text ?? "").trim();
+    if (geminiKey) {
+      const { GoogleGenAI } = await import("@google/genai");
+      const genAI = new GoogleGenAI({ apiKey: geminiKey });
+      const result = await genAI.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents,
+        config: { temperature: 0.3, maxOutputTokens: 2000 },
+      });
+      text = (result.text ?? "").trim();
+    } else if (nvidiaKey) {
+      // NVIDIA fallback — text-only analysis (no native video understanding, uses URL as context)
+      const nvidiaPrompt = typeof contents === "string" ? contents : `${analysisPrompt}\n\nVideo URL: ${url}`;
+      const res = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${nvidiaKey}` },
+        body: JSON.stringify({
+          model: "meta/llama-3.1-8b-instruct",
+          messages: [{ role: "user", content: nvidiaPrompt }],
+          temperature: 0.3, max_tokens: 2000,
+        }),
+        signal: AbortSignal.timeout(30000),
+      });
+      const nd = await res.json() as { choices?: Array<{ message: { content: string } }> };
+      text = nd.choices?.[0]?.message?.content?.trim() ?? "";
+    }
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error("Gemini returned no JSON. Response: " + text.slice(0, 200));
 
