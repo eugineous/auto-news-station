@@ -229,7 +229,7 @@ Respond ONLY with valid JSON:
   const text = (result.text ?? "").trim();
   const jsonStr = extractJSON(text);
   if (!jsonStr) throw new Error("Gemini returned no JSON. Raw: " + text.slice(0, 300));
-  return JSON.parse(jsonStr);
+  return safeParseJSON(jsonStr) as ClipResult;
 }
 
 // ── NVIDIA-only fallback (no Gemini) ──────────────────────────────────────────
@@ -280,7 +280,7 @@ Respond ONLY with valid JSON:
   const nvidiaText = data.choices?.[0]?.message?.content?.trim() ?? "";
   const nvidiaJson = extractJSON(nvidiaText);
   if (!nvidiaJson) throw new Error("NVIDIA returned no JSON");
-  return JSON.parse(nvidiaJson);
+  return safeParseJSON(nvidiaJson) as ClipResult;
 }
 
 // ── Gemini-only fallback (no transcript, for non-YouTube) ─────────────────────
@@ -318,7 +318,7 @@ Respond ONLY with valid JSON:
   const rawText = (result.text ?? "").trim();
   const jsonStr2 = extractJSON(rawText);
   if (!jsonStr2) throw new Error("Gemini returned no JSON. Raw: " + rawText.slice(0, 300));
-  return JSON.parse(jsonStr2);
+  return safeParseJSON(jsonStr2) as ClipResult;
 }
 
 // Strip thinking tags and markdown code fences, then extract JSON
@@ -348,6 +348,16 @@ function extractJSON(raw: string): string | null {
     result += ch;
   }
   return result;
+}
+
+function safeParseJSON(jsonStr: string): unknown {
+  try {
+    return JSON.parse(jsonStr);
+  } catch {
+    // Nuclear fallback: strip non-printable ASCII chars and retry
+    const cleaned = jsonStr.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "");
+    return JSON.parse(cleaned);
+  }
 }
 
 function fmtSec(s: number) { return `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`; }
