@@ -323,8 +323,11 @@ Respond ONLY with valid JSON:
 
 // Strip thinking tags and markdown code fences, then extract JSON
 function extractJSON(raw: string): string | null {
+  // Remove thinking blocks
   let text = raw.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
-  text = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/i, "").trim();
+  // Remove ALL markdown code fences anywhere in the string
+  text = text.replace(/```(?:json)?/gi, "").trim();
+  // Find the outermost JSON object
   const match = text.match(/\{[\s\S]*\}/);
   return match ? match[0] : null;
 }
