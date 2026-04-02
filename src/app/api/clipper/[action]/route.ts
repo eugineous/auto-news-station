@@ -227,8 +227,10 @@ Respond ONLY with valid JSON:
   });
 
   const text = (result.text ?? "").trim();
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error("Gemini returned no JSON");
+  // Strip thinking tags if present, then extract JSON
+  const stripped = text.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+  const jsonMatch = stripped.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error("Gemini returned no JSON. Raw: " + text.slice(0, 300));
   return JSON.parse(jsonMatch[0]);
 }
 
@@ -316,8 +318,9 @@ Respond ONLY with valid JSON:
   });
 
   const text = (result.text ?? "").trim();
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error("Gemini returned no JSON");
+  const stripped2 = text.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+  const jsonMatch = stripped2.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error("Gemini returned no JSON. Raw: " + text.slice(0, 300));
   return JSON.parse(jsonMatch[0]);
 }
 
