@@ -528,6 +528,40 @@ export default {
       } catch (err) { return json({ error: err.message }, 500); }
     }
 
+    // ── /resolve-cobalt ───────────────────────────────────────────────────────
+    // Uses Cobalt API to resolve YouTube/TikTok/etc to direct MP4
+    if (url.pathname === "/resolve-cobalt" && request.method === "POST") {
+      if (!authed) return new Response("Unauthorized", { status: 401 });
+      try {
+        const { videoUrl } = await request.json();
+        if (!videoUrl) return json({ error: "videoUrl required" }, 400);
+        // Try multiple public Cobalt instances
+        const COBALT_INSTANCES = [
+          "https://cobalt.tools/api/json",
+          "https://co.wuk.sh/api/json",
+        ];
+        for (const instance of COBALT_INSTANCES) {
+          try {
+            const r = await fetch(instance, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "Accept": "application/json" },
+              body: JSON.stringify({ url: videoUrl, vQuality: "720", isAudioOnly: false }),
+              signal: AbortSignal.timeout(15000),
+            });
+            if (!r.ok) continue;
+            const data = await r.json();
+            if (data.status === "stream" || data.status === "redirect") {
+              return json({ success: true, url: data.url });
+            }
+            if (data.status === "picker" && data.picker?.[0]?.url) {
+              return json({ success: true, url: data.picker[0].url });
+            }
+          } catch {}
+        }
+        return json({ error: "All Cobalt instances failed" }, 502);
+      } catch (err) { return json({ error: err.message }, 500); }
+    }
+
     // ── /tikwm-search ─────────────────────────────────────────────────────────
     // Proxies TikWM search through the worker to bypass Vercel IP blocks
     if (url.pathname === "/tikwm-search" && request.method === "POST") {

@@ -606,16 +606,16 @@ export async function fetchAllVideoSources(): Promise<VideoItem[]> {
   }
 
   const allResults = await Promise.allSettled([
-    // TikWM search via worker proxy
+    // TikWM search via worker proxy (may be rate limited)
     fetchTikWMTrending(),
-    // YouTube RSS — all channels (most reliable, no rate limits)
-    ...YOUTUBE_CHANNELS.map(ch => fetchYouTubeChannel(ch.id, ch.name, ch.cat)),
-    // Reddit native videos
-    ...REDDIT_FEEDS.slice(0, 3).map(f => fetchRedditFeed(f.url, f.name, f.cat)),
-    // Dailymotion
-    ...DAILYMOTION_FEEDS.slice(0, 2).map(f => fetchDailymotionFeed(f.url, f.name, f.cat)),
+    // Reddit native videos — direct MP4 URLs, no API key needed
+    ...REDDIT_FEEDS.map(f => fetchRedditFeed(f.url, f.name, f.cat)),
+    // Dailymotion RSS — direct video embeds
+    ...DAILYMOTION_FEEDS.map(f => fetchDailymotionFeed(f.url, f.name, f.cat)),
+    // YouTube RSS — for metadata, resolved via Cobalt API
+    ...YOUTUBE_CHANNELS.slice(0, 4).map(ch => fetchYouTubeChannel(ch.id, ch.name, ch.cat)),
     // News RSS with video embeds
-    ...NEWS_RSS_FEEDS.slice(0, 5).map(f => fetchNewsRSSWithVideo(f.url, f.name, f.cat)),
+    ...NEWS_RSS_FEEDS.slice(0, 8).map(f => fetchNewsRSSWithVideo(f.url, f.name, f.cat)),
   ]);
 
   const all: VideoItem[] = [];

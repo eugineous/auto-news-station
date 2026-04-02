@@ -321,30 +321,42 @@ export async function POST(req: NextRequest) {
       } else if (video.directVideoUrl) {
         url = video.directVideoUrl;
       } else if (video.url.includes("youtube.com") || video.url.includes("youtu.be")) {
-      // For YouTube, try worker resolver first (bypasses Vercel restrictions)
-      const videoId = video.url.match(/(?:v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/)?.[1];
-      if (videoId) {
+        // Try Cobalt API via worker first (most reliable for YouTube)
         try {
-          const wRes = await fetch(`${WORKER_URL}/resolve-youtube`, {
+          const cobaltRes = await fetch(`${WORKER_URL}/resolve-cobalt`, {
             method: "POST",
             headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },
-            body: JSON.stringify({ videoId }),
+            body: JSON.stringify({ videoUrl: video.url }),
             signal: AbortSignal.timeout(20000),
           });
-          if (wRes.ok) {
-            const wd = await wRes.json() as any;
-            if (wd.success && wd.url) url = wd.url;
+          if (cobaltRes.ok) {
+            const cd = await cobaltRes.json() as any;
+            if (cd.success && cd.url) url = cd.url;
           }
         } catch {}
-      }
-      if (!url) {
-        const resolved = await resolveVideoUrl(video.url).catch(() => null);
-        url = resolved?.url || null;
-      }
-    } else {
-        const resolved = await resolveVideoUrl(video.url).catch(() => null);
-        url = resolved?.url || null;
-      }
+        // Fallback: worker YouTube resolver
+        if (!url) {
+          const videoId = video.url.match(/(?:v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/)?.[1];
+          if (videoId) {
+            try {
+              const wRes = await fetch(`${WORKER_URL}/resolve-youtube`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },
+                body: JSON.stringify({ videoId }),
+                signal: AbortSignal.timeout(20000),
+              });
+              if (wRes.ok) {
+                const wd = await wRes.json() as any;
+                if (wd.success && wd.url) url = wd.url;
+              }
+            } catch {}
+          }
+        }
+        if (!url) {
+          const resolved = await resolveVideoUrl(video.url).catch(() => null);
+          url = resolved?.url || null;
+        }
+      } else {      }
 
       if (url) {
         target = video;
