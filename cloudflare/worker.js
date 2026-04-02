@@ -528,6 +528,96 @@ export default {
       } catch (err) { return json({ error: err.message }, 500); }
     }
 
+    // ── /fetch-videos ─────────────────────────────────────────────────────────
+    // Fetches video sources (Reddit, Dailymotion) server-side and returns results
+    if (url.pathname === "/fetch-videos" && request.method === "GET") {
+      if (!authed) return new Response("Unauthorized", { status: 401 });
+      try {
+        const videos = [];
+
+        // Reddit native videos
+        const REDDIT_FEEDS = [
+          { url: "https://www.reddit.com/r/videos/new.json?limit=25", name: "r/Videos", cat: "ENTERTAINMENT" },
+          { url: "https://www.reddit.com/r/nextfuckinglevel/new.json?limit=25", name: "r/NextLevel", cat: "ENTERTAINMENT" },
+          { url: "https://www.reddit.com/r/sports/new.json?limit=25", name: "r/Sports", cat: "SPORTS" },
+          { url: "https://www.reddit.com/r/Music/new.json?limit=25", name: "r/Music", cat: "MUSIC" },
+          { url: "https://www.reddit.com/r/entertainment/new.json?limit=25", name: "r/Entertainment", cat: "ENTERTAINMENT" },
+        ];
+
+        await Promise.allSettled(REDDIT_FEEDS.map(async feed => {
+          try {
+            const r = await fetch(feed.url, {
+              headers: { "User-Agent": "PPPTVBot/2.0 (entertainment aggregator)" },
+              signal: AbortSignal.timeout(8000),
+            });
+            if (!r.ok) return;
+            const data = await r.json();
+            const posts = data?.data?.children || [];
+            for (const post of posts) {
+              const p = post.data;
+              if (!p.is_video || !p.media?.reddit_video?.fallback_url) continue;
+              const ageHours = (Date.now() - p.created_utc * 1000) / 3600000;
+              if (ageHours > 48) continue;
+              videos.push({
+                id: `reddit:${p.id}`,
+                title: p.title,
+                url: p.media.reddit_video.fallback_url,
+                directVideoUrl: p.media.reddit_video.fallback_url,
+                thumbnail: p.thumbnail?.startsWith("http") ? p.thumbnail : "",
+                publishedAt: new Date(p.created_utc * 1000).toISOString(),
+                sourceName: feed.name,
+                sourceType: "reddit",
+                category: feed.cat,
+              });
+            }
+          } catch {}
+        }));
+
+        // Dailymotion RSS
+        const DM_FEEDS = [
+          { url: "https://www.dailymotion.com/rss/tag/kenya+entertainment", name: "Dailymotion Kenya", cat: "ENTERTAINMENT" },
+          { url: "https://www.dailymotion.com/rss/tag/africa+music", name: "Africa Music DM", cat: "MUSIC" },
+        ];
+
+        await Promise.allSettled(DM_FEEDS.map(async feed => {
+          try {
+            const r = await fetch(feed.url, {
+              headers: { "User-Agent": "Mozilla/5.0 (compatible; PPPTVBot/2.0)" },
+              signal: AbortSignal.timeout(8000),
+            });
+            if (!r.ok) return;
+            const xml = await r.text();
+            const itemRegex = /<item>([\s\S]*?)<\/item>/g;
+            let match;
+            while ((match = itemRegex.exec(xml)) !== null) {
+              const e = match[1];
+              const title = (e.match(/<title><!\[CDATA\[(.*?)\]\]><\/title>/) || e.match(/<title>(.*?)<\/title>/) || [])[1] || "";
+              const link = (e.match(/<link>(.*?)<\/link>/) || [])[1] || "";
+              const pubDate = (e.match(/<pubDate>(.*?)<\/pubDate>/) || [])[1] || "";
+              const thumbnail = (e.match(/url="([^"]+\.(?:jpg|jpeg|png))"/) || [])[1] || "";
+              const videoId = link.match(/video\/([a-z0-9]+)/i)?.[1] || "";
+              if (!title || !link) continue;
+              const ageHours = pubDate ? (Date.now() - new Date(pubDate).getTime()) / 3600000 : 0;
+              if (ageHours > 48) continue;
+              videos.push({
+                id: `dm:${videoId || link}`,
+                title: title.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">"),
+                url: link,
+                directVideoUrl: null,
+                thumbnail,
+                publishedAt: pubDate ? new Date(pubDate).toISOString() : new Date().toISOString(),
+                sourceName: feed.name,
+                sourceType: "dailymotion",
+                category: feed.cat,
+              });
+            }
+          } catch {}
+        }));
+
+        return json({ videos, count: videos.length });
+      } catch (err) { return json({ error: err.message }, 500); }
+    }
+
     // ── /resolve-cobalt ───────────────────────────────────────────────────────
     // Uses Cobalt API to resolve YouTube/TikTok/etc to direct MP4
     if (url.pathname === "/resolve-cobalt" && request.method === "POST") {

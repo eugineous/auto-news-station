@@ -598,6 +598,31 @@ async function fetchTikWMTrending(): Promise<VideoItem[]> {
   return items;
 }
 
+// ── Worker-proxied video fetch — bypasses Vercel IP blocks ───────────────────
+async function fetchVideosViaWorker(): Promise<VideoItem[]> {
+  try {
+    const WORKER_URL = process.env.CLOUDFLARE_WORKER_URL || "https://auto-ppp-tv.euginemicah.workers.dev";
+    const WORKER_SECRET = process.env.WORKER_SECRET || "ppptvWorker2024";
+    const r = await fetch(`${WORKER_URL}/fetch-videos`, {
+      headers: { "Authorization": `Bearer ${WORKER_SECRET}` },
+      signal: AbortSignal.timeout(20000),
+    });
+    if (!r.ok) return [];
+    const data = await r.json() as any;
+    return (data.videos || []).map((v: any) => ({
+      id: v.id,
+      title: v.title,
+      url: v.url,
+      directVideoUrl: v.directVideoUrl || undefined,
+      thumbnail: v.thumbnail || "",
+      publishedAt: new Date(v.publishedAt),
+      sourceName: v.sourceName,
+      sourceType: v.sourceType as any,
+      category: v.category,
+    }));
+  } catch { return []; }
+}
+
 export async function fetchAllVideoSources(): Promise<VideoItem[]> {
   // Initialize bloom filter — use try/catch in case of API changes
   if (!bloom) {
@@ -606,12 +631,10 @@ export async function fetchAllVideoSources(): Promise<VideoItem[]> {
   }
 
   const allResults = await Promise.allSettled([
+    // Worker-proxied sources (Reddit + Dailymotion via Cloudflare — bypasses Vercel IP blocks)
+    fetchVideosViaWorker(),
     // TikWM search via worker proxy (may be rate limited)
     fetchTikWMTrending(),
-    // Reddit native videos — direct MP4 URLs, no API key needed
-    ...REDDIT_FEEDS.map(f => fetchRedditFeed(f.url, f.name, f.cat)),
-    // Dailymotion RSS — direct video embeds
-    ...DAILYMOTION_FEEDS.map(f => fetchDailymotionFeed(f.url, f.name, f.cat)),
     // YouTube RSS — for metadata, resolved via Cobalt API
     ...YOUTUBE_CHANNELS.slice(0, 4).map(ch => fetchYouTubeChannel(ch.id, ch.name, ch.cat)),
     // News RSS with video embeds
