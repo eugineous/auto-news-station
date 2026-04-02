@@ -79,10 +79,12 @@ export async function getTodayPostCount(): Promise<number> {
 // ── Dedup ─────────────────────────────────────────────────────────────────────
 export async function isArticleSeen(id: string): Promise<boolean> {
   try {
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString();
     const { data } = await supabaseAdmin
       .from("seen_articles")
       .select("id")
       .eq("id", id)
+      .gte("seen_at", thirtyDaysAgo)
       .maybeSingle();
     return !!data;
   } catch { return false; }
