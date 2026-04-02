@@ -16,7 +16,7 @@ export interface VideoItem {
   thumbnail: string;
   publishedAt: Date;
   sourceName: string;
-  sourceType: "youtube" | "dailymotion" | "reddit" | "rss-video" | "vimeo" | "direct-mp4";
+  sourceType: "youtube" | "dailymotion" | "reddit" | "rss-video" | "vimeo" | "direct-mp4" | "twitter";
   category: string;
   duration?: number;    // seconds, if known
 }
@@ -350,20 +350,108 @@ interface TikTokAccount {
 }
 
 const TIKTOK_ACCOUNTS: TikTokAccount[] = [
+  // ── Kenya ─────────────────────────────────────────────────────────────────
   { username: "tushindecharityshow",  displayName: "Tushinde Charity Show",  category: "ENTERTAINMENT", postHourEAT: 7,  isCreator: false },
-  { username: "bbcnewsswahili",       displayName: "BBC News Swahili",        category: "NEWS",          postHourEAT: 8,  isCreator: false },
+  { username: "bbcnewsswahili",       displayName: "BBC News Swahili",        category: "ENTERTAINMENT", postHourEAT: 8,  isCreator: false },
   { username: "footballkenya",        displayName: "Football Kenya",          category: "SPORTS",        postHourEAT: 9,  isCreator: false },
   { username: "fabrizioromano",       displayName: "Fabrizio Romano",         category: "SPORTS",        postHourEAT: 10, isCreator: true  },
-  { username: "kenya.news.arena",     displayName: "Kenya News Arena",        category: "NEWS",          postHourEAT: 11, isCreator: false },
-  { username: "citizen.digital",      displayName: "Citizen Digital",         category: "NEWS",          postHourEAT: 12, isCreator: false },
-  { username: "thenewsguyke",         displayName: "The News Guy KE",         category: "NEWS",          postHourEAT: 13, isCreator: true  },
+  { username: "kenya.news.arena",     displayName: "Kenya News Arena",        category: "ENTERTAINMENT", postHourEAT: 11, isCreator: false },
+  { username: "citizen.digital",      displayName: "Citizen Digital",         category: "ENTERTAINMENT", postHourEAT: 12, isCreator: false },
+  { username: "thenewsguyke",         displayName: "The News Guy KE",         category: "ENTERTAINMENT", postHourEAT: 13, isCreator: true  },
   { username: "sheyii_given",         displayName: "Sheyii Given",            category: "ENTERTAINMENT", postHourEAT: 14, isCreator: true  },
-  { username: "aljazeeraenglish",     displayName: "Al Jazeera English",      category: "NEWS",          postHourEAT: 15, isCreator: false },
-  { username: "cnn",                  displayName: "CNN",                     category: "NEWS",          postHourEAT: 16, isCreator: false },
+  { username: "urbannewsgang",        displayName: "Urban News Gang",         category: "ENTERTAINMENT", postHourEAT: 20, isCreator: false },
+  { username: "spmbuzz",              displayName: "SPM Buzz",                category: "CELEBRITY",     postHourEAT: 7,  isCreator: false },
+  { username: "tukokenya",            displayName: "Tuko Kenya",              category: "ENTERTAINMENT", postHourEAT: 8,  isCreator: false },
+  { username: "mpasho.co.ke",         displayName: "Mpasho Kenya",            category: "CELEBRITY",     postHourEAT: 9,  isCreator: false },
+  { username: "ghafla_kenya",         displayName: "Ghafla Kenya",            category: "CELEBRITY",     postHourEAT: 10, isCreator: false },
+  { username: "nairobiwire",          displayName: "Nairobi Wire",            category: "CELEBRITY",     postHourEAT: 11, isCreator: false },
+  { username: "pulselive_ke",         displayName: "Pulse Live Kenya",        category: "ENTERTAINMENT", postHourEAT: 12, isCreator: false },
+  { username: "standardmediake",      displayName: "Standard Media Kenya",    category: "ENTERTAINMENT", postHourEAT: 13, isCreator: false },
+  { username: "ntvkenya",             displayName: "NTV Kenya",               category: "ENTERTAINMENT", postHourEAT: 14, isCreator: false },
+  { username: "ktnhomekenya",         displayName: "KTN Home Kenya",          category: "ENTERTAINMENT", postHourEAT: 15, isCreator: false },
+  { username: "kenyans.co.ke",        displayName: "Kenyans.co.ke",           category: "ENTERTAINMENT", postHourEAT: 16, isCreator: false },
+  { username: "sde.co.ke",            displayName: "SDE Kenya",               category: "CELEBRITY",     postHourEAT: 17, isCreator: false },
+  // ── East Africa ───────────────────────────────────────────────────────────
+  { username: "tanzaniaentertainment",displayName: "Tanzania Entertainment",  category: "ENTERTAINMENT", postHourEAT: 7,  isCreator: false },
+  { username: "bongomovies",          displayName: "Bongo Movies",            category: "TV & FILM",     postHourEAT: 8,  isCreator: false },
+  { username: "ugandaentertainment",  displayName: "Uganda Entertainment",    category: "ENTERTAINMENT", postHourEAT: 9,  isCreator: false },
+  { username: "eastafricamusic",      displayName: "East Africa Music",       category: "MUSIC",         postHourEAT: 10, isCreator: false },
+  // ── West Africa ───────────────────────────────────────────────────────────
+  { username: "pulse.nigeria",        displayName: "Pulse Nigeria",           category: "ENTERTAINMENT", postHourEAT: 11, isCreator: false },
+  { username: "bellanaija",           displayName: "BellaNaija",              category: "CELEBRITY",     postHourEAT: 12, isCreator: false },
+  { username: "lindaikejiblog",       displayName: "Linda Ikeji",             category: "CELEBRITY",     postHourEAT: 13, isCreator: true  },
+  { username: "yabaleftonline",       displayName: "Yabaleft Online",         category: "CELEBRITY",     postHourEAT: 14, isCreator: false },
+  { username: "ghanaentertainment",   displayName: "Ghana Entertainment",     category: "ENTERTAINMENT", postHourEAT: 15, isCreator: false },
+  { username: "pulse.ghana",          displayName: "Pulse Ghana",             category: "ENTERTAINMENT", postHourEAT: 16, isCreator: false },
+  // ── South Africa ─────────────────────────────────────────────────────────
+  { username: "saentertainmentnews",  displayName: "SA Entertainment News",   category: "ENTERTAINMENT", postHourEAT: 17, isCreator: false },
+  { username: "drum_magazine",        displayName: "Drum Magazine SA",        category: "CELEBRITY",     postHourEAT: 18, isCreator: false },
+  { username: "truelove_magazine",    displayName: "True Love Magazine",      category: "CELEBRITY",     postHourEAT: 19, isCreator: false },
+  // ── Global Celebrity & Gossip ─────────────────────────────────────────────
+  { username: "tmz",                  displayName: "TMZ",                     category: "CELEBRITY",     postHourEAT: 7,  isCreator: false },
+  { username: "pagesix",              displayName: "Page Six",                category: "CELEBRITY",     postHourEAT: 8,  isCreator: false },
+  { username: "enews",                displayName: "E! News",                 category: "CELEBRITY",     postHourEAT: 9,  isCreator: false },
+  { username: "hollywoodlife",        displayName: "Hollywood Life",          category: "CELEBRITY",     postHourEAT: 10, isCreator: false },
+  { username: "justjared",            displayName: "Just Jared",              category: "CELEBRITY",     postHourEAT: 11, isCreator: false },
+  { username: "peoplemagazine",       displayName: "People Magazine",         category: "CELEBRITY",     postHourEAT: 12, isCreator: false },
+  { username: "usweekly",             displayName: "US Weekly",               category: "CELEBRITY",     postHourEAT: 13, isCreator: false },
+  { username: "entertainmenttonight", displayName: "Entertainment Tonight",   category: "CELEBRITY",     postHourEAT: 14, isCreator: false },
+  { username: "accesshollywood",      displayName: "Access Hollywood",        category: "CELEBRITY",     postHourEAT: 15, isCreator: false },
+  { username: "extratv",              displayName: "Extra TV",                category: "CELEBRITY",     postHourEAT: 16, isCreator: false },
+  { username: "deuxmoi",              displayName: "DeuxMoi",                 category: "CELEBRITY",     postHourEAT: 17, isCreator: true  },
+  { username: "omg_insider",          displayName: "OMG Insider",             category: "CELEBRITY",     postHourEAT: 18, isCreator: false },
+  { username: "dailymailceleb",       displayName: "Daily Mail Celebrity",    category: "CELEBRITY",     postHourEAT: 19, isCreator: false },
+  { username: "theshaderoom",         displayName: "The Shade Room",          category: "CELEBRITY",     postHourEAT: 20, isCreator: false },
+  { username: "bossip",               displayName: "Bossip",                  category: "CELEBRITY",     postHourEAT: 21, isCreator: false },
+  { username: "blavity",              displayName: "Blavity",                 category: "ENTERTAINMENT", postHourEAT: 7,  isCreator: false },
+  // ── Music ─────────────────────────────────────────────────────────────────
+  { username: "billboard",            displayName: "Billboard",               category: "MUSIC",         postHourEAT: 8,  isCreator: false },
+  { username: "rollingstone",         displayName: "Rolling Stone",           category: "MUSIC",         postHourEAT: 9,  isCreator: false },
+  { username: "pitchfork",            displayName: "Pitchfork",               category: "MUSIC",         postHourEAT: 10, isCreator: false },
+  { username: "complex",              displayName: "Complex",                 category: "MUSIC",         postHourEAT: 11, isCreator: false },
+  { username: "hotnewhiphop",         displayName: "HotNewHipHop",            category: "MUSIC",         postHourEAT: 12, isCreator: false },
+  { username: "worldstarhiphop",      displayName: "WorldStar HipHop",        category: "MUSIC",         postHourEAT: 13, isCreator: false },
+  { username: "rap",                  displayName: "Rap",                     category: "MUSIC",         postHourEAT: 14, isCreator: false },
+  { username: "vibe",                 displayName: "Vibe Magazine",           category: "MUSIC",         postHourEAT: 15, isCreator: false },
+  { username: "xxl",                  displayName: "XXL Magazine",            category: "MUSIC",         postHourEAT: 16, isCreator: false },
+  { username: "genius",               displayName: "Genius",                  category: "MUSIC",         postHourEAT: 17, isCreator: false },
+  { username: "audiomack",            displayName: "Audiomack",               category: "MUSIC",         postHourEAT: 18, isCreator: false },
+  { username: "boomplay",             displayName: "Boomplay",                category: "MUSIC",         postHourEAT: 19, isCreator: false },
+  // ── TV & Film ─────────────────────────────────────────────────────────────
+  { username: "variety",              displayName: "Variety",                 category: "TV & FILM",     postHourEAT: 7,  isCreator: false },
+  { username: "deadline",             displayName: "Deadline Hollywood",      category: "TV & FILM",     postHourEAT: 8,  isCreator: false },
+  { username: "hollywoodreporter",    displayName: "Hollywood Reporter",      category: "TV & FILM",     postHourEAT: 9,  isCreator: false },
+  { username: "screenrant",           displayName: "Screen Rant",             category: "TV & FILM",     postHourEAT: 10, isCreator: false },
+  { username: "collider",             displayName: "Collider",                category: "TV & FILM",     postHourEAT: 11, isCreator: false },
+  { username: "ign",                  displayName: "IGN",                     category: "TV & FILM",     postHourEAT: 12, isCreator: false },
+  { username: "netflixuk",            displayName: "Netflix UK",              category: "TV & FILM",     postHourEAT: 13, isCreator: false },
+  { username: "netflix",              displayName: "Netflix",                 category: "TV & FILM",     postHourEAT: 14, isCreator: false },
+  { username: "disneyplus",           displayName: "Disney Plus",             category: "TV & FILM",     postHourEAT: 15, isCreator: false },
+  { username: "hbomax",               displayName: "Max (HBO)",               category: "TV & FILM",     postHourEAT: 16, isCreator: false },
+  // ── Sports ────────────────────────────────────────────────────────────────
   { username: "skysportsnews",        displayName: "Sky Sports News",         category: "SPORTS",        postHourEAT: 17, isCreator: false },
   { username: "dailymailsport",       displayName: "Daily Mail Sport",        category: "SPORTS",        postHourEAT: 18, isCreator: false },
-  { username: "dylan.page",           displayName: "Dylan Page",              category: "NEWS",          postHourEAT: 19, isCreator: true  },
-  { username: "urbannewsgang",        displayName: "Urban News Gang",         category: "ENTERTAINMENT", postHourEAT: 20, isCreator: false },
+  { username: "espn",                 displayName: "ESPN",                    category: "SPORTS",        postHourEAT: 19, isCreator: false },
+  { username: "bleacherreport",       displayName: "Bleacher Report",         category: "SPORTS",        postHourEAT: 20, isCreator: false },
+  { username: "goal",                 displayName: "Goal Football",           category: "SPORTS",        postHourEAT: 7,  isCreator: false },
+  { username: "433",                  displayName: "433 Football",            category: "SPORTS",        postHourEAT: 8,  isCreator: false },
+  { username: "nba",                  displayName: "NBA",                     category: "SPORTS",        postHourEAT: 9,  isCreator: false },
+  { username: "nfl",                  displayName: "NFL",                     category: "SPORTS",        postHourEAT: 10, isCreator: false },
+  // ── Comedy & Viral ────────────────────────────────────────────────────────
+  { username: "9gag",                 displayName: "9GAG",                    category: "COMEDY",        postHourEAT: 11, isCreator: false },
+  { username: "ladbible",             displayName: "LADbible",                category: "ENTERTAINMENT", postHourEAT: 12, isCreator: false },
+  { username: "unilad",               displayName: "UNILAD",                  category: "ENTERTAINMENT", postHourEAT: 13, isCreator: false },
+  { username: "barstoolsports",       displayName: "Barstool Sports",         category: "COMEDY",        postHourEAT: 14, isCreator: false },
+  { username: "funnyordie",           displayName: "Funny Or Die",            category: "COMEDY",        postHourEAT: 15, isCreator: false },
+  // ── Fashion & Lifestyle ───────────────────────────────────────────────────
+  { username: "vogue",                displayName: "Vogue",                   category: "FASHION",       postHourEAT: 16, isCreator: false },
+  { username: "gq",                   displayName: "GQ Magazine",             category: "FASHION",       postHourEAT: 17, isCreator: false },
+  { username: "cosmopolitan",         displayName: "Cosmopolitan",            category: "FASHION",       postHourEAT: 18, isCreator: false },
+  { username: "elle",                 displayName: "Elle Magazine",           category: "FASHION",       postHourEAT: 19, isCreator: false },
+  // ── Global News Entertainment ─────────────────────────────────────────────
+  { username: "aljazeeraenglish",     displayName: "Al Jazeera English",      category: "ENTERTAINMENT", postHourEAT: 20, isCreator: false },
+  { username: "cnn",                  displayName: "CNN",                     category: "ENTERTAINMENT", postHourEAT: 21, isCreator: false },
+  { username: "dylan.page",           displayName: "Dylan Page",              category: "ENTERTAINMENT", postHourEAT: 19, isCreator: true  },
 ];
 
 // Content filter — reject promotional/ad content
@@ -631,11 +719,13 @@ export async function fetchAllVideoSources(): Promise<VideoItem[]> {
   }
 
   const allResults = await Promise.allSettled([
-    // Worker-proxied sources (Reddit + Dailymotion via Cloudflare — bypasses Vercel IP blocks)
+    // Worker-proxied sources (Twitter/X Nitter RSS + Dailymotion — bypasses Vercel IP blocks)
     fetchVideosViaWorker(),
-    // TikWM search via worker proxy (may be rate limited)
+    // TikWM search via worker proxy
     fetchTikWMTrending(),
-    // YouTube RSS — for metadata, resolved via Cobalt API
+    // TikTok account scraper
+    ...TIKTOK_ACCOUNTS.sort(() => Math.random() - 0.5).slice(0, 10).map(a => fetchTikTokAccountVideos(a)),
+    // YouTube RSS
     ...YOUTUBE_CHANNELS.slice(0, 4).map(ch => fetchYouTubeChannel(ch.id, ch.name, ch.cat)),
     // News RSS with video embeds
     ...NEWS_RSS_FEEDS.slice(0, 8).map(f => fetchNewsRSSWithVideo(f.url, f.name, f.cat)),

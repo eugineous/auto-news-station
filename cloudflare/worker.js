@@ -529,54 +529,104 @@ export default {
     }
 
     // ── /fetch-videos ─────────────────────────────────────────────────────────
-    // Fetches video sources (Reddit, Dailymotion) server-side and returns results
+    // Fetches video sources server-side via Cloudflare (bypasses Vercel IP blocks)
+    // Sources: Twitter/X nitter RSS, Facebook public pages, Dailymotion
     if (url.pathname === "/fetch-videos" && request.method === "GET") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
       try {
         const videos = [];
 
-        // Reddit native videos
-        const REDDIT_FEEDS = [
-          { url: "https://www.reddit.com/r/videos/new.json?limit=25", name: "r/Videos", cat: "ENTERTAINMENT" },
-          { url: "https://www.reddit.com/r/nextfuckinglevel/new.json?limit=25", name: "r/NextLevel", cat: "ENTERTAINMENT" },
-          { url: "https://www.reddit.com/r/sports/new.json?limit=25", name: "r/Sports", cat: "SPORTS" },
-          { url: "https://www.reddit.com/r/Music/new.json?limit=25", name: "r/Music", cat: "MUSIC" },
-          { url: "https://www.reddit.com/r/entertainment/new.json?limit=25", name: "r/Entertainment", cat: "ENTERTAINMENT" },
+        // ── Twitter/X via Nitter RSS (public, no auth needed) ─────────────────
+        const NITTER_INSTANCES = [
+          "https://nitter.net",
+          "https://nitter.privacydev.net",
+          "https://nitter.poast.org",
+        ];
+        const TWITTER_ACCOUNTS = [
+          { handle: "TMZ",              cat: "CELEBRITY"     },
+          { handle: "PageSix",          cat: "CELEBRITY"     },
+          { handle: "enews",            cat: "CELEBRITY"     },
+          { handle: "people",           cat: "CELEBRITY"     },
+          { handle: "usweekly",         cat: "CELEBRITY"     },
+          { handle: "EW",               cat: "ENTERTAINMENT" },
+          { handle: "billboard",        cat: "MUSIC"         },
+          { handle: "RollingStone",     cat: "MUSIC"         },
+          { handle: "Variety",          cat: "TV & FILM"     },
+          { handle: "THR",              cat: "TV & FILM"     },
+          { handle: "espn",             cat: "SPORTS"        },
+          { handle: "SkySportsNews",    cat: "SPORTS"        },
+          { handle: "goal",             cat: "SPORTS"        },
+          { handle: "BleacherReport",   cat: "SPORTS"        },
+          { handle: "SPMBuzz",          cat: "CELEBRITY"     },
+          { handle: "tukokenya",        cat: "ENTERTAINMENT" },
+          { handle: "ntvkenya",         cat: "ENTERTAINMENT" },
+          { handle: "PulseLiveKenya",   cat: "ENTERTAINMENT" },
+          { handle: "Mpasho",           cat: "CELEBRITY"     },
+          { handle: "GhaflaKenya",      cat: "CELEBRITY"     },
+          { handle: "BellaNaija",       cat: "CELEBRITY"     },
+          { handle: "PulseNigeria",     cat: "ENTERTAINMENT" },
+          { handle: "TheShadeRoom",     cat: "CELEBRITY"     },
+          { handle: "Complex",          cat: "MUSIC"         },
+          { handle: "HotNewHipHop",     cat: "MUSIC"         },
         ];
 
-        await Promise.allSettled(REDDIT_FEEDS.map(async feed => {
+        // Pick a working Nitter instance and fetch RSS for random accounts
+        const nitterBase = NITTER_INSTANCES[Math.floor(Math.random() * NITTER_INSTANCES.length)];
+        const accountsToFetch = [...TWITTER_ACCOUNTS].sort(() => Math.random() - 0.5).slice(0, 8);
+
+        await Promise.allSettled(accountsToFetch.map(async acct => {
           try {
-            const r = await fetch(feed.url, {
-              headers: { "User-Agent": "PPPTVBot/2.0 (entertainment aggregator)" },
+            const r = await fetch(`${nitterBase}/${acct.handle}/rss`, {
+              headers: { "User-Agent": "Mozilla/5.0 (compatible; PPPTVBot/2.0)" },
               signal: AbortSignal.timeout(8000),
             });
             if (!r.ok) return;
-            const data = await r.json();
-            const posts = data?.data?.children || [];
-            for (const post of posts) {
-              const p = post.data;
-              if (!p.is_video || !p.media?.reddit_video?.fallback_url) continue;
-              const ageHours = (Date.now() - p.created_utc * 1000) / 3600000;
+            const xml = await r.text();
+            const itemRegex = /<item>([\s\S]*?)<\/item>/g;
+            let match;
+            let count = 0;
+            while ((match = itemRegex.exec(xml)) !== null && count < 3) {
+              const e = match[1];
+              const title = (e.match(/<title><!\[CDATA\[([\s\S]*?)\]\]><\/title>/) || e.match(/<title>([\s\S]*?)<\/title>/) || [])[1] || "";
+              const link = (e.match(/<link>(.*?)<\/link>/) || [])[1] || "";
+              const pubDate = (e.match(/<pubDate>(.*?)<\/pubDate>/) || [])[1] || "";
+              // Only include tweets with video (look for video/mp4 or twitter video indicators)
+              const hasVideo = e.includes("video") || e.includes(".mp4") || e.includes("pic.twitter") || e.includes("t.co");
+              if (!title || !link || !hasVideo) continue;
+              const ageHours = pubDate ? (Date.now() - new Date(pubDate).getTime()) / 3600000 : 0;
               if (ageHours > 48) continue;
+              const cleanTitle = title.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").trim();
+              if (!cleanTitle || cleanTitle.length < 10) continue;
+              // Convert nitter link back to twitter link for resolution
+              const twitterLink = link.replace(nitterBase, "https://twitter.com").replace("/nitter.net", "").replace("/nitter.privacydev.net", "").replace("/nitter.poast.org", "");
               videos.push({
-                id: `reddit:${p.id}`,
-                title: p.title,
-                url: p.media.reddit_video.fallback_url,
-                directVideoUrl: p.media.reddit_video.fallback_url,
-                thumbnail: p.thumbnail?.startsWith("http") ? p.thumbnail : "",
-                publishedAt: new Date(p.created_utc * 1000).toISOString(),
-                sourceName: feed.name,
-                sourceType: "reddit",
-                category: feed.cat,
+                id: `twitter:${acct.handle}:${Date.now()}:${count}`,
+                title: cleanTitle.slice(0, 200),
+                url: twitterLink,
+                directVideoUrl: null,
+                thumbnail: "",
+                publishedAt: pubDate ? new Date(pubDate).toISOString() : new Date().toISOString(),
+                sourceName: `@${acct.handle}`,
+                sourceType: "twitter",
+                category: acct.cat,
               });
+              count++;
             }
           } catch {}
         }));
 
-        // Dailymotion RSS
+        // ── Dailymotion RSS (still works, has audio) ──────────────────────────
         const DM_FEEDS = [
           { url: "https://www.dailymotion.com/rss/tag/kenya+entertainment", name: "Dailymotion Kenya", cat: "ENTERTAINMENT" },
-          { url: "https://www.dailymotion.com/rss/tag/africa+music", name: "Africa Music DM", cat: "MUSIC" },
+          { url: "https://www.dailymotion.com/rss/tag/africa+music",        name: "Africa Music DM",   cat: "MUSIC"         },
+          { url: "https://www.dailymotion.com/rss/tag/celebrity+gossip",    name: "Celebrity Gossip",  cat: "CELEBRITY"     },
+          { url: "https://www.dailymotion.com/rss/tag/viral+video",         name: "Viral Videos DM",   cat: "ENTERTAINMENT" },
+          { url: "https://www.dailymotion.com/rss/tag/music+video",         name: "Music Videos DM",   cat: "MUSIC"         },
+          { url: "https://www.dailymotion.com/rss/tag/sports+highlights",   name: "Sports Highlights", cat: "SPORTS"        },
+          { url: "https://www.dailymotion.com/rss/tag/comedy+funny",        name: "Comedy DM",         cat: "COMEDY"        },
+          { url: "https://www.dailymotion.com/rss/tag/nairobi",             name: "Nairobi DM",        cat: "ENTERTAINMENT" },
+          { url: "https://www.dailymotion.com/rss/tag/afrobeats",           name: "Afrobeats DM",      cat: "MUSIC"         },
+          { url: "https://www.dailymotion.com/rss/tag/nollywood",           name: "Nollywood DM",      cat: "TV & FILM"     },
         ];
 
         await Promise.allSettled(DM_FEEDS.map(async feed => {
@@ -598,7 +648,7 @@ export default {
               const videoId = link.match(/video\/([a-z0-9]+)/i)?.[1] || "";
               if (!title || !link) continue;
               const ageHours = pubDate ? (Date.now() - new Date(pubDate).getTime()) / 3600000 : 0;
-              if (ageHours > 48) continue;
+              if (ageHours > 72) continue;
               videos.push({
                 id: `dm:${videoId || link}`,
                 title: title.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">"),
