@@ -227,11 +227,9 @@ Respond ONLY with valid JSON:
   });
 
   const text = (result.text ?? "").trim();
-  // Strip thinking tags if present, then extract JSON
-  const stripped = text.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
-  const jsonMatch = stripped.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error("Gemini returned no JSON. Raw: " + text.slice(0, 300));
-  return JSON.parse(jsonMatch[0]);
+  const jsonStr = extractJSON(text);
+  if (!jsonStr) throw new Error("Gemini returned no JSON. Raw: " + text.slice(0, 300));
+  return JSON.parse(jsonStr);
 }
 
 // ── NVIDIA-only fallback (no Gemini) ──────────────────────────────────────────
@@ -279,10 +277,10 @@ Respond ONLY with valid JSON:
     signal: AbortSignal.timeout(30000),
   });
   const data = await res.json() as { choices?: Array<{ message: { content: string } }> };
-  const text = data.choices?.[0]?.message?.content?.trim() ?? "";
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error("NVIDIA returned no JSON");
-  return JSON.parse(jsonMatch[0]);
+  const nvidiaText = data.choices?.[0]?.message?.content?.trim() ?? "";
+  const nvidiaJson = extractJSON(nvidiaText);
+  if (!nvidiaJson) throw new Error("NVIDIA returned no JSON");
+  return JSON.parse(nvidiaJson);
 }
 
 // ── Gemini-only fallback (no transcript, for non-YouTube) ─────────────────────
@@ -317,14 +315,20 @@ Respond ONLY with valid JSON:
     config: { temperature: 0.2, maxOutputTokens: 2000 },
   });
 
-  const text = (result.text ?? "").trim();
-  const stripped2 = text.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
-  const jsonMatch = stripped2.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error("Gemini returned no JSON. Raw: " + text.slice(0, 300));
-  return JSON.parse(jsonMatch[0]);
+  const rawText = (result.text ?? "").trim();
+  const jsonStr2 = extractJSON(rawText);
+  if (!jsonStr2) throw new Error("Gemini returned no JSON. Raw: " + rawText.slice(0, 300));
+  return JSON.parse(jsonStr2);
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// Strip thinking tags and markdown code fences, then extract JSON
+function extractJSON(raw: string): string | null {
+  let text = raw.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+  text = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/i, "").trim();
+  const match = text.match(/\{[\s\S]*\}/);
+  return match ? match[0] : null;
+}
+
 function fmtSec(s: number) { return `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`; }
 function extractYouTubeId(url: string): string | null {
   const m = url.match(/(?:v=|youtu\.be\/|embed\/)([a-zA-Z0-9_-]{11})/);
