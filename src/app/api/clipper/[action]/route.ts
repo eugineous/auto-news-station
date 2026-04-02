@@ -223,7 +223,7 @@ Respond ONLY with valid JSON:
   const result = await genAI.models.generateContent({
     model: "gemini-2.5-flash",
     contents: prompt,
-    config: { temperature: 0.2, maxOutputTokens: 2000 },
+    config: { temperature: 0.2, maxOutputTokens: 8000 },
   });
 
   const text = (result.text ?? "").trim();
@@ -312,7 +312,7 @@ Respond ONLY with valid JSON:
   const result = await genAI.models.generateContent({
     model: "gemini-2.5-flash",
     contents: isYouTube ? prompt : [{ role: "user", parts: [{ fileData: { mimeType: "video/mp4", fileUri: url } }, { text: prompt }] }],
-    config: { temperature: 0.2, maxOutputTokens: 2000 },
+    config: { temperature: 0.2, maxOutputTokens: 8000 },
   });
 
   const rawText = (result.text ?? "").trim();
