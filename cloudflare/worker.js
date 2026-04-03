@@ -637,6 +637,7 @@ export default {
           { u: "thenewsguyke",          cat: "ENTERTAINMENT" },
           { u: "sheyii_given",          cat: "ENTERTAINMENT" },
           { u: "urbannewsgang",         cat: "ENTERTAINMENT" },
+          { u: "mutembeitv",            cat: "ENTERTAINMENT" },
           { u: "bongotrending",         cat: "ENTERTAINMENT" },
           { u: "tanzaniaentertainment", cat: "ENTERTAINMENT" },
           { u: "harmonize_tz",          cat: "MUSIC"         },
@@ -798,89 +799,145 @@ export default {
       } catch (err) { return json({ error: err.message }, 500); }
     }
 
-    // -- /fetch-mutembei -- Scrapes MutembeiTV Facebook page for videos
+    // -- /fetch-mutembei -- Scrapes MutembeiTV Facebook page for videos (no token needed)
     if (url.pathname === "/fetch-mutembei" && request.method === "GET") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
       try {
         const videos = [];
 
-        // Try Facebook Graph API first (if token available in env)
-        const fbToken = env.FACEBOOK_ACCESS_TOKEN;
-        if (fbToken) {
+        // Scrape MutembeiTV Facebook videos page using mobile user agent
+        // Mobile FB returns simpler HTML with video data embedded
+        const PAGES_TO_TRY = [
+          "https://m.facebook.com/MutembeiTV/videos",
+          "https://www.facebook.com/MutembeiTV/videos",
+        ];
+
+        let html = "";
+        for (const pageUrl of PAGES_TO_TRY) {
           try {
-            const r = await fetch(
-              "https://graph.facebook.com/v19.0/MutembeiTV/videos?fields=id,title,description,source,created_time,thumbnails&limit=25&access_token=" + fbToken,
-              { signal: AbortSignal.timeout(10000) }
-            );
-            if (r.ok) {
-              const data = await r.json();
-              for (const v of (data.data || [])) {
-                const ageHours = (Date.now() - new Date(v.created_time).getTime()) / 3600000;
-                if (ageHours > 72) continue;
-                videos.push({
-                  id: "mutembei:" + v.id,
-                  title: v.title || v.description || "Mutembei TV Video",
-                  url: "https://www.facebook.com/MutembeiTV/videos/" + v.id,
-                  directVideoUrl: v.source || null,
-                  thumbnail: v.thumbnails?.data?.[0]?.uri || "",
-                  publishedAt: new Date(v.created_time).toISOString(),
-                  sourceName: "Mutembei TV",
-                  sourceType: "direct-mp4",
-                  category: "ENTERTAINMENT",
-                  playCount: 0,
-                });
-              }
-              if (videos.length > 0) return json({ videos, count: videos.length, source: "graph-api" });
-            }
+            const r = await fetch(pageUrl, {
+              headers: {
+                "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.9",
+                "Accept-Encoding": "gzip, deflate, br",
+                "Cache-Control": "no-cache",
+                "Pragma": "no-cache",
+              },
+              signal: AbortSignal.timeout(15000),
+              redirect: "follow",
+            });
+            if (r.ok) { html = await r.text(); break; }
           } catch {}
         }
 
-        // Fallback: use Facebook Graph API with page token to get MutembeiTV videos
-        // The page token must have pages_read_engagement permission
-        // Try fetching via page ID search first
-        const searchRes = await fetch(
-          "https://graph.facebook.com/v19.0/search?q=MutembeiTV&type=page&fields=id,name&access_token=" + fbToken,
-          { signal: AbortSignal.timeout(8000) }
-        ).catch(() => null);
+        if (!html) return json({ videos: [], count: 0, error: "Could not fetch Facebook page" });
 
-        let mutembeiPageId = "MutembeiTV";
-        if (searchRes && searchRes.ok) {
-          const sd = await searchRes.json().catch(() => ({}));
-          const page = (sd.data || []).find(p => p.name && p.name.toLowerCase().includes("mutembei"));
-          if (page) mutembeiPageId = page.id;
-        }
+        // Extract video IDs from multiple patterns in the HTML
+        const seenIds = new Set();
 
-        // Try fetching videos with the resolved page ID
-        const vidRes = await fetch(
-          "https://graph.facebook.com/v19.0/" + mutembeiPageId + "/videos?fields=id,title,description,source,created_time&limit=25&access_token=" + fbToken,
-          { signal: AbortSignal.timeout(10000) }
-        ).catch(() => null);
+        // Pattern 1: video_id in JSON
+        const p1 = /"video_id"\s*:\s*"(\d{10,})"/g;
+        // Pattern 2: /videos/NNN in URLs
+        const p2 = /\/videos\/(\d{10,})/g;
+        // Pattern 3: story_fbid=NNN
+        const p3 = /story_fbid=(\d{10,})/g;
+        // Pattern 4: "id":"NNN" near video context
+        const p4 = /"id"\s*:\s*"(\d{15,})"/g;
 
-        if (vidRes && vidRes.ok) {
-          const vd = await vidRes.json().catch(() => ({}));
-          for (const v of (vd.data || [])) {
-            const ageHours = (Date.now() - new Date(v.created_time).getTime()) / 3600000;
-            if (ageHours > 72) continue;
-            videos.push({
-              id: "mutembei:" + v.id,
-              title: v.title || v.description || "Mutembei TV Video",
-              url: "https://www.facebook.com/MutembeiTV/videos/" + v.id,
-              directVideoUrl: v.source || null,
-              thumbnail: "",
-              publishedAt: new Date(v.created_time).toISOString(),
-              sourceName: "Mutembei TV",
-              sourceType: v.source ? "direct-mp4" : "facebook",
-              category: "ENTERTAINMENT",
-              playCount: 0,
-            });
+        for (const regex of [p1, p2, p3, p4]) {
+          let m;
+          while ((m = regex.exec(html)) !== null) {
+            const id = m[1];
+            if (!seenIds.has(id) && id.length >= 10) {
+              seenIds.add(id);
+              videos.push({
+                id: "mutembei:" + id,
+                title: "Mutembei TV Video",
+                url: "https://www.facebook.com/MutembeiTV/videos/" + id,
+                directVideoUrl: null,
+                thumbnail: "",
+                publishedAt: new Date().toISOString(),
+                sourceName: "Mutembei TV",
+                sourceType: "facebook",
+                category: "ENTERTAINMENT",
+                playCount: 0,
+              });
+            }
           }
         }
 
-        if (videos.length === 0) {
-          return json({ videos: [], count: 0, error: "No videos found - token may lack pages_read_engagement permission for MutembeiTV" });
-        }
+        return json({ videos: videos.slice(0, 20), count: Math.min(videos.length, 20), htmlLen: html.length });
+      } catch (err) { return json({ error: err.message }, 500); }
+    }
 
-        return json({ videos: videos.slice(0, 25), count: Math.min(videos.length, 25), source: "graph-api-search" });
+    // -- /resolve-facebook --
+    // Downloads a Facebook video URL using public downloader services
+    if (url.pathname === "/resolve-facebook" && request.method === "POST") {
+      if (!authed) return new Response("Unauthorized", { status: 401 });
+      try {
+        const { videoUrl } = await request.json();
+        if (!videoUrl) return json({ error: "videoUrl required" }, 400);
+
+        // Method 1: fdown.net API
+        try {
+          const formData = new URLSearchParams({ URLz: videoUrl });
+          const r = await fetch("https://fdown.net/download.php", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/x-www-form-urlencoded",
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+              "Referer": "https://fdown.net/",
+              "Origin": "https://fdown.net",
+            },
+            body: formData.toString(),
+            signal: AbortSignal.timeout(12000),
+          });
+          if (r.ok) {
+            const html = await r.text();
+            // Extract HD or SD download link
+            const hdMatch = html.match(/href="(https:\/\/[^"]+\.mp4[^"]*)"[^>]*>.*?HD/i);
+            const sdMatch = html.match(/href="(https:\/\/[^"]+\.mp4[^"]*)"/i);
+            const mp4Url = hdMatch?.[1] || sdMatch?.[1];
+            if (mp4Url) return json({ success: true, url: mp4Url.replace(/&amp;/g, "&") });
+          }
+        } catch {}
+
+        // Method 2: getfvid.com
+        try {
+          const r = await fetch("https://getfvid.com/downloader", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/x-www-form-urlencoded",
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+              "Referer": "https://getfvid.com/",
+            },
+            body: new URLSearchParams({ url: videoUrl }).toString(),
+            signal: AbortSignal.timeout(12000),
+          });
+          if (r.ok) {
+            const html = await r.text();
+            const mp4Match = html.match(/href="(https:\/\/[^"]+\.mp4[^"]*)"/i);
+            if (mp4Match?.[1]) return json({ success: true, url: mp4Match[1].replace(/&amp;/g, "&") });
+          }
+        } catch {}
+
+        // Method 3: savefrom.net API
+        try {
+          const r = await fetch("https://worker.savefrom.net/api/convert", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "User-Agent": "Mozilla/5.0" },
+            body: JSON.stringify({ url: videoUrl }),
+            signal: AbortSignal.timeout(10000),
+          });
+          if (r.ok) {
+            const data = await r.json();
+            const mp4 = (data.url || []).find(u => u.ext === "mp4" || u.type?.includes("mp4"));
+            if (mp4?.url) return json({ success: true, url: mp4.url });
+          }
+        } catch {}
+
+        return json({ error: "All Facebook resolvers failed" }, 502);
       } catch (err) { return json({ error: err.message }, 500); }
     }
 

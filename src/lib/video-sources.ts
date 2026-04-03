@@ -351,6 +351,7 @@ interface TikTokAccount {
 
 const TIKTOK_ACCOUNTS: TikTokAccount[] = [
   // ── Kenya ─────────────────────────────────────────────────────────────────
+  { username: "mutembeitv",           displayName: "Mutembei TV",            category: "ENTERTAINMENT", postHourEAT: 6,  isCreator: false },
   { username: "tushindecharityshow",  displayName: "Tushinde Charity Show",  category: "ENTERTAINMENT", postHourEAT: 7,  isCreator: false },
   { username: "bbcnewsswahili",       displayName: "BBC News Swahili",        category: "ENTERTAINMENT", postHourEAT: 8,  isCreator: false },
   { username: "footballkenya",        displayName: "Football Kenya",          category: "SPORTS",        postHourEAT: 9,  isCreator: false },

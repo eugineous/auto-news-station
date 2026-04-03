@@ -353,19 +353,34 @@ export async function POST(req: NextRequest) {
           }
         } catch {}
       } else if (video.url.includes("facebook.com") || (video as any).sourceType === "facebook") {
-        // MutembeiTV Facebook video — try Cobalt resolver
+        // MutembeiTV Facebook video — resolve via worker's Facebook downloader
         try {
-          const cobaltRes = await fetch(`${WORKER_URL}/resolve-cobalt`, {
+          const fbRes = await fetch(`${WORKER_URL}/resolve-facebook`, {
             method: "POST",
             headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },
             body: JSON.stringify({ videoUrl: video.url }),
             signal: AbortSignal.timeout(20000),
           });
-          if (cobaltRes.ok) {
-            const cd = await cobaltRes.json() as any;
-            if (cd.success && cd.url) url = cd.url;
+          if (fbRes.ok) {
+            const fd = await fbRes.json() as any;
+            if (fd.success && fd.url) url = fd.url;
           }
         } catch {}
+        // Fallback: Cobalt
+        if (!url) {
+          try {
+            const cobaltRes = await fetch(`${WORKER_URL}/resolve-cobalt`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },
+              body: JSON.stringify({ videoUrl: video.url }),
+              signal: AbortSignal.timeout(20000),
+            });
+            if (cobaltRes.ok) {
+              const cd = await cobaltRes.json() as any;
+              if (cd.success && cd.url) url = cd.url;
+            }
+          } catch {}
+        }
       } else if (video.url.includes("youtube.com") || video.url.includes("youtu.be")) {
         // Try Cobalt API via worker first (most reliable for YouTube)
         try {
