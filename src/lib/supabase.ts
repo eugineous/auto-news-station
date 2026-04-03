@@ -44,7 +44,14 @@ export interface PostRecord {
 
 export async function logPost(record: PostRecord): Promise<void> {
   try {
-    await supabaseAdmin.from("posts").insert(record);
+    if (record.article_id) {
+      // Upsert on article_id — prevents duplicate rows if the same article is posted twice
+      await supabaseAdmin
+        .from("posts")
+        .upsert({ ...record, posted_at: record.posted_at || new Date().toISOString() }, { onConflict: "article_id" });
+    } else {
+      await supabaseAdmin.from("posts").insert(record);
+    }
   } catch (err) {
     console.warn("[supabase] logPost failed:", err);
   }
@@ -58,8 +65,20 @@ export async function getPostLog(limit = 50, daysBack = 7): Promise<PostRecord[]
       .select("*")
       .gte("posted_at", since)
       .order("posted_at", { ascending: false })
-      .limit(limit);
-    return data || [];
+      .limit(limit * 3); // fetch extra to account for dedup
+    if (!data) return [];
+
+    // Deduplicate by article_id — keep only the most recent row per article
+    const seen = new Set<string>();
+    const deduped: PostRecord[] = [];
+    for (const row of data) {
+      const key = row.article_id || row.title?.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 60);
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      deduped.push(row);
+      if (deduped.length >= limit) break;
+    }
+    return deduped;
   } catch { return []; }
 }
 

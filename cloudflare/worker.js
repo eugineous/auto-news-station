@@ -58,6 +58,8 @@ export default {
 
         // Kenya entertainment RSS feeds - reliable, fast
         const FEEDS = [
+          // PPP TV site — primary source (always first)
+          { url: "https://ppp-tv-site.vercel.app/api/rss",               name: "PPP TV Kenya",          cat: "ENTERTAINMENT" },
           { url: "https://www.tuko.co.ke/rss/entertainment.xml",          name: "Tuko Entertainment",    cat: "ENTERTAINMENT" },
           { url: "https://www.tuko.co.ke/rss/celebrities.xml",            name: "Tuko Celebrities",      cat: "CELEBRITY"     },
           { url: "https://www.mpasho.co.ke/feed/",                        name: "Mpasho",                cat: "CELEBRITY"     },
@@ -1091,7 +1093,7 @@ async function triggerAutomate(env) {
     return;
   }
 
-  const appUrl = env.VERCEL_APP_URL || "https://auto-news-station.vercel.app";
+  const appUrl = env.VERCEL_APP_URL || "https://ppp-tv-site-final.vercel.app";
   const secret = env.AUTOMATE_SECRET;
   if (!secret) { console.warn("[auto-ppp-tv] AUTOMATE_SECRET not set"); return; }
 
@@ -1173,6 +1175,8 @@ async function triggerAutomate(env) {
       console.log(`[burst] image: posted=${d.posted} errors=${d.errors?.length || 0}`);
       // Track performance for A/B learning
       if (d.posted > 0) {
+        // Record successful post time — used for 3h force-post check
+        await env.SEEN_ARTICLES.put("last:post:time", String(Date.now()), { expirationTtl: 24 * 3600 });
         const total = parseInt(await env.SEEN_ARTICLES.get("agent:total_posts") || "0") + 1;
         await env.SEEN_ARTICLES.put("agent:total_posts", String(total), { expirationTtl: 365 * 24 * 3600 });
         // Log agent activity

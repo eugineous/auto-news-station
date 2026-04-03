@@ -5,7 +5,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { resolveVideoUrl } from "@/lib/video-downloader";
-import { generateAIContent, verifyStory } from "@/lib/gemini";
+import { generateAIContent } from "@/lib/gemini";
 import { generateImage } from "@/lib/image-gen";
 import { fetchAllVideoSources, VideoItem, TIKTOK_ACCOUNTS, buildAttribution } from "@/lib/video-sources";
 import { fetchViralTikTokVideos, calculateViralScore, KENYAN_MUSIC_KEYWORDS, isOptimalPostingTime } from "@/lib/viral-intelligence";
@@ -225,8 +225,7 @@ export async function POST(req: NextRequest) {
       ...allVideos,
       ...viralVideos
         .filter(v => !seenIds.has(v.id))
-        // Only include viral TikTok videos with 200K+ views (or 1M+ for top priority)
-        .filter(v => !v.playCount || v.playCount >= 200000)
+        // Accept all viral videos regardless of view count
         .map(v => ({
           id: v.id, title: v.title, url: v.url,
           directVideoUrl: v.directVideoUrl, thumbnail: v.thumbnail,
@@ -260,7 +259,7 @@ export async function POST(req: NextRequest) {
     const dedupedVideos = filteredVideos
       .filter(v => {
         const tl = v.title.toLowerCase();
-        return !recentTitles.some(rt => levenshtein(tl.slice(0, 60), rt.slice(0, 60)) < 10);
+        return !recentTitles.some(rt => levenshtein(tl.slice(0, 60), rt.slice(0, 60)) < 4);
       })
       .map(v => {
         // Score each video for viral potential
@@ -291,12 +290,32 @@ export async function POST(req: NextRequest) {
     // Try each video until we find one we can resolve
     for (const video of dedupedVideos) {
       if (await isVideoSeen(video.id)) continue;
-      // Skip Reddit videos — they have no audio (video/audio are separate tracks)
+
+      // For Reddit native videos: MUST use Cobalt to merge video+audio tracks
+      // Reddit stores them separately — fallback_url has no audio
       if (video.id.startsWith("reddit:") || video.sourceType === "reddit") {
-        continue;
+        let redditUrl: string | null = null;
+        try {
+          const cobaltRes = await fetch(`${WORKER_URL}/resolve-cobalt`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },
+            body: JSON.stringify({ videoUrl: video.url }),
+            signal: AbortSignal.timeout(20000),
+          });
+          if (cobaltRes.ok) {
+            const cd = await cobaltRes.json() as any;
+            if (cd.success && cd.url) redditUrl = cd.url;
+          }
+        } catch {}
+        // If Cobalt can't merge it, skip — no silent videos
+        if (!redditUrl) continue;
+        target = video;
+        directUrl = redditUrl;
+        await markVideoSeen(video.id);
+        break;
       }
 
-      // Try to get a direct URL
+      // Try to get a direct URL for non-Reddit sources
       let url: string | null = null;
       const isCdnUrl = (u: string) => /\.(mp4|mov|webm)/i.test(u) ||
         /v\d+-webapp\.tiktok\.com|tikcdn\.io|tiktokcdn\.com|v16-webapp|v19-webapp|v26-webapp/i.test(u) ||
@@ -432,30 +451,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ posted: 0, message: "No resolvable videos found from any source" });
     }
 
-    // ── Story verification — only apply to news/politics, skip entertainment/viral ─
-    const NEWS_CATS = new Set(["NEWS", "POLITICS", "BUSINESS", "TECHNOLOGY", "HEALTH", "SCIENCE"]);
-    const needsVerification = NEWS_CATS.has(target.category?.toUpperCase());
-    if (needsVerification) {
-      const verification = await verifyStory(target.title, target.url);
-      if (!verification.verified) {
-        console.warn(`[verify] BLOCKED: "${target.title}" — ${verification.reason} (confidence: ${verification.confidence})`);
-        await logPost({
-          article_id: createHash("sha256").update(target.id).digest("hex").slice(0, 16),
-          title: target.title, url: target.url,
-          category: target.category, source_name: target.sourceName,
-          blocked: true, block_reason: verification.reason,
-          post_type: "video",
-        });
-        return NextResponse.json({ posted: 0, message: `Story blocked: ${verification.reason}`, blocked: true });
-      }
-      if (verification.confidence < 40) {
-        console.warn(`[verify] LOW CONFIDENCE: "${target.title}" — ${verification.reason} (${verification.confidence}%) — skipping`);
-        return NextResponse.json({ posted: 0, message: `Low confidence story skipped (${verification.confidence}%)`, blocked: true });
-      }
-      console.log(`[verify] APPROVED: "${target.title}" — ${verification.reason} (${verification.confidence}%)`);
-    } else {
-      console.log(`[verify] SKIPPED for entertainment/viral content: "${target.title}" (${target.category})`);
-    }
+    // ── Skip verification entirely — we trust our video sources ─────────────
+    console.log(`[video] Processing: "${target.title}" from ${target.sourceName} (${target.category})`);
 
     const staged = await stageVideoInR2(directUrl);
     if (!staged) {

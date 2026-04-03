@@ -303,7 +303,16 @@ export default function Dashboard() {
 
   function showToast(msg:string, type:"ok"|"err") { setToast({msg,type}); setTimeout(()=>setToast(null),4000); }
 
-  const sorted = [...posts].map(norm).sort((a,b)=>new Date(b.at||0).getTime()-new Date(a.at||0).getTime());
+  const sorted = (() => {
+    const mapped = [...posts].map(norm).sort((a,b)=>new Date(b.at||0).getTime()-new Date(a.at||0).getTime());
+    const seen = new Set<string>();
+    return mapped.filter(p => {
+      const key = p.id || p.title?.toLowerCase().replace(/[^a-z0-9]/g,"").slice(0,60);
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  })();
   const today = sorted.filter(p=>new Date(p.at||0).toDateString()===new Date().toDateString());
   const todayCount = today.length;
   const igOkToday = today.filter(p=>p.igOk).length;

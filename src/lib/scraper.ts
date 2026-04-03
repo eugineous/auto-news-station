@@ -1,7 +1,11 @@
 import { createHash } from "crypto";
 import { Article } from "./types";
 
-// PPP TV site feed — pulls from the live ppp-tv-site.vercel.app
+// PPP TV site — primary source
+const PPPTV_SITE_URL = process.env.PPPTV_SITE_URL || "https://ppp-tv-site.vercel.app";
+const PPPTV_RSS_URL = PPPTV_SITE_URL + "/api/rss";
+
+// Worker feed fallback — external RSS feeds (Tuko, Mpasho, etc.)
 const PPPTV_FEED_URL = (process.env.PPPTV_WORKER_URL || "https://auto-ppp-tv.euginemicah.workers.dev") + "/feed";
 
 const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
@@ -83,8 +87,82 @@ function parseWorkerFeed(data: WorkerFeedResponse): Article[] {
   return articles;
 }
 
+// ── Parse PPP TV site RSS feed directly ──────────────────────────────────────
+async function fetchFromPPPTVSite(limit: number): Promise<Article[]> {
+  const res = await fetch(PPPTV_RSS_URL, {
+    headers: { "User-Agent": "PPPTVAutoPoster/5.0", "Accept": "application/rss+xml, application/xml, text/xml, */*" },
+    signal: AbortSignal.timeout(15000),
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(`PPP TV RSS ${res.status}`);
+  const xml = await res.text();
+
+  const articles: Article[] = [];
+  const seenIds = new Set<string>();
+  const seenTitles = new Set<string>();
+  const itemRegex = /<item>([\s\S]*?)<\/item>/g;
+  let match;
+
+  while ((match = itemRegex.exec(xml)) !== null) {
+    const e = match[1];
+    const rawTitle = (e.match(/<title><!\[CDATA\[([\s\S]*?)\]\]><\/title>/) || e.match(/<title>([\s\S]*?)<\/title>/) || [])[1] || "";
+    const title = rawTitle.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/<[^>]+>/g, "").trim();
+    if (!title || title.length < 5) continue;
+
+    const fp = titleFingerprint(title);
+    if (seenTitles.has(fp)) continue;
+    seenTitles.add(fp);
+
+    const link = (e.match(/<link>(.*?)<\/link>/) || e.match(/<guid[^>]*isPermaLink="true"[^>]*>(.*?)<\/guid>/) || e.match(/<guid[^>]*>(.*?)<\/guid>/) || [])[1]?.trim() || "";
+    const pubDate = (e.match(/<pubDate>(.*?)<\/pubDate>/) || [])[1] || "";
+    const desc = (e.match(/<description><!\[CDATA\[([\s\S]*?)\]\]><\/description>/) || e.match(/<description>([\s\S]*?)<\/description>/) || [])[1] || "";
+    const excerpt = desc.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/\s+/g, " ").trim().slice(0, 500);
+    const category = (e.match(/<category><!\[CDATA\[([\s\S]*?)\]\]><\/category>/) || e.match(/<category>([\s\S]*?)<\/category>/) || [])[1]?.trim().toUpperCase() || "ENTERTAINMENT";
+    const imgMatch = e.match(/<media:content[^>]+url="([^"]+)"/) || e.match(/<media:thumbnail[^>]+url="([^"]+)"/) || e.match(/https?:\/\/[^\s"'<>]+\.(?:jpg|jpeg|png|webp)[^"'<>\s]*/);
+    const imageUrl = imgMatch ? (imgMatch[1] || imgMatch[0]) : "";
+    const videoUrl = (e.match(/<enclosure[^>]+url="([^"]+\.mp4[^"]*)"/) || [])[1] || undefined;
+
+    const articleUrl = link || `${PPPTV_SITE_URL}`;
+    const id = hashUrl(articleUrl);
+    if (seenIds.has(id)) continue;
+    seenIds.add(id);
+
+    if (pubDate && !isWithin24h(pubDate)) continue;
+
+    articles.push({
+      id,
+      title,
+      url: articleUrl,
+      imageUrl,
+      summary: excerpt,
+      fullBody: excerpt,
+      sourceName: "PPP TV Kenya",
+      category,
+      publishedAt: pubDate ? new Date(pubDate) : new Date(),
+      videoUrl,
+      isVideo: !!videoUrl,
+    });
+
+    if (articles.length >= limit) break;
+  }
+
+  return articles;
+}
+
 export async function fetchArticles(limit = 50): Promise<Article[]> {
-  // 1. First try ingest_queue — articles pushed directly from PPP TV site
+  // 1. PRIMARY: Pull directly from PPP TV site RSS
+  try {
+    const siteArticles = await fetchFromPPPTVSite(limit);
+    if (siteArticles.length > 0) {
+      siteArticles.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
+      console.log(`[scraper] PPP TV site RSS: ${siteArticles.length} articles`);
+      return siteArticles.slice(0, limit);
+    }
+  } catch (err: any) {
+    console.warn("[scraper] PPP TV site RSS failed:", err.message);
+  }
+
+  // 2. SECONDARY: ingest_queue — articles pushed directly from PPP TV site
   try {
     const since = new Date(Date.now() - 24 * 3600000).toISOString();
     const { data: queued } = await (await import("@/lib/supabase")).supabaseAdmin
@@ -111,31 +189,24 @@ export async function fetchArticles(limit = 50): Promise<Article[]> {
         isBreaking: item.is_breaking || false,
       }));
       articles.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
+      console.log(`[scraper] ingest_queue: ${articles.length} articles`);
       return articles.slice(0, limit);
     }
-  } catch { /* fall through to RSS feed */ }
+  } catch { /* fall through */ }
 
-  // 2. Fallback — scrape RSS feeds via worker
+  // 3. FALLBACK: external RSS feeds via worker
   const url = `${PPPTV_FEED_URL}?limit=${limit}`;
-
   const res = await fetch(url, {
     headers: { "User-Agent": "PPPTVAutoPoster/4.0" },
     signal: AbortSignal.timeout(20000),
     cache: "no-store",
   });
-
-  if (!res.ok) throw new Error("PPP TV Worker feed fetch failed: " + res.status);
-
+  if (!res.ok) throw new Error("Worker feed fetch failed: " + res.status);
   const data = await res.json() as WorkerFeedResponse;
-  const articles = parseWorkerFeed(data);
-
-  // Only articles from last 24h
-  const fresh = articles.filter(a => isWithin24h(a.publishedAt));
-
-  // Sort newest first
-  fresh.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
-
-  return fresh.slice(0, limit);
+  const articles = parseWorkerFeed(data).filter(a => isWithin24h(a.publishedAt));
+  articles.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
+  console.log(`[scraper] worker RSS fallback: ${articles.length} articles`);
+  return articles.slice(0, limit);
 }
 
 export async function fetchLatestArticle(): Promise<Article | null> {

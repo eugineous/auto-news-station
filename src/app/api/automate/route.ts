@@ -59,16 +59,15 @@ function isKenyaRelevant(a: Article): boolean {
 
 // ── Quality gate ──────────────────────────────────────────────────────────────
 function hasMinimumContent(a: Article): boolean {
-  if (!a.title || a.title.trim().length < 10) return false;
-  if (!a.summary || a.summary.trim().length < 30) return false;
+  if (!a.title || a.title.trim().length < 5) return false;
+  // Summary is optional — ingest_queue articles may have short excerpts
   return true;
 }
 
 // ── Best-time scheduler — EAT hours ──────────────────────────────────────────
 function isPostingHour(): boolean {
-  const hourEAT = (new Date().getUTCHours() + 3) % 24;
-  // Only skip true dead zone: 1am–5am EAT
-  return !(hourEAT >= 1 && hourEAT < 5);
+  // Worker handles dead-zone logic — always return true here to avoid double-blocking
+  return true;
 }
 
 // ── Daily post cap — max 6 posts per day ─────────────────────────────────────
@@ -455,18 +454,17 @@ export async function POST(req: NextRequest) {
       getLastCategory(),
     ]);
 
-    // 1. Kenya filter
-    const kenya = all.filter(isKenyaRelevant);
+    // 1. No geo filter — post everything from the feed
+    const kenya = all;
 
     // 2. Quality gate
     const quality = kenya.filter(hasMinimumContent);
 
-    // 3. Block political content — entertainment & sports only
+    // 3. Only block pure hard-politics categories — entertainment/sports/music/celebrity always pass
     const nonPolitical = quality.filter(a => {
       const cat = a.category?.toUpperCase();
-      if (["POLITICS", "NEWS", "BUSINESS", "TECHNOLOGY", "HEALTH", "SCIENCE"].includes(cat)) return false;
-      const politicalKeywords = /\b(election|vote|voting|president|prime minister|parliament|government|party|campaign|protest|coup|impeach|corruption|arrest|court|verdict|prison|police|crime|murder|terror|war|military|sanction|tariff|nato|un |imf |gdp|inflation|recession|budget|tax|deficit|policy|legislation|bill|law|regulation|constitution|democracy|dictatorship|opposition|ruling party|coalition|manifesto|rally|demonstration|strike|boycott|referendum|ballot|candidate|cabinet|minister|secretary|ambassador|diplomat|treaty|summit|g7|g20|brics|ruto|uhuru|raila|odinga|gachagua|kindiki|tinubu|buhari|ramaphosa|museveni|kagame|biden|trump|harris|macron|putin|zelensky)\b/i;
-      if (politicalKeywords.test(a.title)) return false;
+      // Only drop if the category is explicitly political/hard-news AND title has no entertainment angle
+      if (cat === "POLITICS") return false;
       return true;
     });
 

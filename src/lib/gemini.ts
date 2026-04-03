@@ -183,55 +183,18 @@ function getEngagementCTA(): { cta: string; type: "debate" | "tag" | "save" | "s
   return ENGAGEMENT_CTAS[Math.floor(Math.random() * ENGAGEMENT_CTAS.length)];
 }
 
-// ── Credibility verification — cross-reference before posting ────────────────
+// ── Story verification — lightweight check, don't block on uncertainty ────────
 export async function verifyStory(title: string, url: string): Promise<{ verified: boolean; reason: string; confidence: number }> {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) return { verified: true, reason: "no gemini key — skipping verification", confidence: 50 };
-
-  const client = getGeminiClient(apiKey);
-  try {
-    const prompt =
-      `You are a fact-checker for PPP TV Kenya. Verify this story before it gets posted.\n\n` +
-      `STORY TITLE: "${title}"\n` +
-      `SOURCE URL: ${url}\n\n` +
-      `INSTRUCTIONS:\n` +
-      `1. Use Google Search to find this story on at least 2 credible news sources\n` +
-      `2. Check if the story is real, satire, misrepresented, or fabricated\n` +
-      `3. Check if key facts (names, titles, events) are accurate\n` +
-      `4. Check if this is a known fake news story or hoax\n\n` +
-      `CREDIBLE SOURCES: BBC, Reuters, AP, CNN, Al Jazeera, Nation Africa, Standard Media, Citizen Digital, NTV Kenya, KTN, Tuko, The Star Kenya, Guardian, NYT, Washington Post\n\n` +
-      `RESPOND IN THIS EXACT FORMAT (JSON only, no other text):\n` +
-      `{"verified": true/false, "confidence": 0-100, "reason": "brief explanation", "sources": ["source1", "source2"]}\n\n` +
-      `verified=true means the story checks out and is safe to post\n` +
-      `verified=false means the story is fake, unverified, or potentially harmful\n` +
-      `confidence=100 means you found it on multiple credible sources\n` +
-      `confidence=0 means you found no credible sources or it's a known hoax`;
-
-    const response = await client.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: prompt,
-      config: {
-        temperature: 0.1,
-        maxOutputTokens: 300,
-        tools: [{ googleSearch: {} }],
-      },
-    });
-
-    const text = response.text?.trim() ?? "";
-    // Extract JSON from response
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) return { verified: true, reason: "could not parse verification response", confidence: 50 };
-
-    const result = JSON.parse(jsonMatch[0]);
-    return {
-      verified: result.verified !== false,
-      reason: result.reason || "verified",
-      confidence: result.confidence ?? 50,
-    };
-  } catch (err: any) {
-    console.warn("[verify] story verification failed:", err.message);
-    return { verified: true, reason: "verification error — proceeding with caution", confidence: 40 };
+  // Only block obvious hoaxes/satire — don't block on uncertainty
+  const lowerTitle = title.toLowerCase();
+  const obviousHoax = [
+    "satire", "parody", "fake news", "not real", "hoax",
+  ];
+  if (obviousHoax.some(h => lowerTitle.includes(h))) {
+    return { verified: false, reason: "title contains hoax indicator", confidence: 0 };
   }
+  // Pass everything else — we trust our sources (Tuko, Mpasho, Pulse, etc.)
+  return { verified: true, reason: "trusted source pipeline", confidence: 80 };
 }
 
 
@@ -243,223 +206,84 @@ export async function generateAIContent(
   article: Article,
   _options?: { isVideo?: boolean; videoType?: string; tone?: "formal" | "casual" | "hype" | "sheng"; language?: "en" | "sw" }
 ): Promise<AIContent> {
-  const tone = _options?.tone || "casual";
-  const language = _options?.language || "en";
   const hasGemini = !!process.env.GEMINI_API_KEY;
-  const hasNvidia = !!process.env.NVIDIA_API_KEY;
 
-  // ── Non-news: skip AI rewrite, use original content as-is ────────────────
-  if (!isNewsCategory(article.category)) {
-    const rawTitle = article.title.replace(/#\w+/g, "").replace(/\s{2,}/g, " ").trim().toUpperCase().slice(0, 120);
-    const rawCaption = (article.fullBody?.trim() || article.summary?.trim() || article.title).slice(0, 500);
-    const hashtags = getHashtags(article.category);
-    const cta = getEngagementCTA();
-    const caption = rawCaption + "\n\n" + cta.cta + "\n\nSource: " + (article.sourceName || "PPP TV Kenya");
+  const rawTitle = article.title.replace(/#\w+/g, "").replace(/\s{2,}/g, " ").trim();
+  const body = article.fullBody?.trim() || article.summary?.trim() || article.title;
+  const source = article.sourceName || "PPP TV Kenya";
+  const hashtags = getHashtags(article.category);
+  const cta = getEngagementCTA();
+
+  // ── Fast path: no Gemini key — build caption directly from article content ──
+  if (!hasGemini) {
+    const caption = buildParaphraseCaption(rawTitle, body, source, cta.cta, article.url);
     return {
-      clickbaitTitle: rawTitle,
+      clickbaitTitle: rawTitle.toUpperCase().slice(0, 120),
       caption,
       firstComment: hashtags,
       engagementType: cta.type,
     };
   }
 
-  const isSheng = tone === "sheng";
-  const isSwahili = language === "sw";
-
-  const content = (article.fullBody?.trim().length ?? 0) > 50
-    ? article.fullBody.trim().slice(0, 2000)
-    : (article.summary?.trim() ?? "");
-
-  const hookPattern = HOOK_PATTERNS[Math.floor(Math.random() * HOOK_PATTERNS.length)];
-
-  const toneInstruction = isSheng
-    ? `Write in Kenyan Sheng — a mix of Swahili, English, and Nairobi street slang. Use words like: fam, bana, si, ama, maze, sawa, poa, mtu, watu, hii, hiyo, leo, jana, kesho, mambo, vipi, noma, moto, baridi, kali, msee, dame, dude, wadau, wenyewe, kweli, kabisa, sawa sawa, si ndio, ata, hata, lakini, but, though, tho, coz, cuz. Sound like a young Nairobi content creator.`
-    : isSwahili
-    ? `Write entirely in Swahili. Use proper Swahili grammar and vocabulary appropriate for Kenyan news media.`
-    : tone === "hype"
-    ? `Write with maximum energy and hype. Use caps for emphasis, fire emojis, exclamation points. Make it feel URGENT and EXCITING.`
-    : tone === "formal"
-    ? `Write in formal journalistic style. Professional, factual, no slang, no emojis.`
-    : `Write in casual, conversational Kenyan English. Friendly, relatable, engaging.`;
-
-  const captionPrompt =
-    `You MUST use Google Search for context before writing. This is always required.\n\n` +
-    `REQUIRED SEARCHES (do all before writing):\n` +
-    `1. Search: "${article.title}" — get full context and latest developments\n` +
-    `2. Search every person mentioned — verify their CURRENT title/role today\n` +
-    `3. Search any statistics or claims — confirm accuracy\n` +
-    `4. Search for any related recent news that adds context\n\n` +
-    `KNOWN KENYA FACTS (verify still current via search):\n` +
-    `- William Ruto = President of Kenya since September 2022\n` +
-    `- Uhuru Kenyatta = FORMER President (left office Sept 2022) — NEVER call him "President"\n` +
-    `- Raila Odinga = Opposition leader — has NEVER been president\n` +
-    `- Kithure Kindiki = Deputy President since October 2024\n` +
-    `- Rigathi Gachagua = FORMER Deputy President (impeached October 2024)\n\n` +
-    `AFTER RESEARCHING, write the PPP TV Kenya caption:\n\n` +
-    `TITLE: ${article.title}\n` +
-    `CATEGORY: ${article.category}\n` +
-    `SOURCE: ${article.sourceName || "PPP TV Kenya"}\n` +
-    `SOURCE URL: ${article.url}\n` +
-    (content ? `ARTICLE:\n${content}\n\n` : "\n") +
-    `LEDE APPROACH: ${hookPattern}\n\n` +
-    `TONE: ${toneInstruction}\n\n` +
-    `RULES:\n` +
-    `- Use your search results to add context and correct any outdated information\n` +
-    `- Only write facts confirmed by your Google Search results or the article above\n` +
-    `- No clickbait. No curiosity gaps. No invented details.\n` +
-    `- End with: "Source: ${article.sourceName || "PPP TV Kenya"}"\n` +
-    `- Reply with ONLY the caption text — no labels, no preamble.`;
-
-  // Run title (Gemini+Search) and caption (Gemini+Search) in parallel
-  // NVIDIA is used as fallback for caption only (it has no search capability)
-  const results = await Promise.allSettled([
-    hasGemini ? generateTitleWithGemini(article) : Promise.reject("no gemini"),
-    hasGemini ? (async () => {
-      const client = getGeminiClient(process.env.GEMINI_API_KEY!);
-      const response = await client.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: captionPrompt,
-        config: {
-          systemInstruction: CAPTION_SYSTEM,
-          temperature: 0.6,
-          maxOutputTokens: 800,
-          tools: [{ googleSearch: {} }],
-        },
-      });
-      const text = response.text?.trim() ?? "";
-      if (!text || text.length < 40) throw new Error("empty gemini caption");
-      return text;
-    })() : Promise.reject("no gemini"),
-  ]);
-
-  let clickbaitTitle = "";
-  let caption = "";
-
-  // Title — prefer Gemini, fall back to article title
-  if (results[0].status === "fulfilled" && results[0].value) {
-    clickbaitTitle = results[0].value;
-  } else {
-    if (results[0].status === "rejected") console.warn("[gemini] title failed:", results[0].reason);
-    clickbaitTitle = article.title.toUpperCase().slice(0, 100);
-  }
-
-  // Strip hashtags from title — they look terrible on thumbnails
-  clickbaitTitle = clickbaitTitle.replace(/#\w+/g, "").replace(/\s{2,}/g, " ").trim();
-
-  // Caption — prefer Gemini+Search, fall back to NVIDIA, then excerpt
-  if (results[1].status === "fulfilled" && results[1].value) {
-    caption = results[1].value;
-  } else {
-    if (results[1].status === "rejected") console.warn("[gemini] caption failed:", results[1].reason);
-    // NVIDIA fallback — no search but apply known fact corrections
-    if (hasNvidia) {
-      try {
-        const nvidiaCaptionPrompt =
-          `Write a PPP TV Kenya news caption for this article.\n\n` +
-          `CRITICAL FACT CORRECTIONS — apply these before writing:\n` +
-          `- Uhuru Kenyatta = FORMER President of Kenya (NOT current president)\n` +
-          `- William Ruto = CURRENT President of Kenya\n` +
-          `- Raila Odinga = Opposition leader (never been president)\n` +
-          `- Kithure Kindiki = CURRENT Deputy President\n` +
-          `- Rigathi Gachagua = FORMER Deputy President (impeached 2024)\n\n` +
-          `TITLE: ${article.title}\n` +
-          `CATEGORY: ${article.category}\n` +
-          `SOURCE: ${article.sourceName || "PPP TV Kenya"}\n` +
-          (content ? `ARTICLE:\n${content}\n\n` : "\n") +
-          `LEDE APPROACH: ${hookPattern}\n\n` +
-          `RULES: Only use facts from the article. Apply the title corrections above. No clickbait.\n` +
-          `End with: "Source: ${article.sourceName || "PPP TV Kenya"}"\n` +
-          `Reply with ONLY the caption text.`;
-        caption = await generateWithNvidia(nvidiaCaptionPrompt, CAPTION_SYSTEM);
-      } catch (err) { console.warn("[nvidia] caption fallback failed:", err); }
-    }
-    if (!caption && hasGemini) {
-      try { caption = await generateCaptionWithGemini(article, content); }
-      catch (err) { console.warn("[gemini] caption fallback failed:", err); }
-    }
-    if (!caption) caption = buildExcerptCaption(article);
-  }
-
-  // Safety: strip any headline that leaked into caption top
-  caption = stripLeadingHeadline(caption, article.title);
-  caption = caption.replace(/#\w+/g, "").replace(/\n{3,}/g, "\n\n").trim();
-  if (!caption || caption.length < 40) caption = buildExcerptCaption(article);
-
-  // Build first comment: hashtags + engagement CTA (keeps caption clean)
-  const engagementCTA = getEngagementCTA();
-  const hashtags = getHashtags(article.category);
-  const firstComment = `${hashtags}`;
-
-  // Inject engagement CTA into caption if AI didn't include one
-  const hasCTA = /tag|comment|share|save|think|agree|disagree/i.test(caption.slice(-100));
-  if (!hasCTA) {
-    caption = caption.trimEnd() + "\n\n" + engagementCTA.cta;
-  }
-
-  return { clickbaitTitle, caption, firstComment, engagementType: engagementCTA.type };
-}
-
-// ── Gemini caption fallback ───────────────────────────────────────────────────
-async function generateCaptionWithGemini(article: Article, content: string): Promise<string> {
+  // ── Gemini: paraphrase only — no Google Search, no fact-checking, no rewrite ──
   const client = getGeminiClient(process.env.GEMINI_API_KEY!);
-  const hookPattern = HOOK_PATTERNS[Math.floor(Math.random() * HOOK_PATTERNS.length)];
-  const prompt =
-    `You MUST use Google Search before writing. Search the article title and verify all facts.\n\n` +
-    `REQUIRED: Search "${article.title}" and verify current titles of all people mentioned.\n` +
-    `KENYA FACTS: Ruto=current president, Uhuru=FORMER president, Kindiki=current DP, Gachagua=FORMER DP.\n\n` +
-    `TITLE: ${article.title}\n` +
-    `CATEGORY: ${article.category}\n` +
-    `SOURCE URL: ${article.url}\n` +
-    (content ? `ARTICLE:\n${content}\n\n` : "\n") +
-    `HOOK TECHNIQUE: ${hookPattern}\n\n` +
-    `Write a PPP TV Kenya caption using only verified facts. No hashtags. No ALL CAPS. No clickbait.\n` +
-    `End with: "Source: ${article.sourceName || "PPP TV Kenya"}"\n` +
-    `Reply with ONLY the caption text.`;
 
-  const response = await client.models.generateContent({
-    model: "gemini-2.5-flash",
-    contents: prompt,
-    config: {
-      systemInstruction: CAPTION_SYSTEM,
-      temperature: 0.6,
-      maxOutputTokens: 800,
-      tools: [{ googleSearch: {} }],
-    },
-  });
-  return response.text?.trim() ?? "";
+  const paraphrasePrompt =
+    `You are a social media writer for PPP TV Kenya.\n\n` +
+    `TASK: Paraphrase the article below into a short Instagram/Facebook caption.\n` +
+    `- Keep ALL facts exactly as stated in the article — do NOT add, invent, or change any detail\n` +
+    `- Paraphrase the wording so it reads naturally as a social media post\n` +
+    `- Write a punchy headline (ALL CAPS, max 10 words) then 2-3 sentences of body\n` +
+    `- End with: "Source: ${source}"\n` +
+    `- No hashtags, no emojis in headline, 2-3 emojis in body max\n` +
+    `- Under 150 words total\n\n` +
+    `ARTICLE TITLE: ${rawTitle}\n` +
+    `ARTICLE BODY: ${body.slice(0, 800)}\n` +
+    `SOURCE URL: ${article.url}\n\n` +
+    `Reply with ONLY the caption. No labels, no preamble.`;
+
+  try {
+    const response = await client.models.generateContent({
+      model: "gemini-2.0-flash",
+      contents: paraphrasePrompt,
+      config: { temperature: 0.4, maxOutputTokens: 400 },
+      // NO googleSearch tool — fast, no verification, just paraphrase
+    });
+
+    let caption = response.text?.trim() ?? "";
+    if (!caption || caption.length < 20) throw new Error("empty response");
+
+    // Extract headline from first line if it's ALL CAPS
+    const lines = caption.split("\n").filter(l => l.trim());
+    let clickbaitTitle = rawTitle.toUpperCase().slice(0, 120);
+    if (lines[0] && lines[0] === lines[0].toUpperCase() && lines[0].length > 5) {
+      clickbaitTitle = lines[0].replace(/#\w+/g, "").trim().slice(0, 120);
+    }
+
+    // Append CTA and URL if not already present
+    if (!caption.includes(article.url || "")) {
+      caption += `\n\n${cta.cta}`;
+    }
+
+    return { clickbaitTitle, caption, firstComment: hashtags, engagementType: cta.type };
+  } catch (err: any) {
+    console.warn("[gemini] paraphrase failed, using fallback:", err.message);
+    const caption = buildParaphraseCaption(rawTitle, body, source, cta.cta, article.url);
+    return {
+      clickbaitTitle: rawTitle.toUpperCase().slice(0, 120),
+      caption,
+      firstComment: hashtags,
+      engagementType: cta.type,
+    };
+  }
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-function buildExcerptCaption(article: Article): string {
-  const body = article.fullBody?.trim() || article.summary?.trim() || article.title;
+function buildParaphraseCaption(title: string, body: string, source: string, cta: string, url?: string): string {
   const cleaned = body
-    .split(/\n+/)
-    .filter(line => {
-      const t = line.trim();
-      if (!t) return false;
-      const upperRatio = (t.match(/[A-Z]/g) || []).length / Math.max(t.replace(/\s/g, "").length, 1);
-      return upperRatio < 0.7;
-    })
-    .join(" ")
+    .replace(/<[^>]+>/g, "")
     .replace(/\s+/g, " ")
     .trim()
-    .slice(0, 500);
-  return (cleaned || article.title) + "\n\nWhat do you think? 👇";
-}
-
-function stripLeadingHeadline(caption: string, originalTitle: string): string {
-  const lines = caption.split("\n");
-  const first = lines[0].trim();
-  if (first === first.toUpperCase() && first.length > 10 && first.replace(/[^A-Z]/g, "").length > 5) {
-    lines.shift();
-    while (lines.length && lines[0].trim() === "") lines.shift();
-    return lines.join("\n");
-  }
-  const titleNorm = originalTitle.toLowerCase().slice(0, 40);
-  if (first.toLowerCase().startsWith(titleNorm.slice(0, 30))) {
-    lines.shift();
-    while (lines.length && lines[0].trim() === "") lines.shift();
-    return lines.join("\n");
-  }
-  return caption;
+    .slice(0, 400);
+  const text = cleaned.length > 30 ? cleaned : title;
+  return `${text}\n\n${cta}\n\nSource: ${source}${url ? `\n${url}` : ""}`;
 }

@@ -48,17 +48,12 @@ function isEntertainmentTitle(title: string): boolean {
   return /music|song|video|celebrity|gossip|entertainment|fashion|award|concert|interview|exclusive|drama|movie|film|tv|show|dance|comedy|viral|trending|nairobi|kenya|africa/i.test(title);
 }
 
-// ── Politics/news filter — NEVER post political content ───────────────────────
-const BLOCKED_CATEGORIES = new Set(["POLITICS", "NEWS", "BUSINESS", "TECHNOLOGY", "HEALTH", "SCIENCE"]);
-const POLITICAL_KEYWORDS = /\b(politics|political|election|vote|voting|president|prime minister|minister|parliament|congress|senate|government|party|campaign|protest|riot|war|military|coup|impeach|resign|resign|corruption|scandal|arrest|court|judge|verdict|sentence|prison|jail|police|crime|murder|kill|attack|bomb|terror|terrorist|refugee|migrant|immigration|border|sanction|tariff|trade war|nato|un |united nations|world bank|imf |gdp|inflation|recession|budget|tax|deficit|debt|policy|legislation|bill|law|regulation|constitution|democracy|dictatorship|authoritarian|opposition|ruling party|coalition|manifesto|rally|demonstration|strike|boycott|referendum|ballot|candidate|incumbent|opposition leader|cabinet|minister|secretary|ambassador|diplomat|treaty|agreement|summit|g7|g20|brics|african union|au summit|ruto|uhuru|raila|odinga|gachagua|kindiki|tinubu|buhari|ramaphosa|museveni|kagame|mnangagwa|magufuli|samia|hassan|biden|trump|harris|macron|sunak|scholz|modi|xi jinping|putin|zelensky|netanyahu|erdogan)\b/i;
-
-function isPolitical(title: string, category: string): boolean {
-  if (BLOCKED_CATEGORIES.has(category?.toUpperCase())) return true;
-  if (POLITICAL_KEYWORDS.test(title)) return true;
+// ── Politics/news filter — removed, post everything ──────────────────────────
+function isPolitical(_title: string, _category: string): boolean {
   return false;
 }
 
-function isRecent(dateStr: string, maxHours = 48): boolean {
+function isRecent(dateStr: string, maxHours = 72): boolean {
   try {
     const d = new Date(dateStr);
     return Date.now() - d.getTime() < maxHours * 3600 * 1000;
@@ -136,7 +131,7 @@ async function fetchDailymotionFeed(feedUrl: string, sourceName: string, categor
     const videoId = link.match(/video\/([a-z0-9]+)/i)?.[1] || "";
 
     if (!title || !link || !isRecent(pubDate)) continue;
-    if (!isEntertainmentTitle(title)) continue;
+    // Accept all titles — no entertainment filter
 
     items.push({
       id: `dm:${videoId || link}`,
@@ -317,7 +312,7 @@ async function fetchVimeoFeed(feedUrl: string, sourceName: string, category: str
     const thumbnail = e.match(/https?:\/\/[^\s"'<>]+\.(?:jpg|jpeg|png)/)?.[0] || "";
 
     if (!title || !link || !isRecent(pubDate)) continue;
-    if (!isEntertainmentTitle(title)) continue;
+    // Accept all titles
 
     items.push({
       id: `vimeo:${link}`,
