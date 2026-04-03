@@ -56,6 +56,7 @@ export async function POST(req: NextRequest) {
 
     try {
       // Upsert into ingest_queue table — auto-poster reads from here
+      // ignoreDuplicates: true so we don't reset posted=true on re-push of same article
       const { error } = await supabaseAdmin
         .from("ingest_queue")
         .upsert({
@@ -76,7 +77,7 @@ export async function POST(req: NextRequest) {
           tags: article.tags || [],
           ingested_at: new Date().toISOString(),
           posted: false,
-        }, { onConflict: "id" });
+        }, { onConflict: "id", ignoreDuplicates: true });
 
       if (error) {
         results.errors.push(`${article.id}: ${error.message}`);
