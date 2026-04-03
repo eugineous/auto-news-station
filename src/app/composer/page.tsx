@@ -170,6 +170,8 @@ function ComposeTab({initialUrl,onSuccess,onProgress}:{initialUrl?:string;onSucc
       if(preview.ai?.clickbaitTitle)setHeadline(preview.ai.clickbaitTitle.toUpperCase().slice(0,120));
       else if(preview.scraped?.title)setHeadline(preview.scraped.title.toUpperCase().slice(0,120));
       if(preview.ai?.caption){setCaption(preview.ai.caption);setIgCaption(preview.ai.caption);setFbCaption(preview.ai.caption);}
+      // Fallback: if AI caption failed but headline is set, use headline as caption so Post button is never stuck disabled
+      else{const fb=preview.ai?.clickbaitTitle||preview.scraped?.title||"";if(fb){const fbu=fb.toUpperCase().slice(0,500);setCaption(fbu);setIgCaption(fbu);setFbCaption(fbu);}}
       if(preview.category)setCategory(preview.category);
       if(resolve.success&&resolve.videoUrl){
         setResolvedVideoUrl(resolve.videoUrl);
@@ -392,7 +394,8 @@ function CockpitTab({onCompose}:{onCompose:(url:string)=>void}){
     setAutoPosting(true);
     const prevIds=new Set(posts.map((p:any)=>p.article_id??p.articleId));
     try{
-      const r=await fetch("/api/automate-video",{...FETCH_OPTS,method:"POST",headers:{"Content-Type":"application/json"}});
+      const r=await fetch("/api/automate-video",{...FETCH_OPTS,method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer ppptvWorker2024"}});
+      if(r.status===401){setToast({msg:"Auto-post failed: Unauthorized",type:"err"});setTimeout(()=>setToast(null),4000);setAutoPosting(false);return;}
       const d=await r.json() as any;
       await load();
       const newPost=posts.find((p:any)=>!prevIds.has(p.article_id??p.articleId));

@@ -711,6 +711,89 @@ async function fetchVideosViaWorker(): Promise<VideoItem[]> {
   } catch { return []; }
 }
 
+// ── Mutembei TV Facebook scraper ─────────────────────────────────────────────
+// Tier 1: Facebook Graph API (if FACEBOOK_ACCESS_TOKEN is set)
+// Tier 2: HTML scrape fallback
+function extractFacebookVideos(html: string): Array<{ id: string; title: string; source?: string; thumbnail?: string; created_time: string }> {
+  const videos: Array<{ id: string; title: string; source?: string; thumbnail?: string; created_time: string }> = [];
+  // Try to extract video data from embedded JSON in script tags
+  const scriptRegex = /<script[^>]*type="application\/json"[^>]*>([\s\S]*?)<\/script>/g;
+  let match;
+  while ((match = scriptRegex.exec(html)) !== null) {
+    try {
+      const data = JSON.parse(match[1]);
+      const str = JSON.stringify(data);
+      // Look for video objects with id + created_time
+      const videoRegex = /"id":"(\d{10,})","created_time":"([^"]+)"/g;
+      let vm;
+      while ((vm = videoRegex.exec(str)) !== null) {
+        const id = vm[1];
+        if (!videos.find(v => v.id === id)) {
+          videos.push({ id, title: "Mutembei TV Video", created_time: vm[2] });
+        }
+      }
+    } catch {}
+  }
+  return videos.slice(0, 25);
+}
+
+export async function fetchMutembeiTVVideos(): Promise<VideoItem[]> {
+  const token = process.env.FACEBOOK_ACCESS_TOKEN;
+
+  // Tier 1: Facebook Graph API
+  if (token) {
+    try {
+      const res = await fetch(
+        `https://graph.facebook.com/v19.0/MutembeiTV/videos?fields=id,title,description,source,created_time&limit=25&access_token=${token}`,
+        { signal: AbortSignal.timeout(10000) }
+      );
+      if (res.ok) {
+        const data = await res.json() as any;
+        const videos: any[] = (data.data || []);
+        return videos
+          .sort((a, b) => new Date(b.created_time).getTime() - new Date(a.created_time).getTime())
+          .map(v => ({
+            id: `mutembei:${v.id}`,
+            title: v.title || v.description || "Mutembei TV Video",
+            url: `https://www.facebook.com/MutembeiTV/videos/${v.id}`,
+            directVideoUrl: v.source || undefined,
+            thumbnail: "",
+            publishedAt: new Date(v.created_time),
+            sourceName: "Mutembei TV",
+            sourceType: "direct-mp4" as const,
+            category: "ENTERTAINMENT",
+          }));
+      }
+    } catch {}
+  }
+
+  // Tier 2: HTML scrape fallback
+  try {
+    const res = await fetch("https://www.facebook.com/MutembeiTV/videos", {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml",
+        "Accept-Language": "en-US,en;q=0.9",
+      },
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok) return [];
+    const html = await res.text();
+    const videos = extractFacebookVideos(html);
+    return videos.map(v => ({
+      id: `mutembei:${v.id}`,
+      title: v.title || "Mutembei TV Video",
+      url: `https://www.facebook.com/MutembeiTV/videos/${v.id}`,
+      directVideoUrl: v.source,
+      thumbnail: v.thumbnail || "",
+      publishedAt: new Date(v.created_time || Date.now()),
+      sourceName: "Mutembei TV",
+      sourceType: "direct-mp4" as const,
+      category: "ENTERTAINMENT",
+    }));
+  } catch { return []; }
+}
+
 export async function fetchAllVideoSources(): Promise<VideoItem[]> {
   // Initialize bloom filter — use try/catch in case of API changes
   if (!bloom) {
@@ -719,6 +802,8 @@ export async function fetchAllVideoSources(): Promise<VideoItem[]> {
   }
 
   const allResults = await Promise.allSettled([
+    // Mutembei TV — priority Kenyan source (prepended so it scores first)
+    fetchMutembeiTVVideos(),
     // Worker-proxied sources (Twitter/X Nitter RSS + Dailymotion — bypasses Vercel IP blocks)
     fetchVideosViaWorker(),
     // TikWM search via worker proxy

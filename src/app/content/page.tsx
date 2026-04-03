@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 import { useState, useEffect, useCallback } from "react";
 import Shell from "../shell";
 
@@ -72,7 +72,7 @@ export default function ContentPage() {
             <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 32, letterSpacing: 2, marginBottom: 4 }}>
               Content <span style={{ color: RED }}>Library</span>
             </div>
-            <p style={{ fontSize: 13, color: "#555" }}>All published posts - {log.length} total</p>
+            <p style={{ fontSize: 13, color: "#555" }}>All published posts &mdash; {log.length} total</p>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             <input
@@ -87,6 +87,7 @@ export default function ContentPage() {
           </div>
         </div>
 
+        {/* Platform filter pills */}
         <div style={{ display: "flex", gap: 4, marginBottom: 20, flexWrap: "wrap" }}>
           {(["all", "ig", "fb", "failed"] as const).map(val => {
             const label = val === "all" ? "All" : val === "ig" ? "IG OK" : val === "fb" ? "FB OK" : "Failed";

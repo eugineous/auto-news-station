@@ -620,104 +620,203 @@ export default {
     }
 
     // ── /fetch-videos ─────────────────────────────────────────────────────────
-    // Fetches video sources server-side via Cloudflare (bypasses Vercel IP blocks)
-    // Sources: Twitter/X nitter RSS, Facebook public pages, Dailymotion
+    // Fetches TikTok videos via TikWM across 100+ topic keywords
     if (url.pathname === "/fetch-videos" && request.method === "GET") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
       try {
         const videos = [];
 
-        // ── Twitter/X via Nitter RSS (public, no auth needed) ─────────────────
-        const NITTER_INSTANCES = [
-          "https://nitter.net",
-          "https://nitter.privacydev.net",
-          "https://nitter.poast.org",
-        ];
-        const TWITTER_ACCOUNTS = [
-          { handle: "TMZ",              cat: "CELEBRITY"     },
-          { handle: "PageSix",          cat: "CELEBRITY"     },
-          { handle: "enews",            cat: "CELEBRITY"     },
-          { handle: "people",           cat: "CELEBRITY"     },
-          { handle: "usweekly",         cat: "CELEBRITY"     },
-          { handle: "EW",               cat: "ENTERTAINMENT" },
-          { handle: "billboard",        cat: "MUSIC"         },
-          { handle: "RollingStone",     cat: "MUSIC"         },
-          { handle: "Variety",          cat: "TV & FILM"     },
-          { handle: "THR",              cat: "TV & FILM"     },
-          { handle: "espn",             cat: "SPORTS"        },
-          { handle: "SkySportsNews",    cat: "SPORTS"        },
-          { handle: "goal",             cat: "SPORTS"        },
-          { handle: "BleacherReport",   cat: "SPORTS"        },
-          { handle: "SPMBuzz",          cat: "CELEBRITY"     },
-          { handle: "tukokenya",        cat: "ENTERTAINMENT" },
-          { handle: "ntvkenya",         cat: "ENTERTAINMENT" },
-          { handle: "PulseLiveKenya",   cat: "ENTERTAINMENT" },
-          { handle: "Mpasho",           cat: "CELEBRITY"     },
-          { handle: "GhaflaKenya",      cat: "CELEBRITY"     },
-          { handle: "BellaNaija",       cat: "CELEBRITY"     },
-          { handle: "PulseNigeria",     cat: "ENTERTAINMENT" },
-          { handle: "TheShadeRoom",     cat: "CELEBRITY"     },
-          { handle: "Complex",          cat: "MUSIC"         },
-          { handle: "HotNewHipHop",     cat: "MUSIC"         },
+        // ── 100+ topic keywords across all categories ─────────────────────────
+        const ALL_KEYWORDS = [
+          // ── Kenya Entertainment ───────────────────────────────────────────────
+          { kw: "kenya celebrity gossip 2025",        cat: "CELEBRITY"     },
+          { kw: "nairobi celebrity drama",             cat: "CELEBRITY"     },
+          { kw: "kenyan influencer viral",             cat: "CELEBRITY"     },
+          { kw: "kenya comedy skit viral",             cat: "COMEDY"        },
+          { kw: "nairobi fashion style 2025",          cat: "FASHION"       },
+          { kw: "kenya entertainment news today",      cat: "ENTERTAINMENT" },
+          { kw: "kenyan tiktok viral 2025",            cat: "ENTERTAINMENT" },
+          { kw: "nairobi viral video today",           cat: "ENTERTAINMENT" },
+          { kw: "kenya music video new release",       cat: "MUSIC"         },
+          { kw: "gengetone 2025 new",                  cat: "MUSIC"         },
+          { kw: "afrobeats kenya 2025",                cat: "MUSIC"         },
+          { kw: "khaligraph jones new",                cat: "MUSIC"         },
+          { kw: "otile brown new song",                cat: "MUSIC"         },
+          { kw: "bahati kenya music",                  cat: "MUSIC"         },
+          { kw: "nadia mukami new song",               cat: "MUSIC"         },
+          { kw: "wakadinali new song",                 cat: "MUSIC"         },
+          { kw: "kenya sports highlights",             cat: "SPORTS"        },
+          { kw: "harambee stars football",             cat: "SPORTS"        },
+          { kw: "gor mahia afc leopards",              cat: "SPORTS"        },
+          { kw: "kenya athletics eliud kipchoge",      cat: "SPORTS"        },
+          { kw: "spm buzz celebrity",                  cat: "CELEBRITY"     },
+          { kw: "mpasho kenya celebrity",              cat: "CELEBRITY"     },
+          { kw: "ghafla kenya gossip",                 cat: "CELEBRITY"     },
+          { kw: "tuko kenya entertainment",            cat: "ENTERTAINMENT" },
+          { kw: "citizen tv kenya viral",              cat: "ENTERTAINMENT" },
+          // ── Tanzania Entertainment ────────────────────────────────────────────
+          { kw: "bongo music new 2025",                cat: "MUSIC"         },
+          { kw: "bongo flava official video",          cat: "MUSIC"         },
+          { kw: "tanzanian celebrity gossip",          cat: "CELEBRITY"     },
+          { kw: "dar es salaam viral video",           cat: "ENTERTAINMENT" },
+          { kw: "tanzania entertainment news",         cat: "ENTERTAINMENT" },
+          { kw: "tanzanian tiktok viral",              cat: "ENTERTAINMENT" },
+          { kw: "diamond platnumz new song",           cat: "MUSIC"         },
+          { kw: "harmonize new music 2025",            cat: "MUSIC"         },
+          { kw: "zuchu new song 2025",                 cat: "MUSIC"         },
+          { kw: "rayvanny new video",                  cat: "MUSIC"         },
+          { kw: "simba sc yanga sc football",          cat: "SPORTS"        },
+          { kw: "bongotrending celebrity",             cat: "CELEBRITY"     },
+          { kw: "tanzania news viral today",           cat: "ENTERTAINMENT" },
+          // ── Uganda Entertainment ──────────────────────────────────────────────
+          { kw: "ugandan entertainment viral",         cat: "ENTERTAINMENT" },
+          { kw: "kampala viral video 2025",            cat: "ENTERTAINMENT" },
+          { kw: "ugandan music new 2025",              cat: "MUSIC"         },
+          { kw: "ugandan celebrity gossip",            cat: "CELEBRITY"     },
+          { kw: "bobi wine uganda",                    cat: "MUSIC"         },
+          { kw: "eddy kenzo new song",                 cat: "MUSIC"         },
+          { kw: "uganda cranes football",              cat: "SPORTS"        },
+          { kw: "uganda tiktok viral",                 cat: "ENTERTAINMENT" },
+          // ── Nigeria Entertainment ─────────────────────────────────────────────
+          { kw: "nollywood movie 2025",                cat: "TV & FILM"     },
+          { kw: "nigerian celebrity gossip 2025",      cat: "CELEBRITY"     },
+          { kw: "afrobeats new song 2025",             cat: "MUSIC"         },
+          { kw: "burna boy new song",                  cat: "MUSIC"         },
+          { kw: "wizkid new music 2025",               cat: "MUSIC"         },
+          { kw: "davido new song 2025",                cat: "MUSIC"         },
+          { kw: "asake new music",                     cat: "MUSIC"         },
+          { kw: "rema new song 2025",                  cat: "MUSIC"         },
+          { kw: "lagos celebrity drama",               cat: "CELEBRITY"     },
+          { kw: "nigerian tiktok viral",               cat: "ENTERTAINMENT" },
+          { kw: "super eagles football nigeria",       cat: "SPORTS"        },
+          { kw: "pulse nigeria entertainment",         cat: "ENTERTAINMENT" },
+          { kw: "bellanaija celebrity",                cat: "CELEBRITY"     },
+          // ── East Africa General ───────────────────────────────────────────────
+          { kw: "east africa viral video 2025",        cat: "ENTERTAINMENT" },
+          { kw: "swahili entertainment viral",         cat: "ENTERTAINMENT" },
+          { kw: "east africa music 2025",              cat: "MUSIC"         },
+          { kw: "africa celebrity news today",         cat: "CELEBRITY"     },
+          { kw: "africa viral tiktok 2025",            cat: "ENTERTAINMENT" },
+          // ── Music Global ──────────────────────────────────────────────────────
+          { kw: "new music video official 2025",       cat: "MUSIC"         },
+          { kw: "music video premiere 2025",           cat: "MUSIC"         },
+          { kw: "album drop new 2025",                 cat: "MUSIC"         },
+          { kw: "grammy 2025 performance",             cat: "MUSIC"         },
+          { kw: "billboard hot 100 2025",              cat: "MUSIC"         },
+          { kw: "amapiano new song 2025",              cat: "MUSIC"         },
+          { kw: "reggae dancehall viral 2025",         cat: "MUSIC"         },
+          { kw: "hip hop new song viral",              cat: "MUSIC"         },
+          { kw: "rnb new song 2025",                   cat: "MUSIC"         },
+          { kw: "pop music viral 2025",                cat: "MUSIC"         },
+          { kw: "drake new song 2025",                 cat: "MUSIC"         },
+          { kw: "taylor swift 2025",                   cat: "MUSIC"         },
+          { kw: "beyonce new 2025",                    cat: "MUSIC"         },
+          { kw: "bad bunny new song",                  cat: "MUSIC"         },
+          // ── Movies & TV ───────────────────────────────────────────────────────
+          { kw: "new movie trailer 2025",              cat: "TV & FILM"     },
+          { kw: "netflix new series 2025",             cat: "TV & FILM"     },
+          { kw: "hbo new show 2025",                   cat: "TV & FILM"     },
+          { kw: "disney plus new 2025",                cat: "TV & FILM"     },
+          { kw: "amazon prime new series",             cat: "TV & FILM"     },
+          { kw: "oscar 2025 movie",                    cat: "TV & FILM"     },
+          { kw: "blockbuster movie 2025",              cat: "TV & FILM"     },
+          { kw: "film review viral 2025",              cat: "TV & FILM"     },
+          { kw: "reality tv drama 2025",               cat: "TV & FILM"     },
+          // ── Sports ────────────────────────────────────────────────────────────
+          { kw: "premier league highlights today",     cat: "SPORTS"        },
+          { kw: "champions league goal 2025",          cat: "SPORTS"        },
+          { kw: "afcon 2025 highlights",               cat: "SPORTS"        },
+          { kw: "messi ronaldo 2025",                  cat: "SPORTS"        },
+          { kw: "nba highlights today",                cat: "SPORTS"        },
+          { kw: "boxing fight knockout 2025",          cat: "SPORTS"        },
+          { kw: "ufc fight highlights 2025",           cat: "SPORTS"        },
+          { kw: "world cup 2026 qualifier",            cat: "SPORTS"        },
+          { kw: "formula 1 race highlights",           cat: "SPORTS"        },
+          { kw: "tennis highlights 2025",              cat: "SPORTS"        },
+          // ── Science & Technology ──────────────────────────────────────────────
+          { kw: "space viral video 2025",              cat: "TECHNOLOGY"    },
+          { kw: "nasa discovery 2025",                 cat: "TECHNOLOGY"    },
+          { kw: "ai technology viral 2025",            cat: "TECHNOLOGY"    },
+          { kw: "science amazing viral",               cat: "TECHNOLOGY"    },
+          { kw: "tech news viral today",               cat: "TECHNOLOGY"    },
+          { kw: "elon musk spacex 2025",               cat: "TECHNOLOGY"    },
+          { kw: "robot technology viral",              cat: "TECHNOLOGY"    },
+          // ── USA/UK Celebrity & Entertainment ──────────────────────────────────
+          { kw: "celebrity news today 2025",           cat: "CELEBRITY"     },
+          { kw: "hollywood gossip viral",              cat: "CELEBRITY"     },
+          { kw: "celebrity breakup 2025",              cat: "CELEBRITY"     },
+          { kw: "celebrity wedding 2025",              cat: "CELEBRITY"     },
+          { kw: "the shade room celebrity",            cat: "CELEBRITY"     },
+          { kw: "tmz celebrity news",                  cat: "CELEBRITY"     },
+          { kw: "uk celebrity gossip 2025",            cat: "CELEBRITY"     },
+          { kw: "kardashian 2025",                     cat: "CELEBRITY"     },
+          { kw: "met gala 2025",                       cat: "CELEBRITY"     },
+          { kw: "celebrity interview viral",           cat: "CELEBRITY"     },
+          // ── Comedy ────────────────────────────────────────────────────────────
+          { kw: "comedy skit viral 2025",              cat: "COMEDY"        },
+          { kw: "stand up comedy viral",               cat: "COMEDY"        },
+          { kw: "funny celebrity moment",              cat: "COMEDY"        },
+          { kw: "africa comedy viral",                 cat: "COMEDY"        },
+          { kw: "kenya comedy viral 2025",             cat: "COMEDY"        },
         ];
 
-        // Pick a working Nitter instance and fetch RSS for random accounts
-        const nitterBase = NITTER_INSTANCES[Math.floor(Math.random() * NITTER_INSTANCES.length)];
-        const accountsToFetch = [...TWITTER_ACCOUNTS].sort(() => Math.random() - 0.5).slice(0, 8);
+        // Pick 15 random keywords per run for variety
+        const selected = [...ALL_KEYWORDS].sort(() => Math.random() - 0.5).slice(0, 15);
 
-        await Promise.allSettled(accountsToFetch.map(async acct => {
+        await Promise.allSettled(selected.map(async ({ kw, cat }) => {
           try {
-            const r = await fetch(`${nitterBase}/${acct.handle}/rss`, {
-              headers: { "User-Agent": "Mozilla/5.0 (compatible; PPPTVBot/2.0)" },
-              signal: AbortSignal.timeout(8000),
+            const body = new URLSearchParams({ keywords: kw, count: "8", cursor: "0", HD: "1", sort_type: "1" });
+            const r = await fetch("https://www.tikwm.com/api/feed/search", {
+              method: "POST",
+              headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": "Mozilla/5.0 (compatible; PPPTVBot/2.0)" },
+              body: body.toString(),
+              signal: AbortSignal.timeout(10000),
             });
             if (!r.ok) return;
-            const xml = await r.text();
-            const itemRegex = /<item>([\s\S]*?)<\/item>/g;
-            let match;
-            let count = 0;
-            while ((match = itemRegex.exec(xml)) !== null && count < 3) {
-              const e = match[1];
-              const title = (e.match(/<title><!\[CDATA\[([\s\S]*?)\]\]><\/title>/) || e.match(/<title>([\s\S]*?)<\/title>/) || [])[1] || "";
-              const link = (e.match(/<link>(.*?)<\/link>/) || [])[1] || "";
-              const pubDate = (e.match(/<pubDate>(.*?)<\/pubDate>/) || [])[1] || "";
-              // Only include tweets with video (look for video/mp4 or twitter video indicators)
-              const hasVideo = e.includes("video") || e.includes(".mp4") || e.includes("pic.twitter") || e.includes("t.co");
-              if (!title || !link || !hasVideo) continue;
-              const ageHours = pubDate ? (Date.now() - new Date(pubDate).getTime()) / 3600000 : 0;
-              if (ageHours > 48) continue;
-              const cleanTitle = title.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").trim();
-              if (!cleanTitle || cleanTitle.length < 10) continue;
-              // Convert nitter link back to twitter link for resolution
-              const twitterLink = link.replace(nitterBase, "https://twitter.com").replace("/nitter.net", "").replace("/nitter.privacydev.net", "").replace("/nitter.poast.org", "");
+            const data = await r.json();
+            if (data.code !== 0 || !data.data?.videos?.length) return;
+
+            for (const v of data.data.videos.slice(0, 5)) {
+              const title = v.title || v.desc || "";
+              if (!title || v.is_ad) continue;
+              const ageHours = (Date.now() - v.create_time * 1000) / 3600000;
+              if (ageHours > 72) continue;
+              const username = v.author?.unique_id || "unknown";
+              const directUrl = v.hdplay || v.play || v.wmplay || null;
+              if (!directUrl) continue; // skip if no direct URL — muted/broken
               videos.push({
-                id: `twitter:${acct.handle}:${Date.now()}:${count}`,
-                title: cleanTitle.slice(0, 200),
-                url: twitterLink,
-                directVideoUrl: null,
-                thumbnail: "",
-                publishedAt: pubDate ? new Date(pubDate).toISOString() : new Date().toISOString(),
-                sourceName: `@${acct.handle}`,
-                sourceType: "twitter",
-                category: acct.cat,
+                id: `tiktok:${v.video_id}`,
+                title: title.slice(0, 200),
+                url: `https://www.tiktok.com/@${username}/video/${v.video_id}`,
+                directVideoUrl: directUrl,
+                thumbnail: v.cover || v.origin_cover || "",
+                publishedAt: new Date(v.create_time * 1000).toISOString(),
+                sourceName: `TikTok @${username}`,
+                sourceType: "direct-mp4",
+                category: cat,
+                playCount: v.play_count || 0,
               });
-              count++;
             }
           } catch {}
         }));
 
-        // ── Dailymotion RSS (still works, has audio) ──────────────────────────
+        // ── Dailymotion RSS — extra source with audio ─────────────────────────
         const DM_FEEDS = [
-          { url: "https://www.dailymotion.com/rss/tag/kenya+entertainment", name: "Dailymotion Kenya", cat: "ENTERTAINMENT" },
-          { url: "https://www.dailymotion.com/rss/tag/africa+music",        name: "Africa Music DM",   cat: "MUSIC"         },
-          { url: "https://www.dailymotion.com/rss/tag/celebrity+gossip",    name: "Celebrity Gossip",  cat: "CELEBRITY"     },
-          { url: "https://www.dailymotion.com/rss/tag/viral+video",         name: "Viral Videos DM",   cat: "ENTERTAINMENT" },
-          { url: "https://www.dailymotion.com/rss/tag/music+video",         name: "Music Videos DM",   cat: "MUSIC"         },
-          { url: "https://www.dailymotion.com/rss/tag/sports+highlights",   name: "Sports Highlights", cat: "SPORTS"        },
-          { url: "https://www.dailymotion.com/rss/tag/comedy+funny",        name: "Comedy DM",         cat: "COMEDY"        },
-          { url: "https://www.dailymotion.com/rss/tag/nairobi",             name: "Nairobi DM",        cat: "ENTERTAINMENT" },
-          { url: "https://www.dailymotion.com/rss/tag/afrobeats",           name: "Afrobeats DM",      cat: "MUSIC"         },
-          { url: "https://www.dailymotion.com/rss/tag/nollywood",           name: "Nollywood DM",      cat: "TV & FILM"     },
+          { url: "https://www.dailymotion.com/rss/tag/kenya+entertainment", name: "Dailymotion Kenya",    cat: "ENTERTAINMENT" },
+          { url: "https://www.dailymotion.com/rss/tag/africa+music",        name: "Africa Music DM",      cat: "MUSIC"         },
+          { url: "https://www.dailymotion.com/rss/tag/celebrity+gossip",    name: "Celebrity Gossip DM",  cat: "CELEBRITY"     },
+          { url: "https://www.dailymotion.com/rss/tag/viral+video",         name: "Viral Videos DM",      cat: "ENTERTAINMENT" },
+          { url: "https://www.dailymotion.com/rss/tag/music+video",         name: "Music Videos DM",      cat: "MUSIC"         },
+          { url: "https://www.dailymotion.com/rss/tag/sports+highlights",   name: "Sports Highlights DM", cat: "SPORTS"        },
+          { url: "https://www.dailymotion.com/rss/tag/comedy+funny",        name: "Comedy DM",            cat: "COMEDY"        },
+          { url: "https://www.dailymotion.com/rss/tag/nairobi",             name: "Nairobi DM",           cat: "ENTERTAINMENT" },
+          { url: "https://www.dailymotion.com/rss/tag/afrobeats",           name: "Afrobeats DM",         cat: "MUSIC"         },
+          { url: "https://www.dailymotion.com/rss/tag/nollywood",           name: "Nollywood DM",         cat: "TV & FILM"     },
+          { url: "https://www.dailymotion.com/rss/tag/bongo+music",         name: "Bongo Music DM",       cat: "MUSIC"         },
+          { url: "https://www.dailymotion.com/rss/tag/tanzania",            name: "Tanzania DM",          cat: "ENTERTAINMENT" },
+          { url: "https://www.dailymotion.com/rss/tag/east+africa",         name: "East Africa DM",       cat: "ENTERTAINMENT" },
+          { url: "https://www.dailymotion.com/rss/tag/football+highlights", name: "Football DM",          cat: "SPORTS"        },
+          { url: "https://www.dailymotion.com/rss/tag/technology+viral",    name: "Tech Viral DM",        cat: "TECHNOLOGY"    },
         ];
 
         await Promise.allSettled(DM_FEEDS.map(async feed => {
@@ -738,7 +837,6 @@ export default {
               const thumbnail = (e.match(/url="([^"]+\.(?:jpg|jpeg|png))"/) || [])[1] || "";
               const videoId = link.match(/video\/([a-z0-9]+)/i)?.[1] || "";
               if (!title || !link) continue;
-              // Filter out TV show episodes, pirated content, non-entertainment
               const cleanTitle = title.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
               const isJunk = /s\d+e\d+|season \d+|episode \d+|full episode|full movie|watch online|free download|720p|1080p|hdrip|bluray|webrip/i.test(cleanTitle);
               if (isJunk) continue;
@@ -754,6 +852,7 @@ export default {
                 sourceName: feed.name,
                 sourceType: "dailymotion",
                 category: feed.cat,
+                playCount: 0,
               });
             }
           } catch {}
@@ -922,8 +1021,8 @@ async function triggerAutomate(env) {
   const todayCountRaw = await env.SEEN_ARTICLES.get(`daily:${today}`);
   const todayCount = todayCountRaw ? parseInt(todayCountRaw) : 0;
 
-  // Hard cap: never exceed 25 posts/day (well under IG's 50 limit)
-  const MAX_DAILY = 25;
+  // Hard cap: never exceed 50 posts/day (IG's actual limit)
+  const MAX_DAILY = 50;
   if (todayCount >= MAX_DAILY) {
     console.log(`[throttle] Daily cap reached (${todayCount}/${MAX_DAILY}) — skipping`);
     return;
@@ -939,10 +1038,10 @@ async function triggerAutomate(env) {
   const forcePost = hoursSinceLast >= 3;
 
   if (!forcePost) {
-    // Minimum gap: 8 minutes (allows ~10-min cadence with some jitter)
-    const minGapMs = 8 * 60 * 1000;
+    // Minimum gap: 3 minutes (allows ~5-min cadence with jitter)
+    const minGapMs = 3 * 60 * 1000;
     if (msSinceLast < minGapMs) {
-      console.log(`[throttle] Too soon since last post (${Math.round(msSinceLast/60000)}m ago, min 8m) — skipping`);
+      console.log(`[throttle] Too soon since last post (${Math.round(msSinceLast/60000)}m ago, min 3m) — skipping`);
       return;
     }
   } else {
