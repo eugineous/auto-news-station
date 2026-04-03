@@ -798,6 +798,92 @@ export default {
       } catch (err) { return json({ error: err.message }, 500); }
     }
 
+    // -- /fetch-mutembei -- Scrapes MutembeiTV Facebook page for videos
+    if (url.pathname === "/fetch-mutembei" && request.method === "GET") {
+      if (!authed) return new Response("Unauthorized", { status: 401 });
+      try {
+        const videos = [];
+
+        // Try Facebook Graph API first (if token available in env)
+        const fbToken = env.FACEBOOK_ACCESS_TOKEN;
+        if (fbToken) {
+          try {
+            const r = await fetch(
+              "https://graph.facebook.com/v19.0/MutembeiTV/videos?fields=id,title,description,source,created_time,thumbnails&limit=25&access_token=" + fbToken,
+              { signal: AbortSignal.timeout(10000) }
+            );
+            if (r.ok) {
+              const data = await r.json();
+              for (const v of (data.data || [])) {
+                const ageHours = (Date.now() - new Date(v.created_time).getTime()) / 3600000;
+                if (ageHours > 72) continue;
+                videos.push({
+                  id: "mutembei:" + v.id,
+                  title: v.title || v.description || "Mutembei TV Video",
+                  url: "https://www.facebook.com/MutembeiTV/videos/" + v.id,
+                  directVideoUrl: v.source || null,
+                  thumbnail: v.thumbnails?.data?.[0]?.uri || "",
+                  publishedAt: new Date(v.created_time).toISOString(),
+                  sourceName: "Mutembei TV",
+                  sourceType: "direct-mp4",
+                  category: "ENTERTAINMENT",
+                  playCount: 0,
+                });
+              }
+              if (videos.length > 0) return json({ videos, count: videos.length, source: "graph-api" });
+            }
+          } catch {}
+        }
+
+        // Fallback: use Facebook Graph API with page token to get MutembeiTV videos
+        // The page token must have pages_read_engagement permission
+        // Try fetching via page ID search first
+        const searchRes = await fetch(
+          "https://graph.facebook.com/v19.0/search?q=MutembeiTV&type=page&fields=id,name&access_token=" + fbToken,
+          { signal: AbortSignal.timeout(8000) }
+        ).catch(() => null);
+
+        let mutembeiPageId = "MutembeiTV";
+        if (searchRes && searchRes.ok) {
+          const sd = await searchRes.json().catch(() => ({}));
+          const page = (sd.data || []).find(p => p.name && p.name.toLowerCase().includes("mutembei"));
+          if (page) mutembeiPageId = page.id;
+        }
+
+        // Try fetching videos with the resolved page ID
+        const vidRes = await fetch(
+          "https://graph.facebook.com/v19.0/" + mutembeiPageId + "/videos?fields=id,title,description,source,created_time&limit=25&access_token=" + fbToken,
+          { signal: AbortSignal.timeout(10000) }
+        ).catch(() => null);
+
+        if (vidRes && vidRes.ok) {
+          const vd = await vidRes.json().catch(() => ({}));
+          for (const v of (vd.data || [])) {
+            const ageHours = (Date.now() - new Date(v.created_time).getTime()) / 3600000;
+            if (ageHours > 72) continue;
+            videos.push({
+              id: "mutembei:" + v.id,
+              title: v.title || v.description || "Mutembei TV Video",
+              url: "https://www.facebook.com/MutembeiTV/videos/" + v.id,
+              directVideoUrl: v.source || null,
+              thumbnail: "",
+              publishedAt: new Date(v.created_time).toISOString(),
+              sourceName: "Mutembei TV",
+              sourceType: v.source ? "direct-mp4" : "facebook",
+              category: "ENTERTAINMENT",
+              playCount: 0,
+            });
+          }
+        }
+
+        if (videos.length === 0) {
+          return json({ videos: [], count: 0, error: "No videos found - token may lack pages_read_engagement permission for MutembeiTV" });
+        }
+
+        return json({ videos: videos.slice(0, 25), count: Math.min(videos.length, 25), source: "graph-api-search" });
+      } catch (err) { return json({ error: err.message }, 500); }
+    }
+
     // -- /resolve-dailymotion --
     // Resolves a Dailymotion video page URL to a direct MP4 stream
     if (url.pathname === "/resolve-dailymotion" && request.method === "POST") {

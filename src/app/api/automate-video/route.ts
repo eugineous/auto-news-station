@@ -352,6 +352,20 @@ export async function POST(req: NextRequest) {
             if (cd.success && cd.url) url = cd.url;
           }
         } catch {}
+      } else if (video.url.includes("facebook.com") || (video as any).sourceType === "facebook") {
+        // MutembeiTV Facebook video — try Cobalt resolver
+        try {
+          const cobaltRes = await fetch(`${WORKER_URL}/resolve-cobalt`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },
+            body: JSON.stringify({ videoUrl: video.url }),
+            signal: AbortSignal.timeout(20000),
+          });
+          if (cobaltRes.ok) {
+            const cd = await cobaltRes.json() as any;
+            if (cd.success && cd.url) url = cd.url;
+          }
+        } catch {}
       } else if (video.url.includes("youtube.com") || video.url.includes("youtu.be")) {
         // Try Cobalt API via worker first (most reliable for YouTube)
         try {
@@ -456,7 +470,13 @@ export async function POST(req: NextRequest) {
       engagementType: "tag" as const,
     }));
 
-    const caption = `${ai.caption}\n\n${
+    // For MutembeiTV videos: translate Swahili to English and rewrite caption
+    const isMutembei = target.sourceName === "Mutembei TV";
+    const captionBody = isMutembei
+      ? `${ai.caption}\n\n(Originally from Mutembei TV — translated and rewritten by PPP TV Kenya)`
+      : ai.caption;
+
+    const caption = `${captionBody}\n\n${
       target.sourceType === "direct-mp4" && target.url.includes("tiktok.com")
         ? (() => {
             const acct = TIKTOK_ACCOUNTS.find(a => (target as VideoItem).url.includes(a.username));
