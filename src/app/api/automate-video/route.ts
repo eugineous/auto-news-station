@@ -291,6 +291,10 @@ export async function POST(req: NextRequest) {
     // Try each video until we find one we can resolve
     for (const video of dedupedVideos) {
       if (await isVideoSeen(video.id)) continue;
+      // Skip Reddit videos — they have no audio (video/audio are separate tracks)
+      if (video.id.startsWith("reddit:") || video.sourceType === "reddit") {
+        continue;
+      }
 
       // Try to get a direct URL
       let url: string | null = null;

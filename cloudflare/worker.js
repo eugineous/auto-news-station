@@ -619,13 +619,13 @@ export default {
       } catch (err) { return json({ error: err.message }, 500); }
     }
 
-    // -- /fetch-videos -- Fetches videos from TikTok + Reddit + Dailymotion
+    // -- /fetch-videos -- Fetches TikTok videos with audio via multiple methods
     if (url.pathname === "/fetch-videos" && request.method === "GET") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
       try {
         const videos = [];
 
-        // TikTok via TikWM user feed (best quality, full audio)
+        // Method 1: TikWM user feed API (best - full audio, HD)
         const TIKTOK_ACCOUNTS = [
           { u: "citizen.digital",       cat: "ENTERTAINMENT" },
           { u: "tukokenya",             cat: "ENTERTAINMENT" },
@@ -699,50 +699,62 @@ export default {
           } catch {}
         }));
 
-        // Reddit native videos -- full audio, direct MP4 (reliable fallback)
-        const REDDIT_FEEDS = [
-          { url: "https://www.reddit.com/r/nextfuckinglevel/new.json?limit=25", name: "r/NextLevel",     cat: "ENTERTAINMENT" },
-          { url: "https://www.reddit.com/r/videos/new.json?limit=25",           name: "r/Videos",        cat: "ENTERTAINMENT" },
-          { url: "https://www.reddit.com/r/sports/new.json?limit=25",           name: "r/Sports",        cat: "SPORTS"        },
-          { url: "https://www.reddit.com/r/Music/new.json?limit=25",            name: "r/Music",         cat: "MUSIC"         },
-          { url: "https://www.reddit.com/r/entertainment/new.json?limit=25",    name: "r/Entertainment", cat: "ENTERTAINMENT" },
-          { url: "https://www.reddit.com/r/soccer/new.json?limit=25",           name: "r/Soccer",        cat: "SPORTS"        },
-          { url: "https://www.reddit.com/r/nba/new.json?limit=25",              name: "r/NBA",           cat: "SPORTS"        },
-          { url: "https://www.reddit.com/r/funny/new.json?limit=25",            name: "r/Funny",         cat: "COMEDY"        },
-          { url: "https://www.reddit.com/r/Damnthatsinteresting/new.json?limit=25", name: "r/Damn",      cat: "ENTERTAINMENT" },
-          { url: "https://www.reddit.com/r/BeAmazed/new.json?limit=25",         name: "r/BeAmazed",      cat: "ENTERTAINMENT" },
+        // Method 2: TikTok trending via TikWM search (different quota from user feed)
+        const SEARCH_TERMS = [
+          { kw: "kenya celebrity gossip",    cat: "CELEBRITY"     },
+          { kw: "nairobi viral 2025",        cat: "ENTERTAINMENT" },
+          { kw: "bongo music new",           cat: "MUSIC"         },
+          { kw: "tanzania entertainment",    cat: "ENTERTAINMENT" },
+          { kw: "nigeria celebrity",         cat: "CELEBRITY"     },
+          { kw: "afrobeats viral",           cat: "MUSIC"         },
+          { kw: "east africa viral",         cat: "ENTERTAINMENT" },
+          { kw: "celebrity news today",      cat: "CELEBRITY"     },
+          { kw: "football highlights today", cat: "SPORTS"        },
+          { kw: "music video official",      cat: "MUSIC"         },
+          { kw: "comedy skit viral",         cat: "COMEDY"        },
+          { kw: "nollywood 2025",            cat: "TV & FILM"     },
+          { kw: "premier league goal",       cat: "SPORTS"        },
+          { kw: "ugandan entertainment",     cat: "ENTERTAINMENT" },
+          { kw: "diamond platnumz new",      cat: "MUSIC"         },
         ];
-        await Promise.allSettled(REDDIT_FEEDS.map(async feed => {
+        const searchSelected = [...SEARCH_TERMS].sort(() => Math.random() - 0.5).slice(0, 5);
+        await Promise.allSettled(searchSelected.map(async ({ kw, cat }) => {
           try {
-            const r = await fetch(feed.url, {
-              headers: { "User-Agent": "PPPTVBot/2.0 (entertainment aggregator)" },
+            const body = new URLSearchParams({ keywords: kw, count: "8", cursor: "0", HD: "1" });
+            const r = await fetch("https://www.tikwm.com/api/feed/search", {
+              method: "POST",
+              headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": "Mozilla/5.0 (compatible; PPPTVBot/2.0)" },
+              body: body.toString(),
               signal: AbortSignal.timeout(8000),
             });
             if (!r.ok) return;
             const data = await r.json();
-            const posts = data?.data?.children || [];
-            for (const post of posts) {
-              const p = post.data;
-              if (!p.is_video || !p.media?.reddit_video?.fallback_url) continue;
-              const ageHours = (Date.now() - p.created_utc * 1000) / 3600000;
-              if (ageHours > 48) continue;
+            if (data.code !== 0 || !data.data?.videos?.length) return;
+            for (const v of data.data.videos.slice(0, 4)) {
+              const title = v.title || v.desc || "";
+              if (!title || v.is_ad) continue;
+              const ageHours = (Date.now() - v.create_time * 1000) / 3600000;
+              if (ageHours > 72) continue;
+              const directUrl = v.hdplay || v.play || v.wmplay || null;
+              if (!directUrl) continue;
+              const username = v.author?.unique_id || "unknown";
               videos.push({
-                id: "reddit:" + p.id,
-                title: p.title,
-                url: p.media.reddit_video.fallback_url,
-                directVideoUrl: p.media.reddit_video.fallback_url,
-                thumbnail: p.thumbnail?.startsWith("http") ? p.thumbnail : "",
-                publishedAt: new Date(p.created_utc * 1000).toISOString(),
-                sourceName: feed.name,
-                sourceType: "reddit",
-                category: feed.cat,
-                playCount: p.score || 0,
+                id: "tiktok-search:" + (v.video_id || v.id),
+                title: title.slice(0, 200),
+                url: "https://www.tiktok.com/@" + username + "/video/" + (v.video_id || v.id),
+                directVideoUrl: directUrl,
+                thumbnail: v.cover || v.origin_cover || "",
+                publishedAt: new Date(v.create_time * 1000).toISOString(),
+                sourceName: "TikTok @" + username,
+                sourceType: "direct-mp4",
+                category: cat,
+                playCount: v.play_count || 0,
               });
             }
           } catch {}
         }));
 
-        // Dailymotion RSS fallback (resolved separately)
+        // Method 3: Dailymotion RSS (fallback - resolved separately, may be HLS)
         const DM_FEEDS = [
           { url: "https://www.dailymotion.com/rss/tag/kenya+entertainment", name: "Dailymotion Kenya",   cat: "ENTERTAINMENT" },
           { url: "https://www.dailymotion.com/rss/tag/africa+music",        name: "Africa Music DM",     cat: "MUSIC"         },
