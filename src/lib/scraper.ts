@@ -1,8 +1,8 @@
 import { createHash } from "crypto";
 import { Article } from "./types";
 
-// PPP TV Cloudflare Worker /feed endpoint — real-time, image-verified articles
-const PPPTV_FEED_URL = (process.env.PPPTV_WORKER_URL || "https://ppp-tv-worker.euginemicah.workers.dev") + "/feed";
+// PPP TV site feed — pulls from the live ppp-tv-site.vercel.app
+const PPPTV_FEED_URL = (process.env.PPPTV_WORKER_URL || "https://auto-ppp-tv.euginemicah.workers.dev") + "/feed";
 
 const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
 

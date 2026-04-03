@@ -49,6 +49,97 @@ export default {
 
     if (url.pathname === "/") return json({ status: "ok", service: "PPP TV Auto Poster", cron: "*/10 * * * *" });
 
+    // ── /feed ─────────────────────────────────────────────────────────────────
+    // Scrapes PPP TV site and Kenya entertainment RSS feeds, returns articles
+    if (url.pathname === "/feed") {
+      try {
+        const limit = parseInt(url.searchParams.get("limit") || "50");
+        const articles = [];
+
+        // Kenya entertainment RSS feeds — reliable, fast
+        const FEEDS = [
+          { url: "https://www.tuko.co.ke/rss/entertainment.xml",          name: "Tuko Entertainment",    cat: "ENTERTAINMENT" },
+          { url: "https://www.tuko.co.ke/rss/celebrities.xml",            name: "Tuko Celebrities",      cat: "CELEBRITY"     },
+          { url: "https://www.mpasho.co.ke/feed/",                        name: "Mpasho",                cat: "CELEBRITY"     },
+          { url: "https://www.pulselive.co.ke/rss/entertainment",         name: "Pulse Live Kenya",      cat: "ENTERTAINMENT" },
+          { url: "https://www.ghafla.com/ke/feed/",                       name: "Ghafla Kenya",          cat: "CELEBRITY"     },
+          { url: "https://www.sde.co.ke/feed/",                           name: "SDE Kenya",             cat: "CELEBRITY"     },
+          { url: "https://www.kenyans.co.ke/feeds/entertainment",         name: "Kenyans Entertainment", cat: "ENTERTAINMENT" },
+          { url: "https://www.standardmedia.co.ke/rss/entertainment",     name: "Standard Entertainment",cat: "ENTERTAINMENT" },
+          { url: "https://www.the-star.co.ke/authors/sasa/feed/",         name: "The Star Sasa",         cat: "ENTERTAINMENT" },
+          { url: "https://www.tuko.co.ke/rss/sports.xml",                 name: "Tuko Sports",           cat: "SPORTS"        },
+          { url: "https://www.pulselive.co.ke/rss/sports",                name: "Pulse Live Sports",     cat: "SPORTS"        },
+          { url: "https://www.goal.com/feeds/en/news",                    name: "Goal Football",         cat: "SPORTS"        },
+          { url: "https://www.skysports.com/rss/12040",                   name: "Sky Sports Football",   cat: "SPORTS"        },
+          { url: "https://www.tmz.com/rss.xml",                           name: "TMZ",                   cat: "CELEBRITY"     },
+          { url: "https://pagesix.com/feed/",                             name: "Page Six",              cat: "CELEBRITY"     },
+          { url: "https://www.etonline.com/news/rss",                     name: "ET Online",             cat: "CELEBRITY"     },
+          { url: "https://variety.com/feed/",                             name: "Variety",               cat: "TV & FILM"     },
+          { url: "https://deadline.com/feed/",                            name: "Deadline",              cat: "TV & FILM"     },
+          { url: "https://www.billboard.com/feed/",                       name: "Billboard",             cat: "MUSIC"         },
+          { url: "https://feeds.bbci.co.uk/news/entertainment_and_arts/rss.xml", name: "BBC Entertainment", cat: "ENTERTAINMENT" },
+        ];
+
+        await Promise.allSettled(FEEDS.map(async feed => {
+          try {
+            const r = await fetch(feed.url, {
+              headers: { "User-Agent": "Mozilla/5.0 (compatible; PPPTVBot/2.0)" },
+              signal: AbortSignal.timeout(8000),
+            });
+            if (!r.ok) return;
+            const xml = await r.text();
+            const itemRegex = /<item>([\s\S]*?)<\/item>/g;
+            let match;
+            while ((match = itemRegex.exec(xml)) !== null) {
+              const e = match[1];
+              const rawTitle = (e.match(/<title><!\[CDATA\[([\s\S]*?)\]\]><\/title>/) || e.match(/<title>([\s\S]*?)<\/title>/) || [])[1] || "";
+              const title = rawTitle.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/<[^>]+>/g, "").trim();
+              const link = (e.match(/<link>(.*?)<\/link>/) || e.match(/<guid[^>]*>(.*?)<\/guid>/) || [])[1] || "";
+              const pubDate = (e.match(/<pubDate>(.*?)<\/pubDate>/) || [])[1] || "";
+              const desc = (e.match(/<description><!\[CDATA\[([\s\S]*?)\]\]><\/description>/) || e.match(/<description>([\s\S]*?)<\/description>/) || [])[1] || "";
+              const excerpt = desc.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").trim().slice(0, 300);
+              const imgMatch = e.match(/<media:thumbnail[^>]+url="([^"]+)"/) || e.match(/<media:content[^>]+url="([^"]+\.(?:jpg|jpeg|png)[^"]*)"/) || e.match(/https?:\/\/[^\s"'<>]+\.(?:jpg|jpeg|png)/);
+              const imageUrl = imgMatch ? (imgMatch[1] || imgMatch[0]) : "";
+
+              if (!title || !link || title.length < 10) return;
+              const ageMs = pubDate ? Date.now() - new Date(pubDate).getTime() : 0;
+              if (ageMs > 24 * 3600 * 1000) return; // only last 24h
+
+              articles.push({
+                slug: link,
+                title: title.slice(0, 200),
+                excerpt: excerpt || title,
+                category: feed.cat,
+                sourceName: feed.name,
+                sourceUrl: link,
+                articleUrl: link,
+                publishedAt: pubDate ? new Date(pubDate).toISOString() : new Date().toISOString(),
+                imageUrl,
+                imageUrlDirect: imageUrl,
+                twitterCaption: title,
+                facebookCaption: title,
+                instagramCaption: title,
+              });
+            }
+          } catch {}
+        }));
+
+        // Sort newest first, deduplicate by title fingerprint
+        const seen = new Set();
+        const deduped = articles
+          .sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime())
+          .filter(a => {
+            const fp = a.title.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 50);
+            if (seen.has(fp)) return false;
+            seen.add(fp);
+            return true;
+          })
+          .slice(0, limit);
+
+        return json({ articles: deduped, total: deduped.length, generatedAt: new Date().toISOString() });
+      } catch (err) { return json({ error: err.message, articles: [], total: 0 }, 500); }
+    }
+
     // Trigger (protected)
     if (url.pathname === "/trigger") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
