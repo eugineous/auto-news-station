@@ -331,7 +331,7 @@ export async function POST(req: NextRequest) {
           });
           if (dmRes.ok) {
             const dd = await dmRes.json() as any;
-            if (dd.success && dd.url) url = dd.url;
+            if (dd.success && dd.url && !dd.url.includes('.m3u8')) url = dd.url;
           }
         } catch {}
       } else if (video.url.includes("twitter.com") || video.url.includes("x.com")) {

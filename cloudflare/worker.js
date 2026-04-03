@@ -1,6 +1,6 @@
-﻿/**
- * PPP TV Auto Poster — Cloudflare Worker (STANDALONE)
- * Does everything: fetch articles → AI caption → thumbnail → post to IG + FB
+/**
+ * PPP TV Auto Poster - Cloudflare Worker (STANDALONE)
+ * Does everything: fetch articles -> AI caption -> thumbnail -> post to IG + FB
  * No Vercel dependency for the cron pipeline.
  * Cron: every 10 minutes
  */
@@ -49,14 +49,14 @@ export default {
 
     if (url.pathname === "/") return json({ status: "ok", service: "PPP TV Auto Poster", cron: "*/10 * * * *" });
 
-    // ── /feed ─────────────────────────────────────────────────────────────────
+    // -- /feed --
     // Scrapes PPP TV site and Kenya entertainment RSS feeds, returns articles
     if (url.pathname === "/feed") {
       try {
         const limit = parseInt(url.searchParams.get("limit") || "50");
         const articles = [];
 
-        // Kenya entertainment RSS feeds — reliable, fast
+        // Kenya entertainment RSS feeds - reliable, fast
         const FEEDS = [
           { url: "https://www.tuko.co.ke/rss/entertainment.xml",          name: "Tuko Entertainment",    cat: "ENTERTAINMENT" },
           { url: "https://www.tuko.co.ke/rss/celebrities.xml",            name: "Tuko Celebrities",      cat: "CELEBRITY"     },
@@ -147,7 +147,7 @@ export default {
       return json({ status: "triggered" });
     }
 
-    // Debug trigger — runs synchronously and returns result (protected)
+    // Debug trigger - runs synchronously and returns result (protected)
     if (url.pathname === "/trigger-debug") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
       try {
@@ -165,7 +165,7 @@ export default {
       return json({ status: "ok", lockHeld: !!lock, lockAgeSeconds: lockAge, feedUrl: FEED_URL });
     }
 
-    // ── /seen/check ──────────────────────────────────────────────────────────
+    // -- /seen/check --
     if (url.pathname === "/seen/check" && request.method === "POST") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
       try {
@@ -182,7 +182,7 @@ export default {
       } catch (err) { return json({ error: err.message }, 500); }
     }
 
-    // ── /seen ────────────────────────────────────────────────────────────────
+    // -- /seen --
     if (url.pathname === "/seen" && request.method === "POST") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
       try {
@@ -192,7 +192,7 @@ export default {
       } catch (err) { return json({ error: err.message }, 500); }
     }
 
-    // ── /daily-count ─────────────────────────────────────────────────────────
+    // -- /daily-count --
     if (url.pathname === "/daily-count") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
       const date = url.searchParams.get("date") || new Date().toISOString().slice(0, 10);
@@ -209,7 +209,7 @@ export default {
       }
     }
 
-    // ── /last-category ───────────────────────────────────────────────────────
+    // -- /last-category --
     if (url.pathname === "/last-category") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
       if (request.method === "GET") {
@@ -223,7 +223,7 @@ export default {
       }
     }
 
-    // ── /x-trends ────────────────────────────────────────────────────────────
+    // -- /x-trends --
     if (url.pathname === "/x-trends") {
       return json({ trends: [
         { title: "#Kenya" }, { title: "#Nairobi" }, { title: "#KenyaPolitics" },
@@ -232,7 +232,7 @@ export default {
       ], source: "static" });
     }
 
-    // ── /post-log GET ─────────────────────────────────────────────────────────
+    // -- /post-log GET --
     if (url.pathname === "/post-log" && request.method === "GET") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
       try {
@@ -248,7 +248,7 @@ export default {
       } catch (err) { return json({ error: err.message }, 500); }
     }
 
-    // ── /post-log POST ────────────────────────────────────────────────────────
+    // -- /post-log POST --
     if (url.pathname === "/post-log" && request.method === "POST") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
       try {
@@ -259,7 +259,7 @@ export default {
       } catch (err) { return json({ error: err.message }, 500); }
     }
 
-    // ── /clear-cache ──────────────────────────────────────────────────────────
+    // -- /clear-cache --
     if (url.pathname === "/clear-cache" && request.method === "POST") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
       const list = await env.SEEN_ARTICLES.list({ prefix: "seen:" });
@@ -267,7 +267,7 @@ export default {
       return json({ cleared: list.keys.length });
     }
 
-    // ── /lock/acquire ─────────────────────────────────────────────────────────
+    // -- /lock/acquire --
     if (url.pathname === "/lock/acquire" && request.method === "POST") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
       try {
@@ -279,7 +279,7 @@ export default {
       } catch (err) { return json({ error: err.message }, 500); }
     }
 
-    // ── /lock/release ─────────────────────────────────────────────────────────
+    // -- /lock/release --
     if (url.pathname === "/lock/release" && request.method === "POST") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
       try {
@@ -289,7 +289,7 @@ export default {
       } catch (err) { return json({ error: err.message }, 500); }
     }
 
-    // ── /stage-video ──────────────────────────────────────────────────────────
+    // -- /stage-video --
     // Downloads a video URL and stages it in R2, returns public URL
     if (url.pathname === "/stage-video" && request.method === "POST") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
@@ -315,7 +315,7 @@ export default {
       } catch (err) { return json({ error: err.message }, 500); }
     }
 
-    // ── /stage-video-upload ──────────────────────────────────────────────────
+    // -- /stage-video-upload --
     // Accepts base64 MP4 that is already processed/watermarked
     if (url.pathname === "/stage-video-upload" && request.method === "POST") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
@@ -333,7 +333,7 @@ export default {
       } catch (err) { return json({ error: err.message }, 500); }
     }
 
-    // ── /delete-video ─────────────────────────────────────────────────────────
+    // -- /delete-video --
     if (url.pathname === "/delete-video" && request.method === "POST") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
       try {
@@ -343,7 +343,7 @@ export default {
       } catch (err) { return json({ error: err.message }, 500); }
     }
 
-    // ── /stage-image ──────────────────────────────────────────────────────────
+    // -- /stage-image --
     // Accepts base64 image, stores in R2, returns public URL
     if (url.pathname === "/stage-image" && request.method === "POST") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
@@ -357,7 +357,7 @@ export default {
       } catch (err) { return json({ error: err.message }, 500); }
     }
 
-    // ── /post-story ───────────────────────────────────────────────────────────
+    // -- /post-story --
     // Posts an image as an Instagram Story (shown to ALL followers, bypasses algorithm)
     if (url.pathname === "/post-story" && request.method === "POST") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
@@ -397,14 +397,14 @@ export default {
       } catch (err) { return json({ error: err.message }, 500); }
     }
 
-    // ── /pipeline/status ─────────────────────────────────────────────────────
+    // -- /pipeline/status --
     if (url.pathname === "/pipeline/status") {
       const paused = await env.SEEN_ARTICLES.get("pipeline:paused");
       const rateLimited = await env.SEEN_ARTICLES.get("ratelimit:pause:meta");
       return json({ paused: !!paused, rateLimited: !!rateLimited });
     }
 
-    // ── /agent/status GET ─────────────────────────────────────────────────────
+    // -- /agent/status GET --
     if (url.pathname === "/agent/status" && request.method === "GET") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
       try {
@@ -427,7 +427,7 @@ export default {
       } catch (err) { return json({ error: err.message }, 500); }
     }
 
-    // ── /agent/toggle POST ────────────────────────────────────────────────────
+    // -- /agent/toggle POST --
     if (url.pathname === "/agent/toggle" && request.method === "POST") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
       try {
@@ -437,7 +437,7 @@ export default {
       } catch (err) { return json({ error: err.message }, 500); }
     }
 
-    // ── /agent/log GET ────────────────────────────────────────────────────────
+    // -- /agent/log GET --
     if (url.pathname === "/agent/log" && request.method === "GET") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
       try {
@@ -452,7 +452,7 @@ export default {
       } catch (err) { return json({ error: err.message }, 500); }
     }
 
-    // ── /resolve-youtube ──────────────────────────────────────────────────────
+    // -- /resolve-youtube --
     // Resolves a YouTube video ID to a direct MP4 URL using YouTube's internal API
     if (url.pathname === "/resolve-youtube" && request.method === "POST") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
@@ -460,7 +460,7 @@ export default {
         const { videoId } = await request.json();
         if (!videoId) return json({ error: "videoId required" }, 400);
 
-        // Use YouTube's embedded player client — bypasses bot detection
+        // Use YouTube's embedded player client - bypasses bot detection
         const playerRes = await fetch("https://www.youtube.com/youtubei/v1/player", {
           method: "POST",
           headers: {
@@ -532,21 +532,21 @@ export default {
       } catch (err) { return json({ error: err.message }, 500); }
     }
 
-    // ── /pipeline/pause ───────────────────────────────────────────────────────
+    // -- /pipeline/pause --
     if (url.pathname === "/pipeline/pause" && request.method === "POST") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
       await env.SEEN_ARTICLES.put("pipeline:paused", "1", { expirationTtl: 24 * 3600 });
       return json({ ok: true, status: "paused" });
     }
 
-    // ── /pipeline/resume ──────────────────────────────────────────────────────
+    // -- /pipeline/resume --
     if (url.pathname === "/pipeline/resume" && request.method === "POST") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
       await env.SEEN_ARTICLES.delete("pipeline:paused");
       return json({ ok: true, status: "running" });
     }
 
-    // ── /schedule POST ────────────────────────────────────────────────────────
+    // -- /schedule POST --
     if (url.pathname === "/schedule" && request.method === "POST") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
       try {
@@ -560,7 +560,7 @@ export default {
       } catch (err) { return json({ error: err.message }, 500); }
     }
 
-    // ── /schedule GET ─────────────────────────────────────────────────────────
+    // -- /schedule GET --
     if (url.pathname === "/schedule" && request.method === "GET") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
       try {
@@ -573,7 +573,7 @@ export default {
       } catch (err) { return json({ error: err.message }, 500); }
     }
 
-    // ── /schedule/:id DELETE ──────────────────────────────────────────────────
+    // -- /schedule/:id DELETE --
     if (url.pathname.startsWith("/schedule/") && request.method === "DELETE") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
       const id = url.pathname.slice("/schedule/".length);
@@ -583,7 +583,7 @@ export default {
       return json({ ok: true });
     }
 
-    // ── /blacklist GET ────────────────────────────────────────────────────────
+    // -- /blacklist GET --
     if (url.pathname === "/blacklist" && request.method === "GET") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
       try {
@@ -597,7 +597,7 @@ export default {
       } catch (err) { return json({ error: err.message }, 500); }
     }
 
-    // ── /blacklist POST ───────────────────────────────────────────────────────
+    // -- /blacklist POST --
     if (url.pathname === "/blacklist" && request.method === "POST") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
       try {
@@ -609,7 +609,7 @@ export default {
       } catch (err) { return json({ error: err.message }, 500); }
     }
 
-    // ── /blacklist DELETE ─────────────────────────────────────────────────────
+    // -- /blacklist DELETE --
     if (url.pathname === "/blacklist" && request.method === "DELETE") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
       try {
@@ -619,154 +619,53 @@ export default {
       } catch (err) { return json({ error: err.message }, 500); }
     }
 
-    // ── /fetch-videos ─────────────────────────────────────────────────────────
-    // Fetches TikTok videos via TikWM across 100+ topic keywords
+    // -- /fetch-videos -- Fetches TikTok videos from specific accounts via TikWM user feed API
     if (url.pathname === "/fetch-videos" && request.method === "GET") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
       try {
         const videos = [];
-
-        // ── 100+ topic keywords across all categories ─────────────────────────
-        const ALL_KEYWORDS = [
-          // ── Kenya Entertainment ───────────────────────────────────────────────
-          { kw: "kenya celebrity gossip 2025",        cat: "CELEBRITY"     },
-          { kw: "nairobi celebrity drama",             cat: "CELEBRITY"     },
-          { kw: "kenyan influencer viral",             cat: "CELEBRITY"     },
-          { kw: "kenya comedy skit viral",             cat: "COMEDY"        },
-          { kw: "nairobi fashion style 2025",          cat: "FASHION"       },
-          { kw: "kenya entertainment news today",      cat: "ENTERTAINMENT" },
-          { kw: "kenyan tiktok viral 2025",            cat: "ENTERTAINMENT" },
-          { kw: "nairobi viral video today",           cat: "ENTERTAINMENT" },
-          { kw: "kenya music video new release",       cat: "MUSIC"         },
-          { kw: "gengetone 2025 new",                  cat: "MUSIC"         },
-          { kw: "afrobeats kenya 2025",                cat: "MUSIC"         },
-          { kw: "khaligraph jones new",                cat: "MUSIC"         },
-          { kw: "otile brown new song",                cat: "MUSIC"         },
-          { kw: "bahati kenya music",                  cat: "MUSIC"         },
-          { kw: "nadia mukami new song",               cat: "MUSIC"         },
-          { kw: "wakadinali new song",                 cat: "MUSIC"         },
-          { kw: "kenya sports highlights",             cat: "SPORTS"        },
-          { kw: "harambee stars football",             cat: "SPORTS"        },
-          { kw: "gor mahia afc leopards",              cat: "SPORTS"        },
-          { kw: "kenya athletics eliud kipchoge",      cat: "SPORTS"        },
-          { kw: "spm buzz celebrity",                  cat: "CELEBRITY"     },
-          { kw: "mpasho kenya celebrity",              cat: "CELEBRITY"     },
-          { kw: "ghafla kenya gossip",                 cat: "CELEBRITY"     },
-          { kw: "tuko kenya entertainment",            cat: "ENTERTAINMENT" },
-          { kw: "citizen tv kenya viral",              cat: "ENTERTAINMENT" },
-          // ── Tanzania Entertainment ────────────────────────────────────────────
-          { kw: "bongo music new 2025",                cat: "MUSIC"         },
-          { kw: "bongo flava official video",          cat: "MUSIC"         },
-          { kw: "tanzanian celebrity gossip",          cat: "CELEBRITY"     },
-          { kw: "dar es salaam viral video",           cat: "ENTERTAINMENT" },
-          { kw: "tanzania entertainment news",         cat: "ENTERTAINMENT" },
-          { kw: "tanzanian tiktok viral",              cat: "ENTERTAINMENT" },
-          { kw: "diamond platnumz new song",           cat: "MUSIC"         },
-          { kw: "harmonize new music 2025",            cat: "MUSIC"         },
-          { kw: "zuchu new song 2025",                 cat: "MUSIC"         },
-          { kw: "rayvanny new video",                  cat: "MUSIC"         },
-          { kw: "simba sc yanga sc football",          cat: "SPORTS"        },
-          { kw: "bongotrending celebrity",             cat: "CELEBRITY"     },
-          { kw: "tanzania news viral today",           cat: "ENTERTAINMENT" },
-          // ── Uganda Entertainment ──────────────────────────────────────────────
-          { kw: "ugandan entertainment viral",         cat: "ENTERTAINMENT" },
-          { kw: "kampala viral video 2025",            cat: "ENTERTAINMENT" },
-          { kw: "ugandan music new 2025",              cat: "MUSIC"         },
-          { kw: "ugandan celebrity gossip",            cat: "CELEBRITY"     },
-          { kw: "bobi wine uganda",                    cat: "MUSIC"         },
-          { kw: "eddy kenzo new song",                 cat: "MUSIC"         },
-          { kw: "uganda cranes football",              cat: "SPORTS"        },
-          { kw: "uganda tiktok viral",                 cat: "ENTERTAINMENT" },
-          // ── Nigeria Entertainment ─────────────────────────────────────────────
-          { kw: "nollywood movie 2025",                cat: "TV & FILM"     },
-          { kw: "nigerian celebrity gossip 2025",      cat: "CELEBRITY"     },
-          { kw: "afrobeats new song 2025",             cat: "MUSIC"         },
-          { kw: "burna boy new song",                  cat: "MUSIC"         },
-          { kw: "wizkid new music 2025",               cat: "MUSIC"         },
-          { kw: "davido new song 2025",                cat: "MUSIC"         },
-          { kw: "asake new music",                     cat: "MUSIC"         },
-          { kw: "rema new song 2025",                  cat: "MUSIC"         },
-          { kw: "lagos celebrity drama",               cat: "CELEBRITY"     },
-          { kw: "nigerian tiktok viral",               cat: "ENTERTAINMENT" },
-          { kw: "super eagles football nigeria",       cat: "SPORTS"        },
-          { kw: "pulse nigeria entertainment",         cat: "ENTERTAINMENT" },
-          { kw: "bellanaija celebrity",                cat: "CELEBRITY"     },
-          // ── East Africa General ───────────────────────────────────────────────
-          { kw: "east africa viral video 2025",        cat: "ENTERTAINMENT" },
-          { kw: "swahili entertainment viral",         cat: "ENTERTAINMENT" },
-          { kw: "east africa music 2025",              cat: "MUSIC"         },
-          { kw: "africa celebrity news today",         cat: "CELEBRITY"     },
-          { kw: "africa viral tiktok 2025",            cat: "ENTERTAINMENT" },
-          // ── Music Global ──────────────────────────────────────────────────────
-          { kw: "new music video official 2025",       cat: "MUSIC"         },
-          { kw: "music video premiere 2025",           cat: "MUSIC"         },
-          { kw: "album drop new 2025",                 cat: "MUSIC"         },
-          { kw: "grammy 2025 performance",             cat: "MUSIC"         },
-          { kw: "billboard hot 100 2025",              cat: "MUSIC"         },
-          { kw: "amapiano new song 2025",              cat: "MUSIC"         },
-          { kw: "reggae dancehall viral 2025",         cat: "MUSIC"         },
-          { kw: "hip hop new song viral",              cat: "MUSIC"         },
-          { kw: "rnb new song 2025",                   cat: "MUSIC"         },
-          { kw: "pop music viral 2025",                cat: "MUSIC"         },
-          { kw: "drake new song 2025",                 cat: "MUSIC"         },
-          { kw: "taylor swift 2025",                   cat: "MUSIC"         },
-          { kw: "beyonce new 2025",                    cat: "MUSIC"         },
-          { kw: "bad bunny new song",                  cat: "MUSIC"         },
-          // ── Movies & TV ───────────────────────────────────────────────────────
-          { kw: "new movie trailer 2025",              cat: "TV & FILM"     },
-          { kw: "netflix new series 2025",             cat: "TV & FILM"     },
-          { kw: "hbo new show 2025",                   cat: "TV & FILM"     },
-          { kw: "disney plus new 2025",                cat: "TV & FILM"     },
-          { kw: "amazon prime new series",             cat: "TV & FILM"     },
-          { kw: "oscar 2025 movie",                    cat: "TV & FILM"     },
-          { kw: "blockbuster movie 2025",              cat: "TV & FILM"     },
-          { kw: "film review viral 2025",              cat: "TV & FILM"     },
-          { kw: "reality tv drama 2025",               cat: "TV & FILM"     },
-          // ── Sports ────────────────────────────────────────────────────────────
-          { kw: "premier league highlights today",     cat: "SPORTS"        },
-          { kw: "champions league goal 2025",          cat: "SPORTS"        },
-          { kw: "afcon 2025 highlights",               cat: "SPORTS"        },
-          { kw: "messi ronaldo 2025",                  cat: "SPORTS"        },
-          { kw: "nba highlights today",                cat: "SPORTS"        },
-          { kw: "boxing fight knockout 2025",          cat: "SPORTS"        },
-          { kw: "ufc fight highlights 2025",           cat: "SPORTS"        },
-          { kw: "world cup 2026 qualifier",            cat: "SPORTS"        },
-          { kw: "formula 1 race highlights",           cat: "SPORTS"        },
-          { kw: "tennis highlights 2025",              cat: "SPORTS"        },
-          // ── Science & Technology ──────────────────────────────────────────────
-          { kw: "space viral video 2025",              cat: "TECHNOLOGY"    },
-          { kw: "nasa discovery 2025",                 cat: "TECHNOLOGY"    },
-          { kw: "ai technology viral 2025",            cat: "TECHNOLOGY"    },
-          { kw: "science amazing viral",               cat: "TECHNOLOGY"    },
-          { kw: "tech news viral today",               cat: "TECHNOLOGY"    },
-          { kw: "elon musk spacex 2025",               cat: "TECHNOLOGY"    },
-          { kw: "robot technology viral",              cat: "TECHNOLOGY"    },
-          // ── USA/UK Celebrity & Entertainment ──────────────────────────────────
-          { kw: "celebrity news today 2025",           cat: "CELEBRITY"     },
-          { kw: "hollywood gossip viral",              cat: "CELEBRITY"     },
-          { kw: "celebrity breakup 2025",              cat: "CELEBRITY"     },
-          { kw: "celebrity wedding 2025",              cat: "CELEBRITY"     },
-          { kw: "the shade room celebrity",            cat: "CELEBRITY"     },
-          { kw: "tmz celebrity news",                  cat: "CELEBRITY"     },
-          { kw: "uk celebrity gossip 2025",            cat: "CELEBRITY"     },
-          { kw: "kardashian 2025",                     cat: "CELEBRITY"     },
-          { kw: "met gala 2025",                       cat: "CELEBRITY"     },
-          { kw: "celebrity interview viral",           cat: "CELEBRITY"     },
-          // ── Comedy ────────────────────────────────────────────────────────────
-          { kw: "comedy skit viral 2025",              cat: "COMEDY"        },
-          { kw: "stand up comedy viral",               cat: "COMEDY"        },
-          { kw: "funny celebrity moment",              cat: "COMEDY"        },
-          { kw: "africa comedy viral",                 cat: "COMEDY"        },
-          { kw: "kenya comedy viral 2025",             cat: "COMEDY"        },
+        const TIKTOK_ACCOUNTS = [
+          { u: "citizen.digital",       cat: "ENTERTAINMENT" },
+          { u: "tukokenya",             cat: "ENTERTAINMENT" },
+          { u: "ntvkenya",              cat: "ENTERTAINMENT" },
+          { u: "spmbuzz",               cat: "CELEBRITY"     },
+          { u: "pulselive_ke",          cat: "ENTERTAINMENT" },
+          { u: "ghafla",                cat: "CELEBRITY"     },
+          { u: "kenya.news.arena",      cat: "ENTERTAINMENT" },
+          { u: "thenewsguyke",          cat: "ENTERTAINMENT" },
+          { u: "sheyii_given",          cat: "ENTERTAINMENT" },
+          { u: "urbannewsgang",         cat: "ENTERTAINMENT" },
+          { u: "bongotrending",         cat: "ENTERTAINMENT" },
+          { u: "tanzaniaentertainment", cat: "ENTERTAINMENT" },
+          { u: "harmonize_tz",          cat: "MUSIC"         },
+          { u: "zuchu_official",        cat: "MUSIC"         },
+          { u: "nbs_television",        cat: "ENTERTAINMENT" },
+          { u: "ntvuganda",             cat: "ENTERTAINMENT" },
+          { u: "bellanaija",            cat: "CELEBRITY"     },
+          { u: "pulse.nigeria",         cat: "ENTERTAINMENT" },
+          { u: "instablog9ja",          cat: "CELEBRITY"     },
+          { u: "tmz",                   cat: "CELEBRITY"     },
+          { u: "theshaderoom",          cat: "CELEBRITY"     },
+          { u: "enews",                 cat: "CELEBRITY"     },
+          { u: "complex",               cat: "MUSIC"         },
+          { u: "hotnewhiphop",          cat: "MUSIC"         },
+          { u: "billboard",             cat: "MUSIC"         },
+          { u: "espn",                  cat: "SPORTS"        },
+          { u: "skysportsnews",         cat: "SPORTS"        },
+          { u: "goal",                  cat: "SPORTS"        },
+          { u: "bleacherreport",        cat: "SPORTS"        },
+          { u: "variety",               cat: "TV & FILM"     },
+          { u: "aljazeeraenglish",      cat: "ENTERTAINMENT" },
+          { u: "bbcnews",               cat: "ENTERTAINMENT" },
+          { u: "cnn",                   cat: "ENTERTAINMENT" },
+          { u: "dylan.page",            cat: "ENTERTAINMENT" },
+          { u: "fabrizioromano",        cat: "SPORTS"        },
         ];
-
-        // Pick 15 random keywords per run for variety
-        const selected = [...ALL_KEYWORDS].sort(() => Math.random() - 0.5).slice(0, 15);
-
-        await Promise.allSettled(selected.map(async ({ kw, cat }) => {
+        const selected = [...TIKTOK_ACCOUNTS].sort(() => Math.random() - 0.5).slice(0, 12);
+        await Promise.allSettled(selected.map(async ({ u, cat }) => {
           try {
-            const body = new URLSearchParams({ keywords: kw, count: "8", cursor: "0", HD: "1", sort_type: "1" });
-            const r = await fetch("https://www.tikwm.com/api/feed/search", {
+            const body = new URLSearchParams({ unique_id: u, count: "10", cursor: "0" });
+            const r = await fetch("https://www.tikwm.com/api/user/posts", {
               method: "POST",
               headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": "Mozilla/5.0 (compatible; PPPTVBot/2.0)" },
               body: body.toString(),
@@ -775,23 +674,21 @@ export default {
             if (!r.ok) return;
             const data = await r.json();
             if (data.code !== 0 || !data.data?.videos?.length) return;
-
             for (const v of data.data.videos.slice(0, 5)) {
               const title = v.title || v.desc || "";
               if (!title || v.is_ad) continue;
               const ageHours = (Date.now() - v.create_time * 1000) / 3600000;
               if (ageHours > 72) continue;
-              const username = v.author?.unique_id || "unknown";
               const directUrl = v.hdplay || v.play || v.wmplay || null;
-              if (!directUrl) continue; // skip if no direct URL — muted/broken
+              if (!directUrl) continue;
               videos.push({
-                id: `tiktok:${v.video_id}`,
+                id: "tiktok:" + (v.video_id || v.id),
                 title: title.slice(0, 200),
-                url: `https://www.tiktok.com/@${username}/video/${v.video_id}`,
+                url: "https://www.tiktok.com/@" + u + "/video/" + (v.video_id || v.id),
                 directVideoUrl: directUrl,
                 thumbnail: v.cover || v.origin_cover || "",
                 publishedAt: new Date(v.create_time * 1000).toISOString(),
-                sourceName: `TikTok @${username}`,
+                sourceName: "@" + u,
                 sourceType: "direct-mp4",
                 category: cat,
                 playCount: v.play_count || 0,
@@ -799,32 +696,23 @@ export default {
             }
           } catch {}
         }));
-
-        // ── Dailymotion RSS — extra source with audio ─────────────────────────
         const DM_FEEDS = [
-          { url: "https://www.dailymotion.com/rss/tag/kenya+entertainment", name: "Dailymotion Kenya",    cat: "ENTERTAINMENT" },
-          { url: "https://www.dailymotion.com/rss/tag/africa+music",        name: "Africa Music DM",      cat: "MUSIC"         },
-          { url: "https://www.dailymotion.com/rss/tag/celebrity+gossip",    name: "Celebrity Gossip DM",  cat: "CELEBRITY"     },
-          { url: "https://www.dailymotion.com/rss/tag/viral+video",         name: "Viral Videos DM",      cat: "ENTERTAINMENT" },
-          { url: "https://www.dailymotion.com/rss/tag/music+video",         name: "Music Videos DM",      cat: "MUSIC"         },
-          { url: "https://www.dailymotion.com/rss/tag/sports+highlights",   name: "Sports Highlights DM", cat: "SPORTS"        },
-          { url: "https://www.dailymotion.com/rss/tag/comedy+funny",        name: "Comedy DM",            cat: "COMEDY"        },
-          { url: "https://www.dailymotion.com/rss/tag/nairobi",             name: "Nairobi DM",           cat: "ENTERTAINMENT" },
-          { url: "https://www.dailymotion.com/rss/tag/afrobeats",           name: "Afrobeats DM",         cat: "MUSIC"         },
-          { url: "https://www.dailymotion.com/rss/tag/nollywood",           name: "Nollywood DM",         cat: "TV & FILM"     },
-          { url: "https://www.dailymotion.com/rss/tag/bongo+music",         name: "Bongo Music DM",       cat: "MUSIC"         },
-          { url: "https://www.dailymotion.com/rss/tag/tanzania",            name: "Tanzania DM",          cat: "ENTERTAINMENT" },
-          { url: "https://www.dailymotion.com/rss/tag/east+africa",         name: "East Africa DM",       cat: "ENTERTAINMENT" },
-          { url: "https://www.dailymotion.com/rss/tag/football+highlights", name: "Football DM",          cat: "SPORTS"        },
-          { url: "https://www.dailymotion.com/rss/tag/technology+viral",    name: "Tech Viral DM",        cat: "TECHNOLOGY"    },
+          { url: "https://www.dailymotion.com/rss/tag/kenya+entertainment", name: "Dailymotion Kenya",   cat: "ENTERTAINMENT" },
+          { url: "https://www.dailymotion.com/rss/tag/africa+music",        name: "Africa Music DM",     cat: "MUSIC"         },
+          { url: "https://www.dailymotion.com/rss/tag/celebrity+gossip",    name: "Celebrity Gossip DM", cat: "CELEBRITY"     },
+          { url: "https://www.dailymotion.com/rss/tag/viral+video",         name: "Viral Videos DM",     cat: "ENTERTAINMENT" },
+          { url: "https://www.dailymotion.com/rss/tag/music+video",         name: "Music Videos DM",     cat: "MUSIC"         },
+          { url: "https://www.dailymotion.com/rss/tag/sports+highlights",   name: "Sports Highlights DM",cat: "SPORTS"        },
+          { url: "https://www.dailymotion.com/rss/tag/bongo+music",         name: "Bongo Music DM",      cat: "MUSIC"         },
+          { url: "https://www.dailymotion.com/rss/tag/tanzania",            name: "Tanzania DM",         cat: "ENTERTAINMENT" },
+          { url: "https://www.dailymotion.com/rss/tag/east+africa",         name: "East Africa DM",      cat: "ENTERTAINMENT" },
+          { url: "https://www.dailymotion.com/rss/tag/nollywood",           name: "Nollywood DM",        cat: "TV & FILM"     },
+          { url: "https://www.dailymotion.com/rss/tag/afrobeats",           name: "Afrobeats DM",        cat: "MUSIC"         },
+          { url: "https://www.dailymotion.com/rss/tag/football+highlights", name: "Football DM",         cat: "SPORTS"        },
         ];
-
         await Promise.allSettled(DM_FEEDS.map(async feed => {
           try {
-            const r = await fetch(feed.url, {
-              headers: { "User-Agent": "Mozilla/5.0 (compatible; PPPTVBot/2.0)" },
-              signal: AbortSignal.timeout(8000),
-            });
+            const r = await fetch(feed.url, { headers: { "User-Agent": "Mozilla/5.0 (compatible; PPPTVBot/2.0)" }, signal: AbortSignal.timeout(8000) });
             if (!r.ok) return;
             const xml = await r.text();
             const itemRegex = /<item>([\s\S]*?)<\/item>/g;
@@ -836,33 +724,21 @@ export default {
               const pubDate = (e.match(/<pubDate>(.*?)<\/pubDate>/) || [])[1] || "";
               const thumbnail = (e.match(/url="([^"]+\.(?:jpg|jpeg|png))"/) || [])[1] || "";
               const videoId = link.match(/video\/([a-z0-9]+)/i)?.[1] || "";
-              if (!title || !link) continue;
+              if (!title || !link || !videoId) continue;
               const cleanTitle = title.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
-              const isJunk = /s\d+e\d+|season \d+|episode \d+|full episode|full movie|watch online|free download|720p|1080p|hdrip|bluray|webrip/i.test(cleanTitle);
+              const isJunk = /s\d+e\d+|season \d+|episode \d+|full episode|full movie|watch online|free download/i.test(cleanTitle);
               if (isJunk) continue;
               const ageHours = pubDate ? (Date.now() - new Date(pubDate).getTime()) / 3600000 : 0;
               if (ageHours > 72) continue;
-              videos.push({
-                id: `dm:${videoId || link}`,
-                title: cleanTitle,
-                url: link,
-                directVideoUrl: null,
-                thumbnail,
-                publishedAt: pubDate ? new Date(pubDate).toISOString() : new Date().toISOString(),
-                sourceName: feed.name,
-                sourceType: "dailymotion",
-                category: feed.cat,
-                playCount: 0,
-              });
+              videos.push({ id: "dm:" + videoId, title: cleanTitle, url: link, directVideoUrl: null, thumbnail, publishedAt: pubDate ? new Date(pubDate).toISOString() : new Date().toISOString(), sourceName: feed.name, sourceType: "dailymotion", category: feed.cat, playCount: 0 });
             }
           } catch {}
         }));
-
         return json({ videos, count: videos.length });
       } catch (err) { return json({ error: err.message }, 500); }
     }
 
-    // ── /resolve-dailymotion ──────────────────────────────────────────────────
+ // -- /resolve-dailymotion --
     // Resolves a Dailymotion video page URL to a direct MP4 stream
     if (url.pathname === "/resolve-dailymotion" && request.method === "POST") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
@@ -871,27 +747,31 @@ export default {
         if (!videoUrl) return json({ error: "videoUrl required" }, 400);
         const videoId = videoUrl.match(/video\/([a-z0-9]+)/i)?.[1];
         if (!videoId) return json({ error: "Could not extract video ID" }, 400);
-        // Dailymotion embed API — returns stream URLs
+        // Dailymotion embed API - returns stream URLs
         const r = await fetch(`https://www.dailymotion.com/player/metadata/video/${videoId}?embedder=https://www.dailymotion.com&locale=en_US&dmV1st=&dmTs=&is_native_app=0`, {
           headers: { "User-Agent": "Mozilla/5.0 (compatible; PPPTVBot/2.0)", "Referer": "https://www.dailymotion.com/" },
           signal: AbortSignal.timeout(12000),
         });
         if (!r.ok) return json({ error: `DM API ${r.status}` }, 502);
         const data = await r.json();
-        const qualities = data?.qualities?.auto || data?.qualities?.["1080"] || data?.qualities?.["720"] || data?.qualities?.["480"] || [];
-        const stream = qualities.find(q => q?.type === "application/x-mpegURL" || q?.type === "video/mp4");
-        if (stream?.url) return json({ success: true, url: stream.url, type: stream.type });
-        // Try direct qualities
+        // Prefer MP4 over HLS — MP4 can be downloaded as a buffer
         for (const q of ["1080", "720", "480", "380", "240"]) {
           const qs = data?.qualities?.[q] || [];
-          const s = qs.find(x => x?.url);
-          if (s?.url) return json({ success: true, url: s.url });
+          const mp4 = qs.find(x => x?.url && x?.type === "video/mp4");
+          if (mp4?.url) return json({ success: true, url: mp4.url, type: "video/mp4" });
         }
+        // Fallback to auto quality MP4
+        const autoQ = data?.qualities?.auto || [];
+        const autoMp4 = autoQ.find(q => q?.type === "video/mp4");
+        if (autoMp4?.url) return json({ success: true, url: autoMp4.url, type: "video/mp4" });
+        // Last resort: HLS (will fail staging but better than nothing)
+        const hls = autoQ.find(q => q?.type === "application/x-mpegURL");
+        if (hls?.url) return json({ success: false, url: hls.url, type: "hls", error: "HLS only - not downloadable" });
         return json({ error: "No stream URL found" }, 404);
       } catch (err) { return json({ error: err.message }, 500); }
     }
 
-    // ── /resolve-cobalt ───────────────────────────────────────────────────────
+    // -- /resolve-cobalt --
     // Uses Cobalt API to resolve YouTube/TikTok/etc to direct MP4
     if (url.pathname === "/resolve-cobalt" && request.method === "POST") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
@@ -925,7 +805,7 @@ export default {
       } catch (err) { return json({ error: err.message }, 500); }
     }
 
-    // ── /tikwm-search ─────────────────────────────────────────────────────────
+    // -- /tikwm-search --
     // Proxies TikWM search through the worker to bypass Vercel IP blocks
     if (url.pathname === "/tikwm-search" && request.method === "POST") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
@@ -945,7 +825,7 @@ export default {
       } catch (err) { return json({ error: err.message }, 500); }
     }
 
-    // ── /r2-health ────────────────────────────────────────────────────────────
+    // -- /r2-health --
     if (url.pathname === "/r2-health") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
       try {
@@ -957,7 +837,7 @@ export default {
       } catch (err) { return json({ ok: false, error: err.message }); }
     }
 
-    // ── /img proxy ────────────────────────────────────────────────────────────
+    // -- /img proxy --
     if (url.pathname === "/img") {
       const imgUrl = url.searchParams.get("url");
       if (!imgUrl) return new Response("url param required", { status: 400 });
@@ -976,16 +856,16 @@ export default {
   },
 };
 
-// ── Distributed lock — prevents concurrent cron runs from double-posting ─────
+// -- Distributed lock - prevents concurrent cron runs from double-posting --
 const LOCK_KEY = "pipeline:lock";
-const LOCK_TTL = 270; // 4.5 minutes — safely under the 10-min cron interval
+const LOCK_TTL = 270; // 4.5 minutes - safely under the 10-min cron interval
 
 async function triggerAutomateWithLock(env) {
   const existing = await env.SEEN_ARTICLES.get(LOCK_KEY);
   if (existing) {
     const ageMs = Date.now() - Number(existing);
     if (ageMs < LOCK_TTL * 1000) {
-      console.log("[lock] Another run is in progress — skipping this cron tick");
+      console.log("[lock] Another run is in progress - skipping this cron tick");
       return;
     }
     console.log("[lock] Stale lock detected, releasing");
@@ -999,12 +879,12 @@ async function triggerAutomateWithLock(env) {
   }
 }
 
-// ── Trigger Next.js automate endpoint (Vercel handles the full pipeline) ──────
+// -- Trigger Next.js automate endpoint (Vercel handles the full pipeline) --
 async function triggerAutomate(env) {
-  // ── Agent ON/OFF check ────────────────────────────────────────────────────
+  // -- Agent ON/OFF check --
   const agentEnabled = await env.SEEN_ARTICLES.get("agent:enabled");
   if (agentEnabled === "0") {
-    console.log("[agent] Agent is disabled — skipping run");
+    console.log("[agent] Agent is disabled - skipping run");
     return;
   }
 
@@ -1012,7 +892,7 @@ async function triggerAutomate(env) {
   const secret = env.AUTOMATE_SECRET;
   if (!secret) { console.warn("[auto-ppp-tv] AUTOMATE_SECRET not set"); return; }
 
-  // ── Smart throttle — shadowban prevention ─────────────────────────────────
+  // -- Smart throttle - shadowban prevention --
   // Instagram hard limit: 50 posts/24h. We target max 25/day (safe zone).
   // Cron fires every 5 min = 288 ticks/day. We skip most ticks randomly.
   // Target: ~25 posts/day = fire roughly every 58 min on average.
@@ -1024,7 +904,7 @@ async function triggerAutomate(env) {
   // Hard cap: never exceed 50 posts/day (IG's actual limit)
   const MAX_DAILY = 50;
   if (todayCount >= MAX_DAILY) {
-    console.log(`[throttle] Daily cap reached (${todayCount}/${MAX_DAILY}) — skipping`);
+    console.log(`[throttle] Daily cap reached (${todayCount}/${MAX_DAILY}) - skipping`);
     return;
   }
 
@@ -1034,29 +914,29 @@ async function triggerAutomate(env) {
   const msSinceLast = lastPostTime ? Date.now() - parseInt(lastPostTime) : Infinity;
   const hoursSinceLast = msSinceLast / 3600000;
 
-  // FORCE POST if no video in last 3 hours — override all throttles
+  // FORCE POST if no video in last 3 hours - override all throttles
   const forcePost = hoursSinceLast >= 3;
 
   if (!forcePost) {
     // Minimum gap: 3 minutes (allows ~5-min cadence with jitter)
     const minGapMs = 3 * 60 * 1000;
     if (msSinceLast < minGapMs) {
-      console.log(`[throttle] Too soon since last post (${Math.round(msSinceLast/60000)}m ago, min 3m) — skipping`);
+      console.log(`[throttle] Too soon since last post (${Math.round(msSinceLast/60000)}m ago, min 3m) - skipping`);
       return;
     }
   } else {
-    console.log(`[throttle] FORCE POST — no video in ${Math.round(hoursSinceLast * 60)}m`);
+    console.log(`[throttle] FORCE POST - no video in ${Math.round(hoursSinceLast * 60)}m`);
   }
 
   // Random skip: only skip during off-peak, and only if not a force post
   const hourEAT = (new Date().getUTCHours() + 3) % 24;
-  // Dead zone: 1am-5am EAT — skip entirely (unless force post)
+  // Dead zone: 1am-5am EAT - skip entirely (unless force post)
   if (!forcePost && hourEAT >= 1 && hourEAT < 5) {
-    console.log(`[throttle] Dead zone (${hourEAT}:00 EAT) — skipping`);
+    console.log(`[throttle] Dead zone (${hourEAT}:00 EAT) - skipping`);
     return;
   }
   // Peak hours (7am-10pm EAT): always post when eligible
-  // Off-peak: 80% chance — still post regularly outside peak
+  // Off-peak: 80% chance - still post regularly outside peak
   const isPeak = hourEAT >= 7 && hourEAT <= 22;
   const postChance = isPeak ? 1.0 : 0.80;
   if (!forcePost && Math.random() > postChance) {
@@ -1065,16 +945,16 @@ async function triggerAutomate(env) {
   }
 
   // Record this post attempt time only after confirmed success (updated below)
-  // await env.SEEN_ARTICLES.put("last:post:time", ...) — moved to after pipeline fires
+  // await env.SEEN_ARTICLES.put("last:post:time", ...) - moved to after pipeline fires
 
-  // ── A/B testing: rotate caption variant every 10 runs ────────────────────
+  // -- A/B testing: rotate caption variant every 10 runs --
   const runCount = parseInt(await env.SEEN_ARTICLES.get("run-count") || "0");
   const abVariant = runCount % 20 < 10 ? "A" : "B"; // A=breaking style, B=casual style
   await env.SEEN_ARTICLES.put("agent:ab_variant", abVariant, { expirationTtl: 24 * 3600 });
   await env.SEEN_ARTICLES.put("agent:last_run", new Date().toISOString(), { expirationTtl: 7 * 24 * 3600 });
 
   try {
-    // No jitter needed — throttle logic above handles timing
+    // No jitter needed - throttle logic above handles timing
     const nextCount = runCount + 1;
     await env.SEEN_ARTICLES.put("run-count", String(nextCount), { expirationTtl: 24 * 3600 });
 
@@ -1111,7 +991,7 @@ async function triggerAutomate(env) {
         }).then(r => r.json()).then(async d => {
           console.log(`[burst] video: posted=${d.posted}`);
           if (d.posted > 0) {
-            // Record successful post time — used for 3h force-post check
+            // Record successful post time - used for 3h force-post check
             await env.SEEN_ARTICLES.put("last:post:time", String(Date.now()), { expirationTtl: 24 * 3600 });
             const logKey = `agent:log:${Date.now() + 1}`;
             await env.SEEN_ARTICLES.put(logKey, JSON.stringify({
@@ -1122,7 +1002,7 @@ async function triggerAutomate(env) {
         }).catch(e => console.error("[burst] video failed:", e.message))
       : Promise.resolve();
 
-    // Carousel pipeline (every 3rd run) — scrapes IG carousels, replaces first image with branded thumb
+    // Carousel pipeline (every 3rd run) - scrapes IG carousels, replaces first image with branded thumb
     const carouselPromise = nextCount % 3 === 0
       ? fetch(`${appUrl}/api/automate-carousel`, {
           method: "POST",
@@ -1187,10 +1067,10 @@ async function runPipeline(env) {
   const caption = await generateCaption(article, env);
   console.log(`[PPP TV] Caption: ${caption.slice(0, 80)}...`);
 
-  // 5. Get image URL — fetch and stage in R2 so IG can access it
+  // 5. Get image URL - fetch and stage in R2 so IG can access it
   const rawImageUrl = article.imageUrlDirect || article.imageUrl || "";
   if (!rawImageUrl) {
-    console.warn("[PPP TV] No image URL — skipping");
+    console.warn("[PPP TV] No image URL - skipping");
     const logKey = `log:${Date.now()}:${id}`;
     await env.SEEN_ARTICLES.put(logKey, JSON.stringify({
       articleId: id, title: article.title,
@@ -1227,13 +1107,13 @@ async function runPipeline(env) {
 
   // 6. Post to Instagram
   const igResult = await postToInstagram(imageUrl, caption, env, (article.category || "GENERAL").toUpperCase());
-  console.log(`[PPP TV] IG: ${igResult.success ? "✓ " + igResult.postId : "✗ " + igResult.error}`);
+  console.log(`[PPP TV] IG: ${igResult.success ? "? " + igResult.postId : "? " + igResult.error}`);
 
   // 7. Post to Facebook
   const fbResult = await postToFacebook(imageUrl, caption, article.articleUrl || article.sourceUrl, env);
-  console.log(`[PPP TV] FB: ${fbResult.success ? "✓ " + fbResult.postId : "✗ " + fbResult.error}`);
+  console.log(`[PPP TV] FB: ${fbResult.success ? "? " + fbResult.postId : "? " + fbResult.error}`);
 
-  // 8. Log the post — always log, even on failure
+  // 8. Log the post - always log, even on failure
   const logKey = `log:${Date.now()}:${id}`;
   await env.SEEN_ARTICLES.put(logKey, JSON.stringify({
     articleId: id,
@@ -1250,16 +1130,16 @@ async function runPipeline(env) {
   console.log("[PPP TV] Pipeline done");
 }
 
-// ── AI CAPTION ────────────────────────────────────────────────────────────────
+// -- AI CAPTION --
 const HOOK_PATTERNS = [
-  "Lead with the most newsworthy verifiable fact — a specific number, name, or outcome.",
+  "Lead with the most newsworthy verifiable fact - a specific number, name, or outcome.",
   "Lead with the consequence or outcome first, then explain the cause.",
   "Lead with a direct quote from a key person in the story if available.",
-  "Lead with the most specific detail — an exact time, place, or figure.",
-  "Lead with what changed — what is different today because of this story.",
+  "Lead with the most specific detail - an exact time, place, or figure.",
+  "Lead with what changed - what is different today because of this story.",
 ];
 
-// Engagement CTAs — journalist style, no clickbait (Meta penalizes clickbait CTAs)
+// Engagement CTAs - journalist style, no clickbait (Meta penalizes clickbait CTAs)
 const ENGAGEMENT_CTAS_WORKER = [
   "What are your thoughts on this?",
   "Share this with someone following this story.",
@@ -1271,25 +1151,25 @@ const ENGAGEMENT_CTAS_WORKER = [
   "Save this for later.",
 ];
 
-const CAPTION_SYSTEM_PROMPT = `You are the senior news writer at PPP TV Kenya — a verified Kenyan entertainment and news media brand.
+const CAPTION_SYSTEM_PROMPT = `You are the senior news writer at PPP TV Kenya - a verified Kenyan entertainment and news media brand.
 
 Write captions like a professional journalist. Factual, specific, no clickbait. Meta penalizes clickbait and rewards news-style writing.
 
 STRUCTURE (3 parts, blank line between each):
 
-1. LEDE — One sentence: WHO did WHAT, WHERE, WHEN. Lead with the most newsworthy fact. No emojis. No ALL CAPS.
+1. LEDE - One sentence: WHO did WHAT, WHERE, WHEN. Lead with the most newsworthy fact. No emojis. No ALL CAPS.
 
-2. BODY — 2-4 sentences of verified detail. Names, exact figures, locations, dates, direct quotes. AP/Reuters style — tight and factual.
+2. BODY - 2-4 sentences of verified detail. Names, exact figures, locations, dates, direct quotes. AP/Reuters style - tight and factual.
 
-3. CLOSE — What happens next, or the reader's stake in the story. End with source credit.
+3. CLOSE - What happens next, or the reader's stake in the story. End with source credit.
 
 RULES:
 - ONLY use facts explicitly stated in the article provided. NEVER invent, assume, or infer any fact not directly in the article text. If a detail is not in the article, do not include it.
 - NEVER use: "shocking", "you won't believe", "breaking", "must see", "find out more", "stay tuned", "the internet is buzzing"
-- NEVER withhold facts to create artificial curiosity — Meta penalizes this
+- NEVER withhold facts to create artificial curiosity - Meta penalizes this
 - No ALL CAPS in body
 - No hashtags
-- Emojis are allowed — use 2-4 relevant emojis to make the post feel human and engaging
+- Emojis are allowed - use 2-4 relevant emojis to make the post feel human and engaging
 - Always end with: "Source: [publication name]"
 - Under 200 words`;
 
@@ -1314,7 +1194,7 @@ ALWAYS END WITH: "Source: ${article.sourceName || "PPP TV Kenya"}"
 CRITICAL: Only use facts explicitly stated in the ARTICLE text above. Do NOT invent, assume, or add any names, dates, statistics, titles, or events that are not directly in the article. If a detail is not in the article, leave it out.
 
 Write the caption following the instructions above. Factual, no clickbait, journalist style.
-Reply with ONLY the caption text — no labels, no preamble.`;
+Reply with ONLY the caption text - no labels, no preamble.`;
 
   // Try Gemini first
   if (env.GEMINI_API_KEY) {
@@ -1354,7 +1234,7 @@ Reply with ONLY the caption text — no labels, no preamble.`;
   return (article.excerpt || article.title) + sourceCredit + "\n\n" + engagementCTA;
 }
 
-// ── INSTAGRAM POSTING ─────────────────────────────────────────────────────────
+// -- INSTAGRAM POSTING --
 const HASHTAG_BANK_WORKER = {
   MUSIC:         "#KenyaMusic #AfrobeatKenya #NairobiMusic #KenyanArtist #EastAfricaMusic #PPPTVKenya #MusicKE",
   CELEBRITY:     "#KenyaCelebrity #NairobiCelebs #KenyanCelebs #PPPTVKenya #NairobiGossip #KenyaEntertainment",
@@ -1427,7 +1307,7 @@ async function postToInstagram(imageUrl, caption, env, category) {
   }
 }
 
-// ── FACEBOOK POSTING ──────────────────────────────────────────────────────────
+// -- FACEBOOK POSTING --
 async function postToFacebook(imageUrl, caption, articleUrl, env) {
   const token = env.FACEBOOK_ACCESS_TOKEN;
   const pageId = env.FACEBOOK_PAGE_ID;
@@ -1449,7 +1329,7 @@ async function postToFacebook(imageUrl, caption, articleUrl, env) {
   }
 }
 
-// ── CLEANUP OLD LOGS ──────────────────────────────────────────────────────────
+// -- CLEANUP OLD LOGS --
 async function cleanupOldLogs(env) {
   const list = await env.SEEN_ARTICLES.list({ prefix: "log:" });
   const cutoff = Date.now() - (30 * 24 * 60 * 60 * 1000);
@@ -1461,7 +1341,7 @@ async function cleanupOldLogs(env) {
   console.log(`[cleanup] Deleted ${deleted} old log entries`);
 }
 
-// ── CLEANUP OLD VIDEOS IN R2 (12h TTL) ────────────────────────────────────────
+// -- CLEANUP OLD VIDEOS IN R2 (12h TTL) --
 async function cleanupOldVideos(env) {
   const cutoff = Date.now() - (12 * 60 * 60 * 1000);
   let cursor = undefined;
@@ -1480,13 +1360,13 @@ async function cleanupOldVideos(env) {
   if (deleted) console.log(`[cleanup] Deleted ${deleted} old videos (>12h)`);
 }
 
-// ── HELPERS ───────────────────────────────────────────────────────────────────
+// -- HELPERS --
 async function sha256Short(str) {
   const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(str));
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("").slice(0, 16);
 }
 
-// ── DEBUG PIPELINE (synchronous, returns result) ─────────────────────────────
+// -- DEBUG PIPELINE (synchronous, returns result) --
 async function runPipelineDebug(env) {
   const log = [];
   const step = (msg) => { log.push(msg); console.log("[DEBUG]", msg); };
