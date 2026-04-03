@@ -405,7 +405,8 @@ const TIKTOK_ACCOUNTS: TikTokAccount[] = [
   { username: "rollingstone",         displayName: "Rolling Stone",           category: "MUSIC",         postHourEAT: 9,  isCreator: false },
   { username: "pitchfork",            displayName: "Pitchfork",               category: "MUSIC",         postHourEAT: 10, isCreator: false },
   { username: "complex",              displayName: "Complex",                 category: "MUSIC",         postHourEAT: 11, isCreator: false },
-  { username: "hotnewhiphop",         displayName: "HotNewHipHop",            category: "MUSIC",         postHourEAT: 12, isCreator: false },
+  { username: "raptvusa",             displayName: "Rap TV",                  category: "MUSIC",         postHourEAT: 12, isCreator: false },
+  { username: "hotnewhiphop",         displayName: "HotNewHipHop",            category: "MUSIC",         postHourEAT: 13, isCreator: false },
   { username: "worldstarhiphop",      displayName: "WorldStar HipHop",        category: "MUSIC",         postHourEAT: 13, isCreator: false },
   { username: "rap",                  displayName: "Rap",                     category: "MUSIC",         postHourEAT: 14, isCreator: false },
   { username: "vibe",                 displayName: "Vibe Magazine",           category: "MUSIC",         postHourEAT: 15, isCreator: false },
@@ -772,12 +773,22 @@ export async function fetchAllVideoSources(): Promise<VideoItem[]> {
     fetchVideosViaWorker(),
     // TikWM search via worker proxy
     fetchTikWMTrending(),
-    // TikTok account scraper
-    ...TIKTOK_ACCOUNTS.sort(() => Math.random() - 0.5).slice(0, 10).map(a => fetchTikTokAccountVideos(a)),
+    // Priority TikTok accounts — always scraped every run
+    ...["complex", "raptvusa", "worldstarhiphop", "hotnewhiphop", "theshaderoom", "tmz", "spmbuzz", "tukokenya", "433", "bleacherreport"]
+      .map(username => {
+        const acct = TIKTOK_ACCOUNTS.find(a => a.username === username);
+        return acct ? fetchTikTokAccountVideos(acct) : Promise.resolve([]);
+      }),
+    // Random rotation of remaining accounts
+    ...TIKTOK_ACCOUNTS
+      .filter(a => !["complex","raptvusa","worldstarhiphop","hotnewhiphop","theshaderoom","tmz","spmbuzz","tukokenya","433","bleacherreport"].includes(a.username))
+      .sort(() => Math.random() - 0.5)
+      .slice(0, 15)
+      .map(a => fetchTikTokAccountVideos(a)),
     // YouTube RSS
-    ...YOUTUBE_CHANNELS.slice(0, 4).map(ch => fetchYouTubeChannel(ch.id, ch.name, ch.cat)),
+    ...YOUTUBE_CHANNELS.slice(0, 6).map(ch => fetchYouTubeChannel(ch.id, ch.name, ch.cat)),
     // News RSS with video embeds
-    ...NEWS_RSS_FEEDS.slice(0, 8).map(f => fetchNewsRSSWithVideo(f.url, f.name, f.cat)),
+    ...NEWS_RSS_FEEDS.slice(0, 10).map(f => fetchNewsRSSWithVideo(f.url, f.name, f.cat)),
   ]);
 
   const all: VideoItem[] = [];
