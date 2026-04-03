@@ -84,6 +84,38 @@ function parseWorkerFeed(data: WorkerFeedResponse): Article[] {
 }
 
 export async function fetchArticles(limit = 50): Promise<Article[]> {
+  // 1. First try ingest_queue — articles pushed directly from PPP TV site
+  try {
+    const since = new Date(Date.now() - 24 * 3600000).toISOString();
+    const { data: queued } = await (await import("@/lib/supabase")).supabaseAdmin
+      .from("ingest_queue")
+      .select("*")
+      .eq("posted", false)
+      .gte("published_at", since)
+      .order("published_at", { ascending: false })
+      .limit(limit);
+
+    if (queued && queued.length > 0) {
+      const articles: Article[] = queued.map((item: any) => ({
+        id: item.id,
+        title: item.title,
+        url: item.article_url || item.source_url,
+        imageUrl: item.image_url || item.image_url_direct || "",
+        summary: item.excerpt || "",
+        fullBody: item.content || item.excerpt || "",
+        sourceName: item.source_name || "PPP TV Kenya",
+        category: (item.category || "ENTERTAINMENT").toUpperCase(),
+        publishedAt: new Date(item.published_at),
+        videoUrl: item.video_url || item.video_embed_url || undefined,
+        isVideo: !!(item.video_url || item.video_embed_url),
+        isBreaking: item.is_breaking || false,
+      }));
+      articles.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
+      return articles.slice(0, limit);
+    }
+  } catch { /* fall through to RSS feed */ }
+
+  // 2. Fallback — scrape RSS feeds via worker
   const url = `${PPPTV_FEED_URL}?limit=${limit}`;
 
   const res = await fetch(url, {
