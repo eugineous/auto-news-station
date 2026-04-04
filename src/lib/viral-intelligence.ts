@@ -14,11 +14,12 @@ export interface ViralItem {
   sourceName: string;
   sourceType: string;
   category: string;
-  viralScore: number;      // 0-100, higher = more likely to go viral
-  recencyScore: number;    // 0-100, based on how fresh the content is
-  engagementScore: number; // 0-100, based on likes/views/shares
-  isKenyan: boolean;       // true if Kenyan content
-  repurposeFormats: string[]; // ["reel", "carousel", "story"]
+  viralScore: number;
+  recencyScore: number;
+  engagementScore: number;
+  isKenyan: boolean;
+  repurposeFormats: string[];
+  playCount?: number;   // raw view count from source
 }
 
 const UA = "Mozilla/5.0 (compatible; PPPTVBot/2.0)";
@@ -81,20 +82,25 @@ export async function fetchViralTikTokVideos(keywords: string[]): Promise<ViralI
 
   await Promise.allSettled(keywords.map(async (keyword) => {
     try {
-      const body = new URLSearchParams({ keywords: keyword, count: "5", cursor: "0", HD: "1" });
-      const res = await fetch("https://www.tikwm.com/api/feed/search", {
+      const WORKER_URL = process.env.CLOUDFLARE_WORKER_URL || "https://auto-ppp-tv.euginemicah.workers.dev";
+      const WORKER_SECRET = process.env.WORKER_SECRET || "ppptvWorker2024";
+      const res = await fetch(`${WORKER_URL}/tikwm-search`, {
         method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": UA },
-        body: body.toString(),
-        signal: AbortSignal.timeout(8000),
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${WORKER_SECRET}` },
+        body: JSON.stringify({ keywords: keyword, count: "10", cursor: "0" }),
+        signal: AbortSignal.timeout(12000),
       });
       if (!res.ok) return;
       const data = await res.json() as any;
       if (data.code !== 0 || !data.data?.videos?.length) return;
 
-      for (const v of data.data.videos.slice(0, 3)) {
+      for (const v of data.data.videos.slice(0, 5)) {
         const title = v.title || v.desc || "";
         if (!title || v.is_ad) continue;
+
+        // Only include videos with 200K+ views — skip low-engagement content
+        const playCount = v.play_count || 0;
+        if (playCount > 0 && playCount < 200000) continue;
 
         const publishedAt = new Date(v.create_time * 1000);
         const ageHours = (Date.now() - publishedAt.getTime()) / 3600000;
@@ -128,6 +134,7 @@ export async function fetchViralTikTokVideos(keywords: string[]): Promise<ViralI
           engagementScore,
           isKenyan,
           repurposeFormats: ["reel", "story"],
+          playCount: v.play_count || 0,
         });
       }
     } catch {}

@@ -1,12 +1,13 @@
 "use client";
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
-export default function LoginPage() {
+function LoginForm() {
   const [pw, setPw] = useState("");
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   async function login() {
     setLoading(true);
@@ -17,7 +18,9 @@ export default function LoginPage() {
       body: JSON.stringify({ password: pw }),
     });
     if (r.ok) {
-      router.push("/dashboard");
+      const from = searchParams.get("from");
+      const dest = from && from.startsWith("/") ? from : "/dashboard";
+      router.push(dest);
       router.refresh();
     } else {
       setErr("Wrong password");
@@ -114,5 +117,13 @@ export default function LoginPage() {
         @keyframes fadeIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
       `}</style>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginForm />
+    </Suspense>
   );
 }

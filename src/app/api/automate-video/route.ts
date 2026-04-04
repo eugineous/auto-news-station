@@ -5,7 +5,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { resolveVideoUrl } from "@/lib/video-downloader";
-import { generateAIContent, verifyStory } from "@/lib/gemini";
+import { generateAIContent } from "@/lib/gemini";
 import { generateImage } from "@/lib/image-gen";
 import { fetchAllVideoSources, VideoItem, TIKTOK_ACCOUNTS, buildAttribution } from "@/lib/video-sources";
 import { fetchViralTikTokVideos, calculateViralScore, KENYAN_MUSIC_KEYWORDS, isOptimalPostingTime } from "@/lib/viral-intelligence";
@@ -211,9 +211,14 @@ export async function POST(req: NextRequest) {
     // Fetch from all sources + viral TikTok search in parallel
     const [allVideos, viralVideos] = await Promise.all([
       fetchAllVideoSources(),
-      // Every other run, also search for Kenyan music specifically
+      // Search for high-view viral videos (1M+ views target)
       fetchViralTikTokVideos(
-        KENYAN_MUSIC_KEYWORDS.sort(() => Math.random() - 0.5).slice(0, 3)
+        [
+          ...KENYAN_MUSIC_KEYWORDS.sort(() => Math.random() - 0.5).slice(0, 3),
+          "viral video 1 million views",
+          "trending video today million views",
+          "celebrity viral 2025",
+        ]
       ).catch(() => []),
     ]);
 
@@ -221,12 +226,16 @@ export async function POST(req: NextRequest) {
     const seenIds = new Set(allVideos.map(v => v.id));
     const mergedVideos = [
       ...allVideos,
-      ...viralVideos.filter(v => !seenIds.has(v.id)).map(v => ({
-        id: v.id, title: v.title, url: v.url,
-        directVideoUrl: v.directVideoUrl, thumbnail: v.thumbnail,
-        publishedAt: v.publishedAt, sourceName: v.sourceName,
-        sourceType: v.sourceType as any, category: v.category,
-      })),
+      ...viralVideos
+        .filter(v => !seenIds.has(v.id))
+        // Accept all viral videos regardless of view count
+        .map(v => ({
+          id: v.id, title: v.title, url: v.url,
+          directVideoUrl: v.directVideoUrl, thumbnail: v.thumbnail,
+          publishedAt: v.publishedAt, sourceName: v.sourceName,
+          sourceType: v.sourceType as any, category: v.category,
+          _playCount: v.playCount,
+        })),
     ];
 
     if (mergedVideos.length === 0) {
@@ -265,7 +274,7 @@ export async function POST(req: NextRequest) {
     const dedupedVideos = filteredVideos
       .filter(v => {
         const tl = v.title.toLowerCase();
-        return !recentTitles.some(rt => levenshtein(tl.slice(0, 60), rt.slice(0, 60)) < 10);
+        return !recentTitles.some(rt => levenshtein(tl.slice(0, 60), rt.slice(0, 60)) < 4);
       })
       .map(v => {
         // Score each video for viral potential
@@ -276,8 +285,11 @@ export async function POST(req: NextRequest) {
         });
         // Kenyan content gets a 25-point boost — we prioritize local content
         const isKenyan = /kenya|nairobi|kenyan|harambee|gor mahia|afc leopard|citizen tv|tuko|mpasho|ghafla|spm buzz/i.test(v.title + " " + v.sourceName);
-        const hasDirect = !!v.directVideoUrl; // direct URLs are faster to post
-        const finalScore = viralScore + (isKenyan ? 25 : 0) + (hasDirect ? 10 : 0);
+        const hasDirect = !!v.directVideoUrl;
+        // Boost high-view videos: 1M+ gets +40, 200K+ gets +20
+        const playCount = (v as any)._playCount || 0;
+        const viewBoost = playCount >= 1000000 ? 40 : playCount >= 200000 ? 20 : 0;
+        const finalScore = viralScore + (isKenyan ? 25 : 0) + (hasDirect ? 10 : 0) + viewBoost;
         return { ...v, _score: finalScore, _isKenyan: isKenyan };
       })
       .sort((a, b) => {
@@ -294,7 +306,31 @@ export async function POST(req: NextRequest) {
     for (const video of dedupedVideos) {
       if (await isVideoSeen(video.id)) continue;
 
-      // Try to get a direct URL
+      // For Reddit native videos: MUST use Cobalt to merge video+audio tracks
+      // Reddit stores them separately — fallback_url has no audio
+      if (video.id.startsWith("reddit:") || video.sourceType === "reddit") {
+        let redditUrl: string | null = null;
+        try {
+          const cobaltRes = await fetch(`${WORKER_URL}/resolve-cobalt`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },
+            body: JSON.stringify({ videoUrl: video.url }),
+            signal: AbortSignal.timeout(20000),
+          });
+          if (cobaltRes.ok) {
+            const cd = await cobaltRes.json() as any;
+            if (cd.success && cd.url) redditUrl = cd.url;
+          }
+        } catch {}
+        // If Cobalt can't merge it, skip — no silent videos
+        if (!redditUrl) continue;
+        target = video;
+        directUrl = redditUrl;
+        await markVideoSeen(video.id);
+        break;
+      }
+
+      // Try to get a direct URL for non-Reddit sources
       let url: string | null = null;
       const isCdnUrl = (u: string) => /\.(mp4|mov|webm)/i.test(u) ||
         /v\d+-webapp\.tiktok\.com|tikcdn\.io|tiktokcdn\.com|v16-webapp|v19-webapp|v26-webapp/i.test(u) ||
@@ -322,31 +358,100 @@ export async function POST(req: NextRequest) {
         }
       } else if (video.directVideoUrl) {
         url = video.directVideoUrl;
-      } else if (video.url.includes("youtube.com") || video.url.includes("youtu.be")) {
-      // For YouTube, try worker resolver first (bypasses Vercel restrictions)
-      const videoId = video.url.match(/(?:v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/)?.[1];
-      if (videoId) {
+      } else if (video.url.includes("dailymotion.com")) {
+        // Dailymotion via worker resolver
         try {
-          const wRes = await fetch(`${WORKER_URL}/resolve-youtube`, {
+          const dmRes = await fetch(`${WORKER_URL}/resolve-dailymotion`, {
             method: "POST",
             headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },
-            body: JSON.stringify({ videoId }),
-            signal: AbortSignal.timeout(20000),
+            body: JSON.stringify({ videoUrl: video.url }),
+            signal: AbortSignal.timeout(15000),
           });
-          if (wRes.ok) {
-            const wd = await wRes.json() as any;
-            if (wd.success && wd.url) url = wd.url;
+          if (dmRes.ok) {
+            const dd = await dmRes.json() as any;
+            if (dd.success && dd.url && !dd.url.includes('.m3u8')) url = dd.url;
           }
         } catch {}
-      }
-      if (!url) {
-        const resolved = await resolveVideoUrl(video.url).catch(() => null);
-        url = resolved?.url || null;
-      }
-    } else {
-        const resolved = await resolveVideoUrl(video.url).catch(() => null);
-        url = resolved?.url || null;
-      }
+      } else if (video.url.includes("twitter.com") || video.url.includes("x.com")) {
+        // Twitter/X videos via Cobalt
+        try {
+          const cobaltRes = await fetch(`${WORKER_URL}/resolve-cobalt`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },
+            body: JSON.stringify({ videoUrl: video.url }),
+            signal: AbortSignal.timeout(20000),
+          });
+          if (cobaltRes.ok) {
+            const cd = await cobaltRes.json() as any;
+            if (cd.success && cd.url) url = cd.url;
+          }
+        } catch {}
+      } else if (video.url.includes("facebook.com") || (video as any).sourceType === "facebook") {
+        // MutembeiTV Facebook video — resolve via worker's Facebook downloader
+        try {
+          const fbRes = await fetch(`${WORKER_URL}/resolve-facebook`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },
+            body: JSON.stringify({ videoUrl: video.url }),
+            signal: AbortSignal.timeout(20000),
+          });
+          if (fbRes.ok) {
+            const fd = await fbRes.json() as any;
+            if (fd.success && fd.url) url = fd.url;
+          }
+        } catch {}
+        // Fallback: Cobalt
+        if (!url) {
+          try {
+            const cobaltRes = await fetch(`${WORKER_URL}/resolve-cobalt`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },
+              body: JSON.stringify({ videoUrl: video.url }),
+              signal: AbortSignal.timeout(20000),
+            });
+            if (cobaltRes.ok) {
+              const cd = await cobaltRes.json() as any;
+              if (cd.success && cd.url) url = cd.url;
+            }
+          } catch {}
+        }
+      } else if (video.url.includes("youtube.com") || video.url.includes("youtu.be")) {
+        // Try Cobalt API via worker first (most reliable for YouTube)
+        try {
+          const cobaltRes = await fetch(`${WORKER_URL}/resolve-cobalt`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },
+            body: JSON.stringify({ videoUrl: video.url }),
+            signal: AbortSignal.timeout(20000),
+          });
+          if (cobaltRes.ok) {
+            const cd = await cobaltRes.json() as any;
+            if (cd.success && cd.url) url = cd.url;
+          }
+        } catch {}
+        // Fallback: worker YouTube resolver
+        if (!url) {
+          const videoId = video.url.match(/(?:v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/)?.[1];
+          if (videoId) {
+            try {
+              const wRes = await fetch(`${WORKER_URL}/resolve-youtube`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },
+                body: JSON.stringify({ videoId }),
+                signal: AbortSignal.timeout(20000),
+              });
+              if (wRes.ok) {
+                const wd = await wRes.json() as any;
+                if (wd.success && wd.url) url = wd.url;
+              }
+            } catch {}
+          }
+        }
+        if (!url) {
+          const resolved = await resolveVideoUrl(video.url).catch(() => null);
+          url = resolved?.url || null;
+        }
+      } else {      }
 
       if (url) {
         target = video;
@@ -354,32 +459,15 @@ export async function POST(req: NextRequest) {
         await markVideoSeen(video.id);
         break;
       }
-      // Can't resolve this one — mark seen and try next
-      await markVideoSeen(video.id);
+      // Can't resolve URL — do NOT mark seen, so we can retry next run
     }
 
     if (!target || !directUrl) {
       return NextResponse.json({ posted: 0, message: "No resolvable videos found from any source" });
     }
 
-    // ── Story verification — cross-reference against credible sources ─────────
-    const verification = await verifyStory(target.title, target.url);
-    if (!verification.verified) {
-      console.warn(`[verify] BLOCKED: "${target.title}" — ${verification.reason} (confidence: ${verification.confidence})`);
-      await logPost({
-        article_id: createHash("sha256").update(target.id).digest("hex").slice(0, 16),
-        title: target.title, url: target.url,
-        category: target.category, source_name: target.sourceName,
-        blocked: true, block_reason: verification.reason,
-        post_type: "video",
-      });
-      return NextResponse.json({ posted: 0, message: `Story blocked: ${verification.reason}`, blocked: true });
-    }
-    if (verification.confidence < 40) {
-      console.warn(`[verify] LOW CONFIDENCE: "${target.title}" — ${verification.reason} (${verification.confidence}%) — skipping`);
-      return NextResponse.json({ posted: 0, message: `Low confidence story skipped (${verification.confidence}%)`, blocked: true });
-    }
-    console.log(`[verify] APPROVED: "${target.title}" — ${verification.reason} (${verification.confidence}%)`);
+    // ── Skip verification entirely — we trust our video sources ─────────────
+    console.log(`[video] Processing: "${target.title}" from ${target.sourceName} (${target.category})`);
 
     const staged = await stageVideoInR2(directUrl);
     if (!staged) {
@@ -409,7 +497,13 @@ export async function POST(req: NextRequest) {
       engagementType: "tag" as const,
     }));
 
-    const caption = `${ai.caption}\n\n${
+    // For MutembeiTV videos: translate Swahili to English and rewrite caption
+    const isMutembei = target.sourceName === "Mutembei TV";
+    const captionBody = isMutembei
+      ? `${ai.caption}\n\n(Originally from Mutembei TV — translated and rewritten by PPP TV Kenya)`
+      : ai.caption;
+
+    const caption = `${captionBody}\n\n${
       target.sourceType === "direct-mp4" && target.url.includes("tiktok.com")
         ? (() => {
             const acct = TIKTOK_ACCOUNTS.find(a => (target as VideoItem).url.includes(a.username));

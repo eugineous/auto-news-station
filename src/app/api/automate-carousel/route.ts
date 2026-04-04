@@ -64,65 +64,6 @@ const CAROUSEL_SOURCES = [
   { username: "ghafla",              cat: "CELEBRITY",     name: "Ghafla Kenya" },
 ];
 
-// Scrape carousel content from Reddit galleries and multi-image RSS feeds
-// (Instagram's internal API is blocked server-side — Reddit galleries work reliably)
-async function scrapeIGCarousels(username: string): Promise<{ images: string[]; caption: string; postUrl: string }[]> {
-  // Map IG usernames to Reddit subreddits with gallery posts
-  const REDDIT_MAP: Record<string, string> = {
-    "theshaderoom":        "r/popculturechat",
-    "complex":             "r/hiphopimages",
-    "worldstar":           "r/popculturechat",
-    "espn":                "r/popculturechat",
-    "nba":                 "r/hiphopimages",
-    "premierleague":       "r/popculturechat",
-    "sportsbible":         "r/popculturechat",
-    "goal":                "r/popculturechat",
-    "billboard":           "r/hiphopimages",
-    "rollingstone":        "r/hiphopimages",
-    "audiomackafrica":     "r/hiphopimages",
-    "nairobi_gossip_club": "r/Kenya",
-    "mpasho":              "r/Kenya",
-    "ghafla":              "r/popculturechat",
-  };
-
-  const subreddit = REDDIT_MAP[username];
-  if (!subreddit) return [];
-
-  try {
-    const res = await fetch(`https://www.reddit.com/${subreddit}/hot.json?limit=25`, {
-      headers: { "User-Agent": "PPPTVBot/2.0 (carousel aggregator)" },
-      signal: AbortSignal.timeout(10000),
-    });
-    if (!res.ok) return [];
-    const data = await res.json() as any;
-    const posts = data?.data?.children || [];
-    const carousels: { images: string[]; caption: string; postUrl: string }[] = [];
-
-    for (const post of posts) {
-      const p = post.data;
-      // Reddit gallery posts have is_gallery=true and media_metadata
-      if (!p.is_gallery || !p.media_metadata) continue;
-      const images = Object.values(p.media_metadata as Record<string, any>)
-        .filter((m: any) => m.status === "valid" && m.e === "Image")
-        .map((m: any) => {
-          // Use the highest resolution available, decode HTML entities
-          const src = m.s?.u || m.p?.slice(-1)[0]?.u || "";
-          return src.replace(/&amp;/g, "&");
-        })
-        .filter(Boolean)
-        .slice(0, 10);
-
-      if (images.length < 2) continue;
-      carousels.push({
-        images,
-        caption: p.title || "",
-        postUrl: `https://www.reddit.com${p.permalink}`,
-      });
-      if (carousels.length >= 3) break;
-    }
-    return carousels;
-  } catch { return []; }
-}
 
 // Stage image to R2
 async function stageImageToR2(imageUrl: string): Promise<string | null> {
@@ -176,30 +117,81 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "IG credentials not configured" }, { status: 500 });
   }
 
-  // Only pick sources that have Reddit gallery mappings
-  const MAPPED_SOURCES = CAROUSEL_SOURCES.filter(s => [
-    "theshaderoom","complex","worldstar","espn","nba","premierleague",
-    "sportsbible","goal","billboard","rollingstone","audiomackafrica",
-    "nairobi_gossip_club","mpasho","ghafla"
-  ].includes(s.username));
-  const shuffled = [...MAPPED_SOURCES].sort(() => Math.random() - 0.5).slice(0, 5);
+  // Deduplicate by subreddit — fetch each unique subreddit once in parallel
+  const REDDIT_MAP_KEYS: Record<string, string> = {
+    "theshaderoom": "r/popculturechat", "complex": "r/hiphopimages",
+    "worldstar": "r/popculturechat", "espn": "r/popculturechat",
+    "nba": "r/hiphopimages", "premierleague": "r/popculturechat",
+    "sportsbible": "r/popculturechat", "goal": "r/popculturechat",
+    "billboard": "r/hiphopimages", "rollingstone": "r/hiphopimages",
+    "audiomackafrica": "r/hiphopimages", "nairobi_gossip_club": "r/Kenya",
+    "mpasho": "r/Kenya", "ghafla": "r/popculturechat",
+    "rap": "r/hiphopimages", "bars": "r/hiphopimages",
+    "bet": "r/popculturechat", "vibe": "r/hiphopimages",
+    "xxl": "r/hiphopimages", "bossip": "r/popculturechat",
+  };
+
+  // Get unique subreddits and fetch them all in parallel
+  const uniqueSubreddits = Array.from(new Set(Object.values(REDDIT_MAP_KEYS)));
+  const subredditResults = await Promise.allSettled(
+    uniqueSubreddits.map(async (sub) => {
+      const res = await fetch(`https://www.reddit.com/${sub}/hot.json?limit=50`, {
+        headers: { "User-Agent": "PPPTVBot/2.0 (carousel aggregator)" },
+        signal: AbortSignal.timeout(20000),
+      });
+      if (!res.ok) throw new Error(`${sub} returned ${res.status}`);
+      const data = await res.json() as any;
+      return { sub, posts: (data?.data?.children || []) as any[] };
+    })
+  );
+
+  // Build a pool of all gallery posts across all subreddits
+  const allCarousels: { images: string[]; caption: string; postUrl: string; source: typeof CAROUSEL_SOURCES[0] }[] = [];
+
+  for (const result of subredditResults) {
+    if (result.status !== "fulfilled") continue;
+    const { sub, posts } = result.value;
+    // Find a source entry for this subreddit
+    const sourceEntry = CAROUSEL_SOURCES.find(s => REDDIT_MAP_KEYS[s.username] === sub);
+    if (!sourceEntry) continue;
+
+    for (const post of posts) {
+      const p = post.data;
+      if (!p.is_gallery || !p.media_metadata) continue;
+      const images = Object.values(p.media_metadata as Record<string, any>)
+        .filter((m: any) => m.status === "valid" && m.e === "Image")
+        .map((m: any) => {
+          const directUrl = `https://i.redd.it/${m.id}.${m.m?.split("/")[1] || "jpg"}`;
+          const previewUrl = (m.s?.u || m.p?.slice(-1)[0]?.u || "").replace(/&amp;/g, "&");
+          return m.id ? directUrl : previewUrl;
+        })
+        .filter(Boolean)
+        .slice(0, 10);
+      if (images.length < 2) continue;
+      allCarousels.push({
+        images,
+        caption: p.title || "",
+        postUrl: `https://www.reddit.com${p.permalink}`,
+        source: sourceEntry,
+      });
+    }
+  }
+
+  // Shuffle and find first unseen
+  allCarousels.sort(() => Math.random() - 0.5);
 
   let target: { images: string[]; caption: string; postUrl: string; source: typeof CAROUSEL_SOURCES[0] } | null = null;
-
-  for (const source of shuffled) {
-    const carousels = await scrapeIGCarousels(source.username);
-    for (const carousel of carousels) {
-      if (!carousel.postUrl || await isCarouselSeen(carousel.postUrl)) continue;
-      target = { ...carousel, source };
-      break;
-    }
-    if (target) break;
+  for (const carousel of allCarousels) {
+    if (!carousel.postUrl || await isCarouselSeen(carousel.postUrl)) continue;
+    target = carousel;
+    break;
   }
 
   if (!target) {
     return NextResponse.json({ posted: 0, message: "No new carousels found" });
   }
 
+  // Mark seen AFTER we confirm we have a target (but before posting to avoid double-posts on retry)
   await markCarouselSeen(target.postUrl);
 
   // Generate our branded thumbnail for the FIRST image

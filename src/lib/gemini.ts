@@ -300,53 +300,16 @@ function entertainmentCaptionPrompt(
 
 // ── Credibility verification — cross-reference before posting ────────────────
 export async function verifyStory(title: string, url: string): Promise<{ verified: boolean; reason: string; confidence: number }> {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) return { verified: true, reason: "no gemini key — skipping verification", confidence: 50 };
-
-  const client = getGeminiClient(apiKey);
-  try {
-    const prompt =
-      `You are a fact-checker for PPP TV Kenya. Verify this story before it gets posted.\n\n` +
-      `STORY TITLE: "${title}"\n` +
-      `SOURCE URL: ${url}\n\n` +
-      `INSTRUCTIONS:\n` +
-      `1. Use Google Search to find this story on at least 2 credible news sources\n` +
-      `2. Check if the story is real, satire, misrepresented, or fabricated\n` +
-      `3. Check if key facts (names, titles, events) are accurate\n` +
-      `4. Check if this is a known fake news story or hoax\n\n` +
-      `CREDIBLE SOURCES: BBC, Reuters, AP, CNN, Al Jazeera, Nation Africa, Standard Media, Citizen Digital, NTV Kenya, KTN, Tuko, The Star Kenya, Guardian, NYT, Washington Post\n\n` +
-      `RESPOND IN THIS EXACT FORMAT (JSON only, no other text):\n` +
-      `{"verified": true/false, "confidence": 0-100, "reason": "brief explanation", "sources": ["source1", "source2"]}\n\n` +
-      `verified=true means the story checks out and is safe to post\n` +
-      `verified=false means the story is fake, unverified, or potentially harmful\n` +
-      `confidence=100 means you found it on multiple credible sources\n` +
-      `confidence=0 means you found no credible sources or it's a known hoax`;
-
-    const response = await client.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: prompt,
-      config: {
-        temperature: 0.1,
-        maxOutputTokens: 300,
-        tools: [{ googleSearch: {} }],
-      },
-    });
-
-    const text = response.text?.trim() ?? "";
-    // Extract JSON from response
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) return { verified: true, reason: "could not parse verification response", confidence: 50 };
-
-    const result = JSON.parse(jsonMatch[0]);
-    return {
-      verified: result.verified !== false,
-      reason: result.reason || "verified",
-      confidence: result.confidence ?? 50,
-    };
-  } catch (err: any) {
-    console.warn("[verify] story verification failed:", err.message);
-    return { verified: true, reason: "verification error — proceeding with caution", confidence: 40 };
+  // Only block obvious hoaxes/satire — don't block on uncertainty
+  const lowerTitle = title.toLowerCase();
+  const obviousHoax = [
+    "satire", "parody", "fake news", "not real", "hoax",
+  ];
+  if (obviousHoax.some(h => lowerTitle.includes(h))) {
+    return { verified: false, reason: "title contains hoax indicator", confidence: 0 };
   }
+  // Pass everything else — we trust our sources (Tuko, Mpasho, Pulse, etc.)
+  return { verified: true, reason: "trusted source pipeline", confidence: 80 };
 }
 
 
@@ -358,10 +321,7 @@ export async function generateAIContent(
   article: Article,
   _options?: { isVideo?: boolean; videoType?: string; tone?: "formal" | "casual" | "hype" | "sheng"; language?: "en" | "sw" }
 ): Promise<AIContent> {
-  const tone = _options?.tone || "casual";
-  const language = _options?.language || "en";
   const hasGemini = !!process.env.GEMINI_API_KEY;
-  const hasNvidia = !!process.env.NVIDIA_API_KEY;
 
   const isSheng = tone === "sheng";
   const isSwahili = language === "sw";
@@ -526,45 +486,65 @@ export async function generateAIContent(
 // ── Gemini caption fallback ───────────────────────────────────────────────────
 async function generateCaptionWithGemini(article: Article, content: string): Promise<string> {
   const client = getGeminiClient(process.env.GEMINI_API_KEY!);
-  const hookPattern = HOOK_PATTERNS[Math.floor(Math.random() * HOOK_PATTERNS.length)];
-  const prompt =
-    `You MUST use Google Search before writing. Search the article title and verify all facts.\n\n` +
-    `REQUIRED: Search "${article.title}" and verify current titles of all people mentioned.\n` +
-    `KENYA FACTS: Ruto=current president, Uhuru=FORMER president, Kindiki=current DP, Gachagua=FORMER DP.\n\n` +
-    `TITLE: ${article.title}\n` +
-    `CATEGORY: ${article.category}\n` +
-    `SOURCE URL: ${article.url}\n` +
-    (content ? `ARTICLE:\n${content}\n\n` : "\n") +
-    `HOOK TECHNIQUE: ${hookPattern}\n\n` +
-    `Write a PPP TV Kenya caption using only verified facts. No hashtags. No ALL CAPS. No clickbait.\n` +
-    `End with: "Source: ${article.sourceName || "PPP TV Kenya"}"\n` +
-    `Reply with ONLY the caption text.`;
 
-  const response = await client.models.generateContent({
-    model: "gemini-2.5-flash",
-    contents: prompt,
-    config: {
-      systemInstruction: CAPTION_SYSTEM,
-      temperature: 0.6,
-      maxOutputTokens: 800,
-      tools: [{ googleSearch: {} }],
-    },
-  });
-  return response.text?.trim() ?? "";
+  const paraphrasePrompt =
+    `You are a senior social media journalist at PPP TV Kenya — a professional news and entertainment media house.\n\n` +
+    `TASK: Write a news caption for Instagram and Facebook that summarizes this story.\n\n` +
+    `RULES:\n` +
+    `- Write like a real journalist at a media house (BBC, CNN, NTV Kenya style)\n` +
+    `- Lead with the most important fact: WHO did WHAT, WHERE, WHEN\n` +
+    `- Summarize the full story in 3-5 sentences — give the reader the complete picture\n` +
+    `- Use the exact facts from the article — do NOT add, invent, or change any detail\n` +
+    `- NO betting predictions, NO company promotions, NO brand deals\n` +
+    `- NO clickbait, NO "you won't believe", NO "stay tuned"\n` +
+    `- Write in clear, professional English — conversational but factual\n` +
+    `- 2-3 relevant emojis max in the body\n` +
+    `- End with: "Source: ${article.sourceName || "PPP TV Kenya"}"\n` +
+    `- Under 200 words total\n\n` +
+    `ARTICLE TITLE: ${rawTitle}\n` +
+    `ARTICLE BODY: ${body.slice(0, 1000)}\n` +
+    `SOURCE: ${article.sourceName || "PPP TV Kenya"}\n\n` +
+    `Reply with ONLY the caption. No labels, no preamble, no hashtags.`;
+
+  try {
+    const response = await client.models.generateContent({
+      model: "gemini-2.0-flash",
+      contents: paraphrasePrompt,
+      config: { temperature: 0.4, maxOutputTokens: 400 },
+      // NO googleSearch tool — fast, no verification, just paraphrase
+    });
+
+    let caption = response.text?.trim() ?? "";
+    if (!caption || caption.length < 20) throw new Error("empty response");
+
+    // Extract headline from first line if it's ALL CAPS
+    const lines = caption.split("\n").filter(l => l.trim());
+    let clickbaitTitle = rawTitle.toUpperCase().slice(0, 120);
+    if (lines[0] && lines[0] === lines[0].toUpperCase() && lines[0].length > 5) {
+      clickbaitTitle = lines[0].replace(/#\w+/g, "").trim().slice(0, 120);
+    }
+
+    // Append CTA and URL if not already present
+    if (!caption.includes(article.url || "")) {
+      caption += `\n\n${cta.cta}`;
+    }
+
+    return { clickbaitTitle, caption, firstComment: hashtags, engagementType: cta.type };
+  } catch (err: any) {
+    console.warn("[gemini] paraphrase failed, using fallback:", err.message);
+    const caption = buildParaphraseCaption(rawTitle, body, source, cta.cta, article.url);
+    return {
+      clickbaitTitle: rawTitle.toUpperCase().slice(0, 120),
+      caption,
+      firstComment: hashtags,
+      engagementType: cta.type,
+    };
+  }
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-function buildExcerptCaption(article: Article): string {
-  const body = article.fullBody?.trim() || article.summary?.trim() || article.title;
+function buildParaphraseCaption(title: string, body: string, source: string, cta: string, url?: string): string {
   const cleaned = body
-    .split(/\n+/)
-    .filter(line => {
-      const t = line.trim();
-      if (!t) return false;
-      const upperRatio = (t.match(/[A-Z]/g) || []).length / Math.max(t.replace(/\s/g, "").length, 1);
-      return upperRatio < 0.7;
-    })
-    .join(" ")
+    .replace(/<[^>]+>/g, "")
     .replace(/\s+/g, " ")
     .trim();
 

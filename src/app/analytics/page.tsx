@@ -6,9 +6,13 @@ const RED = "#E50914";
 const CATS = ["CELEBRITY","MUSIC","TV & FILM","SPORTS","MOVIES","ENTERTAINMENT","FASHION","EVENTS","AWARDS","EAST AFRICA","COMEDY","INFLUENCERS","LIFESTYLE","GENERAL"];
 
 interface LogEntry {
-  articleId: string; title: string; category: string;
-  instagram: { success: boolean }; facebook: { success: boolean };
-  postedAt: string; manualPost?: boolean;
+  article_id: string;
+  title: string;
+  category: string;
+  ig_success: boolean;
+  fb_success: boolean;
+  posted_at: string;
+  manualPost?: boolean;
 }
 
 function ago(iso: string) {
@@ -19,6 +23,7 @@ function ago(iso: string) {
 export default function AnalyticsPage() {
   const [log, setLog] = useState<LogEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [range, setRange] = useState<"7d" | "30d" | "90d" | "all">("30d");
 
   const fetchLog = useCallback(async () => {
     try {
@@ -30,26 +35,32 @@ export default function AnalyticsPage() {
 
   useEffect(() => { fetchLog(); }, [fetchLog]);
 
-  const total = log.length;
-  const igOk = log.filter(p => p.instagram.success).length;
-  const fbOk = log.filter(p => p.facebook.success).length;
-  const both = log.filter(p => p.instagram.success && p.facebook.success).length;
-  const failed = log.filter(p => !p.instagram.success && !p.facebook.success).length;
-  const manual = log.filter(p => p.manualPost).length;
+  const now = Date.now();
+  const rangeDays = range === "7d" ? 7 : range === "30d" ? 30 : range === "90d" ? 90 : null;
+  const filtered = rangeDays
+    ? log.filter(p => (now - new Date(p.posted_at).getTime()) < rangeDays * 86400000)
+    : log;
+
+  const total = filtered.length;
+  const igOk = filtered.filter(p => p.ig_success).length;
+  const fbOk = filtered.filter(p => p.fb_success).length;
+  const both = filtered.filter(p => p.ig_success && p.fb_success).length;
+  const failed = filtered.filter(p => !p.ig_success && !p.fb_success).length;
+  const manual = filtered.filter(p => p.manualPost).length;
   const auto = total - manual;
-  const successRate = total > 0 ? Math.round((log.filter(p => p.instagram.success || p.facebook.success).length / total) * 100) : 0;
+  const successRate = total > 0 ? Math.round((filtered.filter(p => p.ig_success || p.fb_success).length / total) * 100) : 0;
 
   // Posts per day (last 7 days)
   const days: { label: string; count: number }[] = [];
   for (let i = 6; i >= 0; i--) {
     const d = new Date(); d.setDate(d.getDate() - i);
     const label = d.toLocaleDateString("en-KE", { weekday: "short" });
-    const count = log.filter(p => new Date(p.postedAt).toDateString() === d.toDateString()).length;
+    const count = filtered.filter(p => new Date(p.posted_at).toDateString() === d.toDateString()).length;
     days.push({ label, count });
   }
   const maxDay = Math.max(1, ...days.map(d => d.count));
 
-  const catCounts = CATS.reduce((a, c) => ({ ...a, [c]: log.filter(p => p.category === c).length }), {} as Record<string, number>);
+  const catCounts = CATS.reduce((a, c) => ({ ...a, [c]: filtered.filter(p => p.category === c).length }), {} as Record<string, number>);
   const maxCat = Math.max(1, ...Object.values(catCounts));
 
   return (
@@ -66,6 +77,20 @@ export default function AnalyticsPage() {
           <div style={{ textAlign: "center", padding: 60, color: "#333" }}>Loading…</div>
         ) : (
           <>
+            {/* Date range filter */}
+            <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
+              {(["7d","30d","90d","all"] as const).map(r => (
+                <button key={r} onClick={() => setRange(r)} style={{
+                  padding: "5px 12px", borderRadius: 20, fontSize: 10, fontWeight: 700, cursor: "pointer",
+                  border: `1px solid ${range === r ? RED : "#2a2a2a"}`,
+                  background: range === r ? RED : "#1a1a1a",
+                  color: range === r ? "#fff" : "#555",
+                }}>
+                  {r === "all" ? "All Time" : r === "7d" ? "7 Days" : r === "30d" ? "30 Days" : "90 Days"}
+                </button>
+              ))}
+            </div>
+
             {/* KPI row */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10, marginBottom: 24 }}>
               {[

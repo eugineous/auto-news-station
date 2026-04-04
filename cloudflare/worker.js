@@ -1,12 +1,12 @@
-﻿/**
- * PPP TV Auto Poster — Cloudflare Worker (STANDALONE)
- * Does everything: fetch articles → AI caption → thumbnail → post to IG + FB
+/**
+ * PPP TV Auto Poster - Cloudflare Worker (STANDALONE)
+ * Does everything: fetch articles -> AI caption -> thumbnail -> post to IG + FB
  * No Vercel dependency for the cron pipeline.
  * Cron: every 10 minutes
  */
 
 const TTL_SECONDS = 30 * 24 * 60 * 60;
-const FEED_URL = "https://ppp-tv-worker.euginemicah.workers.dev/feed?limit=50";
+const FEED_URL = "https://auto-ppp-tv.euginemicah.workers.dev/feed?limit=50";
 const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
 const NVIDIA_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
 const PUB_BASE = "https://pub-8244b5f99b024cda91b74e1131378a14.r2.dev";
@@ -49,6 +49,99 @@ export default {
 
     if (url.pathname === "/") return json({ status: "ok", service: "PPP TV Auto Poster", cron: "*/10 * * * *" });
 
+    // -- /feed --
+    // Scrapes PPP TV site and Kenya entertainment RSS feeds, returns articles
+    if (url.pathname === "/feed") {
+      try {
+        const limit = parseInt(url.searchParams.get("limit") || "50");
+        const articles = [];
+
+        // Kenya entertainment RSS feeds - reliable, fast
+        const FEEDS = [
+          // PPP TV site — primary source (always first)
+          { url: "https://ppp-tv-site.vercel.app/api/rss",               name: "PPP TV Kenya",          cat: "ENTERTAINMENT" },
+          { url: "https://www.tuko.co.ke/rss/entertainment.xml",          name: "Tuko Entertainment",    cat: "ENTERTAINMENT" },
+          { url: "https://www.tuko.co.ke/rss/celebrities.xml",            name: "Tuko Celebrities",      cat: "CELEBRITY"     },
+          { url: "https://www.mpasho.co.ke/feed/",                        name: "Mpasho",                cat: "CELEBRITY"     },
+          { url: "https://www.pulselive.co.ke/rss/entertainment",         name: "Pulse Live Kenya",      cat: "ENTERTAINMENT" },
+          { url: "https://www.ghafla.com/ke/feed/",                       name: "Ghafla Kenya",          cat: "CELEBRITY"     },
+          { url: "https://www.sde.co.ke/feed/",                           name: "SDE Kenya",             cat: "CELEBRITY"     },
+          { url: "https://www.kenyans.co.ke/feeds/entertainment",         name: "Kenyans Entertainment", cat: "ENTERTAINMENT" },
+          { url: "https://www.standardmedia.co.ke/rss/entertainment",     name: "Standard Entertainment",cat: "ENTERTAINMENT" },
+          { url: "https://www.the-star.co.ke/authors/sasa/feed/",         name: "The Star Sasa",         cat: "ENTERTAINMENT" },
+          { url: "https://www.tuko.co.ke/rss/sports.xml",                 name: "Tuko Sports",           cat: "SPORTS"        },
+          { url: "https://www.pulselive.co.ke/rss/sports",                name: "Pulse Live Sports",     cat: "SPORTS"        },
+          { url: "https://www.goal.com/feeds/en/news",                    name: "Goal Football",         cat: "SPORTS"        },
+          { url: "https://www.skysports.com/rss/12040",                   name: "Sky Sports Football",   cat: "SPORTS"        },
+          { url: "https://www.tmz.com/rss.xml",                           name: "TMZ",                   cat: "CELEBRITY"     },
+          { url: "https://pagesix.com/feed/",                             name: "Page Six",              cat: "CELEBRITY"     },
+          { url: "https://www.etonline.com/news/rss",                     name: "ET Online",             cat: "CELEBRITY"     },
+          { url: "https://variety.com/feed/",                             name: "Variety",               cat: "TV & FILM"     },
+          { url: "https://deadline.com/feed/",                            name: "Deadline",              cat: "TV & FILM"     },
+          { url: "https://www.billboard.com/feed/",                       name: "Billboard",             cat: "MUSIC"         },
+          { url: "https://feeds.bbci.co.uk/news/entertainment_and_arts/rss.xml", name: "BBC Entertainment", cat: "ENTERTAINMENT" },
+        ];
+
+        await Promise.allSettled(FEEDS.map(async feed => {
+          try {
+            const r = await fetch(feed.url, {
+              headers: { "User-Agent": "Mozilla/5.0 (compatible; PPPTVBot/2.0)" },
+              signal: AbortSignal.timeout(8000),
+            });
+            if (!r.ok) return;
+            const xml = await r.text();
+            const itemRegex = /<item>([\s\S]*?)<\/item>/g;
+            let match;
+            while ((match = itemRegex.exec(xml)) !== null) {
+              const e = match[1];
+              const rawTitle = (e.match(/<title><!\[CDATA\[([\s\S]*?)\]\]><\/title>/) || e.match(/<title>([\s\S]*?)<\/title>/) || [])[1] || "";
+              const title = rawTitle.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/<[^>]+>/g, "").trim();
+              const link = (e.match(/<link>(.*?)<\/link>/) || e.match(/<guid[^>]*>(.*?)<\/guid>/) || [])[1] || "";
+              const pubDate = (e.match(/<pubDate>(.*?)<\/pubDate>/) || [])[1] || "";
+              const desc = (e.match(/<description><!\[CDATA\[([\s\S]*?)\]\]><\/description>/) || e.match(/<description>([\s\S]*?)<\/description>/) || [])[1] || "";
+              const excerpt = desc.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").trim().slice(0, 300);
+              const imgMatch = e.match(/<media:thumbnail[^>]+url="([^"]+)"/) || e.match(/<media:content[^>]+url="([^"]+\.(?:jpg|jpeg|png)[^"]*)"/) || e.match(/https?:\/\/[^\s"'<>]+\.(?:jpg|jpeg|png)/);
+              const imageUrl = imgMatch ? (imgMatch[1] || imgMatch[0]) : "";
+
+              if (!title || !link || title.length < 10) return;
+              const ageMs = pubDate ? Date.now() - new Date(pubDate).getTime() : 0;
+              if (ageMs > 24 * 3600 * 1000) return; // only last 24h
+
+              articles.push({
+                slug: link,
+                title: title.slice(0, 200),
+                excerpt: excerpt || title,
+                category: feed.cat,
+                sourceName: feed.name,
+                sourceUrl: link,
+                articleUrl: link,
+                publishedAt: pubDate ? new Date(pubDate).toISOString() : new Date().toISOString(),
+                imageUrl,
+                imageUrlDirect: imageUrl,
+                twitterCaption: title,
+                facebookCaption: title,
+                instagramCaption: title,
+              });
+            }
+          } catch {}
+        }));
+
+        // Sort newest first, deduplicate by title fingerprint
+        const seen = new Set();
+        const deduped = articles
+          .sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime())
+          .filter(a => {
+            const fp = a.title.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 50);
+            if (seen.has(fp)) return false;
+            seen.add(fp);
+            return true;
+          })
+          .slice(0, limit);
+
+        return json({ articles: deduped, total: deduped.length, generatedAt: new Date().toISOString() });
+      } catch (err) { return json({ error: err.message, articles: [], total: 0 }, 500); }
+    }
+
     // Trigger (protected)
     if (url.pathname === "/trigger") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
@@ -56,7 +149,7 @@ export default {
       return json({ status: "triggered" });
     }
 
-    // Debug trigger — runs synchronously and returns result (protected)
+    // Debug trigger - runs synchronously and returns result (protected)
     if (url.pathname === "/trigger-debug") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
       try {
@@ -74,7 +167,7 @@ export default {
       return json({ status: "ok", lockHeld: !!lock, lockAgeSeconds: lockAge, feedUrl: FEED_URL });
     }
 
-    // ── /seen/check ──────────────────────────────────────────────────────────
+    // -- /seen/check --
     if (url.pathname === "/seen/check" && request.method === "POST") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
       try {
@@ -91,7 +184,7 @@ export default {
       } catch (err) { return json({ error: err.message }, 500); }
     }
 
-    // ── /seen ────────────────────────────────────────────────────────────────
+    // -- /seen --
     if (url.pathname === "/seen" && request.method === "POST") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
       try {
@@ -101,7 +194,7 @@ export default {
       } catch (err) { return json({ error: err.message }, 500); }
     }
 
-    // ── /daily-count ─────────────────────────────────────────────────────────
+    // -- /daily-count --
     if (url.pathname === "/daily-count") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
       const date = url.searchParams.get("date") || new Date().toISOString().slice(0, 10);
@@ -118,7 +211,7 @@ export default {
       }
     }
 
-    // ── /last-category ───────────────────────────────────────────────────────
+    // -- /last-category --
     if (url.pathname === "/last-category") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
       if (request.method === "GET") {
@@ -132,7 +225,7 @@ export default {
       }
     }
 
-    // ── /x-trends ────────────────────────────────────────────────────────────
+    // -- /x-trends --
     if (url.pathname === "/x-trends") {
       return json({ trends: [
         { title: "#Kenya" }, { title: "#Nairobi" }, { title: "#KenyaPolitics" },
@@ -141,7 +234,7 @@ export default {
       ], source: "static" });
     }
 
-    // ── /post-log GET ─────────────────────────────────────────────────────────
+    // -- /post-log GET --
     if (url.pathname === "/post-log" && request.method === "GET") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
       try {
@@ -157,7 +250,7 @@ export default {
       } catch (err) { return json({ error: err.message }, 500); }
     }
 
-    // ── /post-log POST ────────────────────────────────────────────────────────
+    // -- /post-log POST --
     if (url.pathname === "/post-log" && request.method === "POST") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
       try {
@@ -168,7 +261,7 @@ export default {
       } catch (err) { return json({ error: err.message }, 500); }
     }
 
-    // ── /clear-cache ──────────────────────────────────────────────────────────
+    // -- /clear-cache --
     if (url.pathname === "/clear-cache" && request.method === "POST") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
       const list = await env.SEEN_ARTICLES.list({ prefix: "seen:" });
@@ -176,7 +269,7 @@ export default {
       return json({ cleared: list.keys.length });
     }
 
-    // ── /lock/acquire ─────────────────────────────────────────────────────────
+    // -- /lock/acquire --
     if (url.pathname === "/lock/acquire" && request.method === "POST") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
       try {
@@ -188,7 +281,7 @@ export default {
       } catch (err) { return json({ error: err.message }, 500); }
     }
 
-    // ── /lock/release ─────────────────────────────────────────────────────────
+    // -- /lock/release --
     if (url.pathname === "/lock/release" && request.method === "POST") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
       try {
@@ -198,7 +291,7 @@ export default {
       } catch (err) { return json({ error: err.message }, 500); }
     }
 
-    // ── /stage-video ──────────────────────────────────────────────────────────
+    // -- /stage-video --
     // Downloads a video URL and stages it in R2, returns public URL
     if (url.pathname === "/stage-video" && request.method === "POST") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
@@ -224,7 +317,7 @@ export default {
       } catch (err) { return json({ error: err.message }, 500); }
     }
 
-    // ── /stage-video-upload ──────────────────────────────────────────────────
+    // -- /stage-video-upload --
     // Accepts base64 MP4 that is already processed/watermarked
     if (url.pathname === "/stage-video-upload" && request.method === "POST") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
@@ -242,7 +335,7 @@ export default {
       } catch (err) { return json({ error: err.message }, 500); }
     }
 
-    // ── /delete-video ─────────────────────────────────────────────────────────
+    // -- /delete-video --
     if (url.pathname === "/delete-video" && request.method === "POST") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
       try {
@@ -252,7 +345,7 @@ export default {
       } catch (err) { return json({ error: err.message }, 500); }
     }
 
-    // ── /stage-image ──────────────────────────────────────────────────────────
+    // -- /stage-image --
     // Accepts base64 image, stores in R2, returns public URL
     if (url.pathname === "/stage-image" && request.method === "POST") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
@@ -266,7 +359,7 @@ export default {
       } catch (err) { return json({ error: err.message }, 500); }
     }
 
-    // ── /post-story ───────────────────────────────────────────────────────────
+    // -- /post-story --
     // Posts an image as an Instagram Story (shown to ALL followers, bypasses algorithm)
     if (url.pathname === "/post-story" && request.method === "POST") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
@@ -306,14 +399,14 @@ export default {
       } catch (err) { return json({ error: err.message }, 500); }
     }
 
-    // ── /pipeline/status ─────────────────────────────────────────────────────
+    // -- /pipeline/status --
     if (url.pathname === "/pipeline/status") {
       const paused = await env.SEEN_ARTICLES.get("pipeline:paused");
       const rateLimited = await env.SEEN_ARTICLES.get("ratelimit:pause:meta");
       return json({ paused: !!paused, rateLimited: !!rateLimited });
     }
 
-    // ── /agent/status GET ─────────────────────────────────────────────────────
+    // -- /agent/status GET --
     if (url.pathname === "/agent/status" && request.method === "GET") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
       try {
@@ -336,7 +429,7 @@ export default {
       } catch (err) { return json({ error: err.message }, 500); }
     }
 
-    // ── /agent/toggle POST ────────────────────────────────────────────────────
+    // -- /agent/toggle POST --
     if (url.pathname === "/agent/toggle" && request.method === "POST") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
       try {
@@ -346,7 +439,7 @@ export default {
       } catch (err) { return json({ error: err.message }, 500); }
     }
 
-    // ── /agent/log GET ────────────────────────────────────────────────────────
+    // -- /agent/log GET --
     if (url.pathname === "/agent/log" && request.method === "GET") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
       try {
@@ -361,7 +454,7 @@ export default {
       } catch (err) { return json({ error: err.message }, 500); }
     }
 
-    // ── /resolve-youtube ──────────────────────────────────────────────────────
+    // -- /resolve-youtube --
     // Resolves a YouTube video ID to a direct MP4 URL using YouTube's internal API
     if (url.pathname === "/resolve-youtube" && request.method === "POST") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
@@ -369,7 +462,7 @@ export default {
         const { videoId } = await request.json();
         if (!videoId) return json({ error: "videoId required" }, 400);
 
-        // Use YouTube's embedded player client — bypasses bot detection
+        // Use YouTube's embedded player client - bypasses bot detection
         const playerRes = await fetch("https://www.youtube.com/youtubei/v1/player", {
           method: "POST",
           headers: {
@@ -441,21 +534,21 @@ export default {
       } catch (err) { return json({ error: err.message }, 500); }
     }
 
-    // ── /pipeline/pause ───────────────────────────────────────────────────────
+    // -- /pipeline/pause --
     if (url.pathname === "/pipeline/pause" && request.method === "POST") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
       await env.SEEN_ARTICLES.put("pipeline:paused", "1", { expirationTtl: 24 * 3600 });
       return json({ ok: true, status: "paused" });
     }
 
-    // ── /pipeline/resume ──────────────────────────────────────────────────────
+    // -- /pipeline/resume --
     if (url.pathname === "/pipeline/resume" && request.method === "POST") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
       await env.SEEN_ARTICLES.delete("pipeline:paused");
       return json({ ok: true, status: "running" });
     }
 
-    // ── /schedule POST ────────────────────────────────────────────────────────
+    // -- /schedule POST --
     if (url.pathname === "/schedule" && request.method === "POST") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
       try {
@@ -469,7 +562,7 @@ export default {
       } catch (err) { return json({ error: err.message }, 500); }
     }
 
-    // ── /schedule GET ─────────────────────────────────────────────────────────
+    // -- /schedule GET --
     if (url.pathname === "/schedule" && request.method === "GET") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
       try {
@@ -482,7 +575,7 @@ export default {
       } catch (err) { return json({ error: err.message }, 500); }
     }
 
-    // ── /schedule/:id DELETE ──────────────────────────────────────────────────
+    // -- /schedule/:id DELETE --
     if (url.pathname.startsWith("/schedule/") && request.method === "DELETE") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
       const id = url.pathname.slice("/schedule/".length);
@@ -492,7 +585,7 @@ export default {
       return json({ ok: true });
     }
 
-    // ── /blacklist GET ────────────────────────────────────────────────────────
+    // -- /blacklist GET --
     if (url.pathname === "/blacklist" && request.method === "GET") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
       try {
@@ -506,7 +599,7 @@ export default {
       } catch (err) { return json({ error: err.message }, 500); }
     }
 
-    // ── /blacklist POST ───────────────────────────────────────────────────────
+    // -- /blacklist POST --
     if (url.pathname === "/blacklist" && request.method === "POST") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
       try {
@@ -518,7 +611,7 @@ export default {
       } catch (err) { return json({ error: err.message }, 500); }
     }
 
-    // ── /blacklist DELETE ─────────────────────────────────────────────────────
+    // -- /blacklist DELETE --
     if (url.pathname === "/blacklist" && request.method === "DELETE") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
       try {
@@ -618,7 +711,7 @@ export default {
       } catch (err) { return json({ ok: false, error: err.message }); }
     }
 
-    // ── /img proxy ────────────────────────────────────────────────────────────
+    // -- /img proxy --
     if (url.pathname === "/img") {
       const imgUrl = url.searchParams.get("url");
       if (!imgUrl) return new Response("url param required", { status: 400 });
@@ -637,16 +730,16 @@ export default {
   },
 };
 
-// ── Distributed lock — prevents concurrent cron runs from double-posting ─────
+// -- Distributed lock - prevents concurrent cron runs from double-posting --
 const LOCK_KEY = "pipeline:lock";
-const LOCK_TTL = 270; // 4.5 minutes — safely under the 10-min cron interval
+const LOCK_TTL = 270; // 4.5 minutes - safely under the 10-min cron interval
 
 async function triggerAutomateWithLock(env) {
   const existing = await env.SEEN_ARTICLES.get(LOCK_KEY);
   if (existing) {
     const ageMs = Date.now() - Number(existing);
     if (ageMs < LOCK_TTL * 1000) {
-      console.log("[lock] Another run is in progress — skipping this cron tick");
+      console.log("[lock] Another run is in progress - skipping this cron tick");
       return;
     }
     console.log("[lock] Stale lock detected, releasing");
@@ -660,12 +753,12 @@ async function triggerAutomateWithLock(env) {
   }
 }
 
-// ── Trigger Next.js automate endpoint (Vercel handles the full pipeline) ──────
+// -- Trigger Next.js automate endpoint (Vercel handles the full pipeline) --
 async function triggerAutomate(env) {
-  // ── Agent ON/OFF check ────────────────────────────────────────────────────
+  // -- Agent ON/OFF check --
   const agentEnabled = await env.SEEN_ARTICLES.get("agent:enabled");
   if (agentEnabled === "0") {
-    console.log("[agent] Agent is disabled — skipping run");
+    console.log("[agent] Agent is disabled - skipping run");
     return;
   }
 
@@ -673,7 +766,7 @@ async function triggerAutomate(env) {
   const secret = env.AUTOMATE_SECRET;
   if (!secret) { console.warn("[auto-ppp-tv] AUTOMATE_SECRET not set"); return; }
 
-  // ── Smart throttle — shadowban prevention ─────────────────────────────────
+  // -- Smart throttle - shadowban prevention --
   // Instagram hard limit: 50 posts/24h. We target max 25/day (safe zone).
   // Cron fires every 5 min = 288 ticks/day. We skip most ticks randomly.
   // Target: ~25 posts/day = fire roughly every 58 min on average.
@@ -682,58 +775,65 @@ async function triggerAutomate(env) {
   const todayCountRaw = await env.SEEN_ARTICLES.get(`daily:${today}`);
   const todayCount = todayCountRaw ? parseInt(todayCountRaw) : 0;
 
-  // Hard cap: never exceed 25 posts/day (well under IG's 50 limit)
-  const MAX_DAILY = 25;
+  // Hard cap: never exceed 50 posts/day (IG's actual limit)
+  const MAX_DAILY = 50;
   if (todayCount >= MAX_DAILY) {
-    console.log(`[throttle] Daily cap reached (${todayCount}/${MAX_DAILY}) — skipping`);
+    console.log(`[throttle] Daily cap reached (${todayCount}/${MAX_DAILY}) - skipping`);
     return;
   }
 
   // Time-based throttle: enforce minimum gap between posts
   // As day fills up, increase minimum gap to spread posts evenly
   const lastPostTime = await env.SEEN_ARTICLES.get("last:post:time");
-  if (lastPostTime) {
-    const msSinceLast = Date.now() - parseInt(lastPostTime);
-    // Minimum gap scales with how many posts we've made today
-    // Early in day: 15 min min gap. Later: 30 min min gap.
-    const minGapMs = todayCount < 10
-      ? 15 * 60 * 1000   // first 10 posts: min 15 min gap
-      : 30 * 60 * 1000;  // after 10 posts: min 30 min gap
+  const msSinceLast = lastPostTime ? Date.now() - parseInt(lastPostTime) : Infinity;
+  const hoursSinceLast = msSinceLast / 3600000;
 
+  // FORCE POST if no video in last 3 hours - override all throttles
+  const forcePost = hoursSinceLast >= 3;
+
+  if (!forcePost) {
+    // Minimum gap: 3 minutes (allows ~5-min cadence with jitter)
+    const minGapMs = 3 * 60 * 1000;
     if (msSinceLast < minGapMs) {
-      console.log(`[throttle] Too soon since last post (${Math.round(msSinceLast/60000)}m ago, min ${Math.round(minGapMs/60000)}m) — skipping`);
+      console.log(`[throttle] Too soon since last post (${Math.round(msSinceLast/60000)}m ago, min 3m) - skipping`);
+      return;
+    }
+  } else {
+    console.log(`[throttle] FORCE POST - no video in ${Math.round(hoursSinceLast * 60)}m`);
+  }
+
+  // Random skip: only skip during off-peak, and only if not a force post
+  const hourEAT = (new Date().getUTCHours() + 3) % 24;
+  // Dead zone: 1am-5:50am EAT - skip entirely (unless force post)
+  if (!forcePost && hourEAT >= 1 && hourEAT < 6) {
+    // Allow from 5:50am — check minutes too
+    const minuteUTC = new Date().getUTCMinutes();
+    const minuteEAT = minuteUTC; // minutes are same regardless of timezone
+    if (!(hourEAT === 5 && minuteEAT >= 50)) {
+      console.log(`[throttle] Dead zone (${hourEAT}:${minuteEAT.toString().padStart(2,'0')} EAT) - skipping`);
       return;
     }
   }
-
-  // Random skip: even when gap is met, randomly skip ~40% of eligible ticks
-  // This creates natural-looking irregular posting patterns
-  const hourEAT = (new Date().getUTCHours() + 3) % 24;
-  // Dead zone: 1am-5am EAT — skip entirely
-  if (hourEAT >= 1 && hourEAT < 5) {
-    console.log(`[throttle] Dead zone (${hourEAT}:00 EAT) — skipping`);
-    return;
-  }
-  // Peak hours (7am-10pm EAT): 95% chance to post when eligible
-  // Off-peak: 60% chance — still post regularly outside peak
+  // Peak hours (7am-10pm EAT): always post when eligible
+  // Off-peak: 80% chance - still post regularly outside peak
   const isPeak = hourEAT >= 7 && hourEAT <= 22;
-  const postChance = isPeak ? 0.95 : 0.60;
-  if (Math.random() > postChance) {
-    console.log(`[throttle] Random skip (${isPeak ? "peak" : "off-peak"} hour ${hourEAT}:00 EAT)`);
+  const postChance = isPeak ? 1.0 : 0.80;
+  if (!forcePost && Math.random() > postChance) {
+    console.log(`[throttle] Random skip (off-peak hour ${hourEAT}:00 EAT)`);
     return;
   }
 
-  // Record this post attempt time
-  await env.SEEN_ARTICLES.put("last:post:time", String(Date.now()), { expirationTtl: 24 * 3600 });
+  // Record this post attempt time only after confirmed success (updated below)
+  // await env.SEEN_ARTICLES.put("last:post:time", ...) - moved to after pipeline fires
 
-  // ── A/B testing: rotate caption variant every 10 runs ────────────────────
+  // -- A/B testing: rotate caption variant every 10 runs --
   const runCount = parseInt(await env.SEEN_ARTICLES.get("run-count") || "0");
   const abVariant = runCount % 20 < 10 ? "A" : "B"; // A=breaking style, B=casual style
   await env.SEEN_ARTICLES.put("agent:ab_variant", abVariant, { expirationTtl: 24 * 3600 });
   await env.SEEN_ARTICLES.put("agent:last_run", new Date().toISOString(), { expirationTtl: 7 * 24 * 3600 });
 
   try {
-    // No jitter needed — throttle logic above handles timing
+    // No jitter needed - throttle logic above handles timing
     const nextCount = runCount + 1;
     await env.SEEN_ARTICLES.put("run-count", String(nextCount), { expirationTtl: 24 * 3600 });
 
@@ -749,6 +849,8 @@ async function triggerAutomate(env) {
       console.log(`[burst] image: posted=${d.posted} errors=${d.errors?.length || 0}`);
       // Track performance for A/B learning
       if (d.posted > 0) {
+        // Record successful post time — used for 3h force-post check
+        await env.SEEN_ARTICLES.put("last:post:time", String(Date.now()), { expirationTtl: 24 * 3600 });
         const total = parseInt(await env.SEEN_ARTICLES.get("agent:total_posts") || "0") + 1;
         await env.SEEN_ARTICLES.put("agent:total_posts", String(total), { expirationTtl: 365 * 24 * 3600 });
         // Log agent activity
@@ -770,6 +872,8 @@ async function triggerAutomate(env) {
         }).then(r => r.json()).then(async d => {
           console.log(`[burst] video: posted=${d.posted}`);
           if (d.posted > 0) {
+            // Record successful post time - used for 3h force-post check
+            await env.SEEN_ARTICLES.put("last:post:time", String(Date.now()), { expirationTtl: 24 * 3600 });
             const logKey = `agent:log:${Date.now() + 1}`;
             await env.SEEN_ARTICLES.put(logKey, JSON.stringify({
               ts: new Date().toISOString(), type: "video", posted: d.posted,
@@ -779,7 +883,7 @@ async function triggerAutomate(env) {
         }).catch(e => console.error("[burst] video failed:", e.message))
       : Promise.resolve();
 
-    // Carousel pipeline (every 3rd run) — scrapes IG carousels, replaces first image with branded thumb
+    // Carousel pipeline (every 3rd run) - scrapes IG carousels, replaces first image with branded thumb
     const carouselPromise = nextCount % 3 === 0
       ? fetch(`${appUrl}/api/automate-carousel`, {
           method: "POST",
@@ -798,7 +902,31 @@ async function triggerAutomate(env) {
         }).catch(e => console.error("[burst] carousel failed:", e.message))
       : Promise.resolve();
 
-    await Promise.all([imagePromise, videoPromise, carouselPromise]);
+    // Sports desk — runs every other tick (alternates with carousel)
+    const sportsVideoPromise = nextCount % 2 === 0
+      ? fetch(`${appUrl}/api/automate-sports`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json" },
+          body: "{}",
+          signal: AbortSignal.timeout(280000),
+        }).then(r => r.json()).then(d => {
+          console.log(`[burst] sports-video: posted=${d.posted}`);
+        }).catch(e => console.error("[burst] sports-video failed:", e.message))
+      : Promise.resolve();
+
+    // Sports news desk — runs every 3rd tick
+    const sportsNewsPromise = nextCount % 3 === 1
+      ? fetch(`${appUrl}/api/automate-sports-news`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json" },
+          body: "{}",
+          signal: AbortSignal.timeout(120000),
+        }).then(r => r.json()).then(d => {
+          console.log(`[burst] sports-news: posted=${d.posted}`);
+        }).catch(e => console.error("[burst] sports-news failed:", e.message))
+      : Promise.resolve();
+
+    await Promise.all([imagePromise, videoPromise, carouselPromise, sportsVideoPromise, sportsNewsPromise]);
   } catch (err) {
     console.error("[auto-ppp-tv] trigger failed:", err.message);
   }
@@ -844,10 +972,10 @@ async function runPipeline(env) {
   const caption = await generateCaption(article, env);
   console.log(`[PPP TV] Caption: ${caption.slice(0, 80)}...`);
 
-  // 5. Get image URL — fetch and stage in R2 so IG can access it
+  // 5. Get image URL - fetch and stage in R2 so IG can access it
   const rawImageUrl = article.imageUrlDirect || article.imageUrl || "";
   if (!rawImageUrl) {
-    console.warn("[PPP TV] No image URL — skipping");
+    console.warn("[PPP TV] No image URL - skipping");
     const logKey = `log:${Date.now()}:${id}`;
     await env.SEEN_ARTICLES.put(logKey, JSON.stringify({
       articleId: id, title: article.title,
@@ -884,13 +1012,13 @@ async function runPipeline(env) {
 
   // 6. Post to Instagram
   const igResult = await postToInstagram(imageUrl, caption, env, (article.category || "GENERAL").toUpperCase());
-  console.log(`[PPP TV] IG: ${igResult.success ? "✓ " + igResult.postId : "✗ " + igResult.error}`);
+  console.log(`[PPP TV] IG: ${igResult.success ? "? " + igResult.postId : "? " + igResult.error}`);
 
   // 7. Post to Facebook
   const fbResult = await postToFacebook(imageUrl, caption, article.articleUrl || article.sourceUrl, env);
-  console.log(`[PPP TV] FB: ${fbResult.success ? "✓ " + fbResult.postId : "✗ " + fbResult.error}`);
+  console.log(`[PPP TV] FB: ${fbResult.success ? "? " + fbResult.postId : "? " + fbResult.error}`);
 
-  // 8. Log the post — always log, even on failure
+  // 8. Log the post - always log, even on failure
   const logKey = `log:${Date.now()}:${id}`;
   await env.SEEN_ARTICLES.put(logKey, JSON.stringify({
     articleId: id,
@@ -907,16 +1035,16 @@ async function runPipeline(env) {
   console.log("[PPP TV] Pipeline done");
 }
 
-// ── AI CAPTION ────────────────────────────────────────────────────────────────
+// -- AI CAPTION --
 const HOOK_PATTERNS = [
-  "Lead with the most newsworthy verifiable fact — a specific number, name, or outcome.",
+  "Lead with the most newsworthy verifiable fact - a specific number, name, or outcome.",
   "Lead with the consequence or outcome first, then explain the cause.",
   "Lead with a direct quote from a key person in the story if available.",
-  "Lead with the most specific detail — an exact time, place, or figure.",
-  "Lead with what changed — what is different today because of this story.",
+  "Lead with the most specific detail - an exact time, place, or figure.",
+  "Lead with what changed - what is different today because of this story.",
 ];
 
-// Engagement CTAs — journalist style, no clickbait (Meta penalizes clickbait CTAs)
+// Engagement CTAs - journalist style, no clickbait (Meta penalizes clickbait CTAs)
 const ENGAGEMENT_CTAS_WORKER = [
   "What are your thoughts on this?",
   "Share this with someone following this story.",
@@ -928,25 +1056,25 @@ const ENGAGEMENT_CTAS_WORKER = [
   "Save this for later.",
 ];
 
-const CAPTION_SYSTEM_PROMPT = `You are the senior news writer at PPP TV Kenya — a verified Kenyan entertainment and news media brand.
+const CAPTION_SYSTEM_PROMPT = `You are the senior news writer at PPP TV Kenya - a verified Kenyan entertainment and news media brand.
 
 Write captions like a professional journalist. Factual, specific, no clickbait. Meta penalizes clickbait and rewards news-style writing.
 
 STRUCTURE (3 parts, blank line between each):
 
-1. LEDE — One sentence: WHO did WHAT, WHERE, WHEN. Lead with the most newsworthy fact. No emojis. No ALL CAPS.
+1. LEDE - One sentence: WHO did WHAT, WHERE, WHEN. Lead with the most newsworthy fact. No emojis. No ALL CAPS.
 
-2. BODY — 2-4 sentences of verified detail. Names, exact figures, locations, dates, direct quotes. AP/Reuters style — tight and factual.
+2. BODY - 2-4 sentences of verified detail. Names, exact figures, locations, dates, direct quotes. AP/Reuters style - tight and factual.
 
-3. CLOSE — What happens next, or the reader's stake in the story. End with source credit.
+3. CLOSE - What happens next, or the reader's stake in the story. End with source credit.
 
 RULES:
 - ONLY use facts explicitly stated in the article provided. NEVER invent, assume, or infer any fact not directly in the article text. If a detail is not in the article, do not include it.
 - NEVER use: "shocking", "you won't believe", "breaking", "must see", "find out more", "stay tuned", "the internet is buzzing"
-- NEVER withhold facts to create artificial curiosity — Meta penalizes this
+- NEVER withhold facts to create artificial curiosity - Meta penalizes this
 - No ALL CAPS in body
 - No hashtags
-- Emojis are allowed — use 2-4 relevant emojis to make the post feel human and engaging
+- Emojis are allowed - use 2-4 relevant emojis to make the post feel human and engaging
 - Always end with: "Source: [publication name]"
 - Under 200 words`;
 
@@ -971,7 +1099,7 @@ ALWAYS END WITH: "Source: ${article.sourceName || "PPP TV Kenya"}"
 CRITICAL: Only use facts explicitly stated in the ARTICLE text above. Do NOT invent, assume, or add any names, dates, statistics, titles, or events that are not directly in the article. If a detail is not in the article, leave it out.
 
 Write the caption following the instructions above. Factual, no clickbait, journalist style.
-Reply with ONLY the caption text — no labels, no preamble.`;
+Reply with ONLY the caption text - no labels, no preamble.`;
 
   // Try Gemini first
   if (env.GEMINI_API_KEY) {
@@ -1011,7 +1139,7 @@ Reply with ONLY the caption text — no labels, no preamble.`;
   return (article.excerpt || article.title) + sourceCredit + "\n\n" + engagementCTA;
 }
 
-// ── INSTAGRAM POSTING ─────────────────────────────────────────────────────────
+// -- INSTAGRAM POSTING --
 const HASHTAG_BANK_WORKER = {
   MUSIC:         "#KenyaMusic #AfrobeatKenya #NairobiMusic #KenyanArtist #EastAfricaMusic #PPPTVKenya #MusicKE",
   CELEBRITY:     "#KenyaCelebrity #NairobiCelebs #KenyanCelebs #PPPTVKenya #NairobiGossip #KenyaEntertainment",
@@ -1084,7 +1212,7 @@ async function postToInstagram(imageUrl, caption, env, category) {
   }
 }
 
-// ── FACEBOOK POSTING ──────────────────────────────────────────────────────────
+// -- FACEBOOK POSTING --
 async function postToFacebook(imageUrl, caption, articleUrl, env) {
   const token = env.FACEBOOK_ACCESS_TOKEN;
   const pageId = env.FACEBOOK_PAGE_ID;
@@ -1106,7 +1234,7 @@ async function postToFacebook(imageUrl, caption, articleUrl, env) {
   }
 }
 
-// ── CLEANUP OLD LOGS ──────────────────────────────────────────────────────────
+// -- CLEANUP OLD LOGS --
 async function cleanupOldLogs(env) {
   const list = await env.SEEN_ARTICLES.list({ prefix: "log:" });
   const cutoff = Date.now() - (30 * 24 * 60 * 60 * 1000);
@@ -1118,7 +1246,7 @@ async function cleanupOldLogs(env) {
   console.log(`[cleanup] Deleted ${deleted} old log entries`);
 }
 
-// ── CLEANUP OLD VIDEOS IN R2 (12h TTL) ────────────────────────────────────────
+// -- CLEANUP OLD VIDEOS IN R2 (12h TTL) --
 async function cleanupOldVideos(env) {
   const cutoff = Date.now() - (12 * 60 * 60 * 1000);
   let cursor = undefined;
@@ -1137,13 +1265,13 @@ async function cleanupOldVideos(env) {
   if (deleted) console.log(`[cleanup] Deleted ${deleted} old videos (>12h)`);
 }
 
-// ── HELPERS ───────────────────────────────────────────────────────────────────
+// -- HELPERS --
 async function sha256Short(str) {
   const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(str));
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("").slice(0, 16);
 }
 
-// ── DEBUG PIPELINE (synchronous, returns result) ─────────────────────────────
+// -- DEBUG PIPELINE (synchronous, returns result) --
 async function runPipelineDebug(env) {
   const log = [];
   const step = (msg) => { log.push(msg); console.log("[DEBUG]", msg); };

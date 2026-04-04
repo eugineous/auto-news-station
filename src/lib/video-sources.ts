@@ -16,7 +16,7 @@ export interface VideoItem {
   thumbnail: string;
   publishedAt: Date;
   sourceName: string;
-  sourceType: "youtube" | "dailymotion" | "reddit" | "rss-video" | "vimeo" | "direct-mp4";
+  sourceType: "youtube" | "dailymotion" | "reddit" | "rss-video" | "vimeo" | "direct-mp4" | "twitter";
   category: string;
   duration?: number;    // seconds, if known
 }
@@ -48,17 +48,12 @@ function isEntertainmentTitle(title: string): boolean {
   return /music|song|video|celebrity|gossip|entertainment|fashion|award|concert|interview|exclusive|drama|movie|film|tv|show|dance|comedy|viral|trending|nairobi|kenya|africa/i.test(title);
 }
 
-// ── Politics/news filter — NEVER post political content ───────────────────────
-const BLOCKED_CATEGORIES = new Set(["POLITICS", "NEWS", "BUSINESS", "TECHNOLOGY", "HEALTH", "SCIENCE"]);
-const POLITICAL_KEYWORDS = /\b(politics|political|election|vote|voting|president|prime minister|minister|parliament|congress|senate|government|party|campaign|protest|riot|war|military|coup|impeach|resign|resign|corruption|scandal|arrest|court|judge|verdict|sentence|prison|jail|police|crime|murder|kill|attack|bomb|terror|terrorist|refugee|migrant|immigration|border|sanction|tariff|trade war|nato|un |united nations|world bank|imf |gdp|inflation|recession|budget|tax|deficit|debt|policy|legislation|bill|law|regulation|constitution|democracy|dictatorship|authoritarian|opposition|ruling party|coalition|manifesto|rally|demonstration|strike|boycott|referendum|ballot|candidate|incumbent|opposition leader|cabinet|minister|secretary|ambassador|diplomat|treaty|agreement|summit|g7|g20|brics|african union|au summit|ruto|uhuru|raila|odinga|gachagua|kindiki|tinubu|buhari|ramaphosa|museveni|kagame|mnangagwa|magufuli|samia|hassan|biden|trump|harris|macron|sunak|scholz|modi|xi jinping|putin|zelensky|netanyahu|erdogan)\b/i;
-
-function isPolitical(title: string, category: string): boolean {
-  if (BLOCKED_CATEGORIES.has(category?.toUpperCase())) return true;
-  if (POLITICAL_KEYWORDS.test(title)) return true;
+// ── Politics/news filter — removed, post everything ──────────────────────────
+function isPolitical(_title: string, _category: string): boolean {
   return false;
 }
 
-function isRecent(dateStr: string, maxHours = 48): boolean {
+function isRecent(dateStr: string, maxHours = 72): boolean {
   try {
     const d = new Date(dateStr);
     return Date.now() - d.getTime() < maxHours * 3600 * 1000;
@@ -147,7 +142,7 @@ async function fetchDailymotionFeed(feedUrl: string, sourceName: string, categor
     const videoId = link.match(/video\/([a-z0-9]+)/i)?.[1] || "";
 
     if (!title || !link || !isRecent(pubDate)) continue;
-    if (!isEntertainmentTitle(title)) continue;
+    // Accept all titles — no entertainment filter
 
     items.push({
       id: `dm:${videoId || link}`,
@@ -327,7 +322,7 @@ async function fetchVimeoFeed(feedUrl: string, sourceName: string, category: str
     const thumbnail = e.match(/https?:\/\/[^\s"'<>]+\.(?:jpg|jpeg|png)/)?.[0] || "";
 
     if (!title || !link || !isRecent(pubDate)) continue;
-    if (!isEntertainmentTitle(title)) continue;
+    // Accept all titles
 
     items.push({
       id: `vimeo:${link}`,
@@ -360,20 +355,164 @@ interface TikTokAccount {
 }
 
 const TIKTOK_ACCOUNTS: TikTokAccount[] = [
+  // ── Kenya ─────────────────────────────────────────────────────────────────
+  { username: "mutembeitv",           displayName: "Mutembei TV",            category: "ENTERTAINMENT", postHourEAT: 6,  isCreator: false },
   { username: "tushindecharityshow",  displayName: "Tushinde Charity Show",  category: "ENTERTAINMENT", postHourEAT: 7,  isCreator: false },
-  { username: "bbcnewsswahili",       displayName: "BBC News Swahili",        category: "NEWS",          postHourEAT: 8,  isCreator: false },
+  { username: "bbcnewsswahili",       displayName: "BBC News Swahili",        category: "ENTERTAINMENT", postHourEAT: 8,  isCreator: false },
   { username: "footballkenya",        displayName: "Football Kenya",          category: "SPORTS",        postHourEAT: 9,  isCreator: false },
   { username: "fabrizioromano",       displayName: "Fabrizio Romano",         category: "SPORTS",        postHourEAT: 10, isCreator: true  },
-  { username: "kenya.news.arena",     displayName: "Kenya News Arena",        category: "NEWS",          postHourEAT: 11, isCreator: false },
-  { username: "citizen.digital",      displayName: "Citizen Digital",         category: "NEWS",          postHourEAT: 12, isCreator: false },
-  { username: "thenewsguyke",         displayName: "The News Guy KE",         category: "NEWS",          postHourEAT: 13, isCreator: true  },
+  { username: "kenya.news.arena",     displayName: "Kenya News Arena",        category: "ENTERTAINMENT", postHourEAT: 11, isCreator: false },
+  { username: "citizen.digital",      displayName: "Citizen Digital",         category: "ENTERTAINMENT", postHourEAT: 12, isCreator: false },
+  { username: "thenewsguyke",         displayName: "The News Guy KE",         category: "ENTERTAINMENT", postHourEAT: 13, isCreator: true  },
   { username: "sheyii_given",         displayName: "Sheyii Given",            category: "ENTERTAINMENT", postHourEAT: 14, isCreator: true  },
-  { username: "aljazeeraenglish",     displayName: "Al Jazeera English",      category: "NEWS",          postHourEAT: 15, isCreator: false },
-  { username: "cnn",                  displayName: "CNN",                     category: "NEWS",          postHourEAT: 16, isCreator: false },
+  { username: "urbannewsgang",        displayName: "Urban News Gang",         category: "ENTERTAINMENT", postHourEAT: 20, isCreator: false },
+  { username: "spmbuzz",              displayName: "SPM Buzz",                category: "CELEBRITY",     postHourEAT: 7,  isCreator: false },
+  { username: "tukokenya",            displayName: "Tuko Kenya",              category: "ENTERTAINMENT", postHourEAT: 8,  isCreator: false },
+  { username: "mpasho.co.ke",         displayName: "Mpasho Kenya",            category: "CELEBRITY",     postHourEAT: 9,  isCreator: false },
+  { username: "ghafla_kenya",         displayName: "Ghafla Kenya",            category: "CELEBRITY",     postHourEAT: 10, isCreator: false },
+  { username: "nairobiwire",          displayName: "Nairobi Wire",            category: "CELEBRITY",     postHourEAT: 11, isCreator: false },
+  { username: "pulselive_ke",         displayName: "Pulse Live Kenya",        category: "ENTERTAINMENT", postHourEAT: 12, isCreator: false },
+  { username: "standardmediake",      displayName: "Standard Media Kenya",    category: "ENTERTAINMENT", postHourEAT: 13, isCreator: false },
+  { username: "ntvkenya",             displayName: "NTV Kenya",               category: "ENTERTAINMENT", postHourEAT: 14, isCreator: false },
+  { username: "ktnhomekenya",         displayName: "KTN Home Kenya",          category: "ENTERTAINMENT", postHourEAT: 15, isCreator: false },
+  { username: "kenyans.co.ke",        displayName: "Kenyans.co.ke",           category: "ENTERTAINMENT", postHourEAT: 16, isCreator: false },
+  { username: "sde.co.ke",            displayName: "SDE Kenya",               category: "CELEBRITY",     postHourEAT: 17, isCreator: false },
+  // ── East Africa ───────────────────────────────────────────────────────────
+  { username: "tanzaniaentertainment",displayName: "Tanzania Entertainment",  category: "ENTERTAINMENT", postHourEAT: 7,  isCreator: false },
+  { username: "bongomovies",          displayName: "Bongo Movies",            category: "TV & FILM",     postHourEAT: 8,  isCreator: false },
+  { username: "ugandaentertainment",  displayName: "Uganda Entertainment",    category: "ENTERTAINMENT", postHourEAT: 9,  isCreator: false },
+  { username: "eastafricamusic",      displayName: "East Africa Music",       category: "MUSIC",         postHourEAT: 10, isCreator: false },
+  // ── West Africa ───────────────────────────────────────────────────────────
+  { username: "pulse.nigeria",        displayName: "Pulse Nigeria",           category: "ENTERTAINMENT", postHourEAT: 11, isCreator: false },
+  { username: "bellanaija",           displayName: "BellaNaija",              category: "CELEBRITY",     postHourEAT: 12, isCreator: false },
+  { username: "lindaikejiblog",       displayName: "Linda Ikeji",             category: "CELEBRITY",     postHourEAT: 13, isCreator: true  },
+  { username: "yabaleftonline",       displayName: "Yabaleft Online",         category: "CELEBRITY",     postHourEAT: 14, isCreator: false },
+  { username: "ghanaentertainment",   displayName: "Ghana Entertainment",     category: "ENTERTAINMENT", postHourEAT: 15, isCreator: false },
+  { username: "pulse.ghana",          displayName: "Pulse Ghana",             category: "ENTERTAINMENT", postHourEAT: 16, isCreator: false },
+  // ── South Africa ─────────────────────────────────────────────────────────
+  { username: "saentertainmentnews",  displayName: "SA Entertainment News",   category: "ENTERTAINMENT", postHourEAT: 17, isCreator: false },
+  { username: "drum_magazine",        displayName: "Drum Magazine SA",        category: "CELEBRITY",     postHourEAT: 18, isCreator: false },
+  { username: "truelove_magazine",    displayName: "True Love Magazine",      category: "CELEBRITY",     postHourEAT: 19, isCreator: false },
+  // ── Global Celebrity & Gossip ─────────────────────────────────────────────
+  { username: "tmz",                  displayName: "TMZ",                     category: "CELEBRITY",     postHourEAT: 7,  isCreator: false },
+  { username: "pagesix",              displayName: "Page Six",                category: "CELEBRITY",     postHourEAT: 8,  isCreator: false },
+  { username: "enews",                displayName: "E! News",                 category: "CELEBRITY",     postHourEAT: 9,  isCreator: false },
+  { username: "hollywoodlife",        displayName: "Hollywood Life",          category: "CELEBRITY",     postHourEAT: 10, isCreator: false },
+  { username: "justjared",            displayName: "Just Jared",              category: "CELEBRITY",     postHourEAT: 11, isCreator: false },
+  { username: "peoplemagazine",       displayName: "People Magazine",         category: "CELEBRITY",     postHourEAT: 12, isCreator: false },
+  { username: "usweekly",             displayName: "US Weekly",               category: "CELEBRITY",     postHourEAT: 13, isCreator: false },
+  { username: "entertainmenttonight", displayName: "Entertainment Tonight",   category: "CELEBRITY",     postHourEAT: 14, isCreator: false },
+  { username: "accesshollywood",      displayName: "Access Hollywood",        category: "CELEBRITY",     postHourEAT: 15, isCreator: false },
+  { username: "extratv",              displayName: "Extra TV",                category: "CELEBRITY",     postHourEAT: 16, isCreator: false },
+  { username: "deuxmoi",              displayName: "DeuxMoi",                 category: "CELEBRITY",     postHourEAT: 17, isCreator: true  },
+  { username: "omg_insider",          displayName: "OMG Insider",             category: "CELEBRITY",     postHourEAT: 18, isCreator: false },
+  { username: "dailymailceleb",       displayName: "Daily Mail Celebrity",    category: "CELEBRITY",     postHourEAT: 19, isCreator: false },
+  { username: "theshaderoom",         displayName: "The Shade Room",          category: "CELEBRITY",     postHourEAT: 20, isCreator: false },
+  { username: "bossip",               displayName: "Bossip",                  category: "CELEBRITY",     postHourEAT: 21, isCreator: false },
+  { username: "blavity",              displayName: "Blavity",                 category: "ENTERTAINMENT", postHourEAT: 7,  isCreator: false },
+  // ── Music ─────────────────────────────────────────────────────────────────
+  { username: "billboard",            displayName: "Billboard",               category: "MUSIC",         postHourEAT: 8,  isCreator: false },
+  { username: "rollingstone",         displayName: "Rolling Stone",           category: "MUSIC",         postHourEAT: 9,  isCreator: false },
+  { username: "pitchfork",            displayName: "Pitchfork",               category: "MUSIC",         postHourEAT: 10, isCreator: false },
+  { username: "complex",              displayName: "Complex",                 category: "MUSIC",         postHourEAT: 11, isCreator: false },
+  { username: "raptvusa",             displayName: "Rap TV",                  category: "MUSIC",         postHourEAT: 12, isCreator: false },
+  { username: "hotnewhiphop",         displayName: "HotNewHipHop",            category: "MUSIC",         postHourEAT: 13, isCreator: false },
+  { username: "worldstarhiphop",      displayName: "WorldStar HipHop",        category: "MUSIC",         postHourEAT: 13, isCreator: false },
+  { username: "rap",                  displayName: "Rap",                     category: "MUSIC",         postHourEAT: 14, isCreator: false },
+  { username: "vibe",                 displayName: "Vibe Magazine",           category: "MUSIC",         postHourEAT: 15, isCreator: false },
+  { username: "xxl",                  displayName: "XXL Magazine",            category: "MUSIC",         postHourEAT: 16, isCreator: false },
+  { username: "genius",               displayName: "Genius",                  category: "MUSIC",         postHourEAT: 17, isCreator: false },
+  { username: "audiomack",            displayName: "Audiomack",               category: "MUSIC",         postHourEAT: 18, isCreator: false },
+  { username: "boomplay",             displayName: "Boomplay",                category: "MUSIC",         postHourEAT: 19, isCreator: false },
+  // ── TV & Film ─────────────────────────────────────────────────────────────
+  { username: "variety",              displayName: "Variety",                 category: "TV & FILM",     postHourEAT: 7,  isCreator: false },
+  { username: "deadline",             displayName: "Deadline Hollywood",      category: "TV & FILM",     postHourEAT: 8,  isCreator: false },
+  { username: "hollywoodreporter",    displayName: "Hollywood Reporter",      category: "TV & FILM",     postHourEAT: 9,  isCreator: false },
+  { username: "screenrant",           displayName: "Screen Rant",             category: "TV & FILM",     postHourEAT: 10, isCreator: false },
+  { username: "collider",             displayName: "Collider",                category: "TV & FILM",     postHourEAT: 11, isCreator: false },
+  { username: "ign",                  displayName: "IGN",                     category: "TV & FILM",     postHourEAT: 12, isCreator: false },
+  { username: "netflixuk",            displayName: "Netflix UK",              category: "TV & FILM",     postHourEAT: 13, isCreator: false },
+  { username: "netflix",              displayName: "Netflix",                 category: "TV & FILM",     postHourEAT: 14, isCreator: false },
+  { username: "disneyplus",           displayName: "Disney Plus",             category: "TV & FILM",     postHourEAT: 15, isCreator: false },
+  { username: "hbomax",               displayName: "Max (HBO)",               category: "TV & FILM",     postHourEAT: 16, isCreator: false },
+  // ── Sports ────────────────────────────────────────────────────────────────
   { username: "skysportsnews",        displayName: "Sky Sports News",         category: "SPORTS",        postHourEAT: 17, isCreator: false },
   { username: "dailymailsport",       displayName: "Daily Mail Sport",        category: "SPORTS",        postHourEAT: 18, isCreator: false },
-  { username: "dylan.page",           displayName: "Dylan Page",              category: "NEWS",          postHourEAT: 19, isCreator: true  },
-  { username: "urbannewsgang",        displayName: "Urban News Gang",         category: "ENTERTAINMENT", postHourEAT: 20, isCreator: false },
+  { username: "espn",                 displayName: "ESPN",                    category: "SPORTS",        postHourEAT: 19, isCreator: false },
+  { username: "bleacherreport",       displayName: "Bleacher Report",         category: "SPORTS",        postHourEAT: 20, isCreator: false },
+  { username: "goal",                 displayName: "Goal Football",           category: "SPORTS",        postHourEAT: 7,  isCreator: false },
+  { username: "433",                  displayName: "433 Football",            category: "SPORTS",        postHourEAT: 8,  isCreator: false },
+  { username: "footballdaily",        displayName: "Football Daily",          category: "SPORTS",        postHourEAT: 9,  isCreator: false },
+  { username: "footballhighlights",   displayName: "Football Highlights",     category: "SPORTS",        postHourEAT: 10, isCreator: false },
+  { username: "premierleague",        displayName: "Premier League",          category: "SPORTS",        postHourEAT: 11, isCreator: false },
+  { username: "championsleague",      displayName: "Champions League",        category: "SPORTS",        postHourEAT: 12, isCreator: false },
+  { username: "fifaworldcup",         displayName: "FIFA World Cup",          category: "SPORTS",        postHourEAT: 13, isCreator: false },
+  { username: "laligaen",             displayName: "La Liga",                 category: "SPORTS",        postHourEAT: 14, isCreator: false },
+  { username: "seriea",               displayName: "Serie A",                 category: "SPORTS",        postHourEAT: 15, isCreator: false },
+  { username: "bundesliga",           displayName: "Bundesliga",              category: "SPORTS",        postHourEAT: 16, isCreator: false },
+  { username: "realmadrid",           displayName: "Real Madrid",             category: "SPORTS",        postHourEAT: 17, isCreator: false },
+  { username: "fcbarcelona",          displayName: "FC Barcelona",            category: "SPORTS",        postHourEAT: 18, isCreator: false },
+  { username: "manchestercity",       displayName: "Manchester City",         category: "SPORTS",        postHourEAT: 19, isCreator: false },
+  { username: "manchesterunited",     displayName: "Manchester United",       category: "SPORTS",        postHourEAT: 20, isCreator: false },
+  { username: "chelseafc",            displayName: "Chelsea FC",              category: "SPORTS",        postHourEAT: 7,  isCreator: false },
+  { username: "arsenal",              displayName: "Arsenal FC",              category: "SPORTS",        postHourEAT: 8,  isCreator: false },
+  { username: "liverpoolfc",          displayName: "Liverpool FC",            category: "SPORTS",        postHourEAT: 9,  isCreator: false },
+  { username: "transfermarkt",        displayName: "Transfermarkt",           category: "SPORTS",        postHourEAT: 10, isCreator: false },
+  // ── More Football ─────────────────────────────────────────────────────────
+  { username: "footballhd",           displayName: "Football HD",             category: "SPORTS",        postHourEAT: 11, isCreator: false },
+  { username: "footballmemes",        displayName: "Football Memes",          category: "SPORTS",        postHourEAT: 12, isCreator: false },
+  { username: "footballnews",         displayName: "Football News",           category: "SPORTS",        postHourEAT: 13, isCreator: false },
+  { username: "soccernews",           displayName: "Soccer News",             category: "SPORTS",        postHourEAT: 14, isCreator: false },
+  { username: "tottenhamhotspur",     displayName: "Tottenham Hotspur",       category: "SPORTS",        postHourEAT: 15, isCreator: false },
+  { username: "acmilan",              displayName: "AC Milan",                category: "SPORTS",        postHourEAT: 16, isCreator: false },
+  { username: "juventusfc",           displayName: "Juventus FC",             category: "SPORTS",        postHourEAT: 17, isCreator: false },
+  { username: "atleticomadrid",       displayName: "Atletico Madrid",         category: "SPORTS",        postHourEAT: 18, isCreator: false },
+  { username: "psg",                  displayName: "Paris Saint-Germain",     category: "SPORTS",        postHourEAT: 19, isCreator: false },
+  { username: "bvb",                  displayName: "Borussia Dortmund",       category: "SPORTS",        postHourEAT: 20, isCreator: false },
+  { username: "intermilan",           displayName: "Inter Milan",             category: "SPORTS",        postHourEAT: 7,  isCreator: false },
+  { username: "bayernmunich",         displayName: "Bayern Munich",           category: "SPORTS",        postHourEAT: 8,  isCreator: false },
+  { username: "benfica",              displayName: "Benfica",                 category: "SPORTS",        postHourEAT: 9,  isCreator: false },
+  { username: "ajax",                 displayName: "Ajax",                    category: "SPORTS",        postHourEAT: 10, isCreator: false },
+  { username: "africafootball",       displayName: "Africa Football",         category: "SPORTS",        postHourEAT: 11, isCreator: false },
+  { username: "cafchampionsleague",   displayName: "CAF Champions League",    category: "SPORTS",        postHourEAT: 12, isCreator: false },
+  // ── Multi-sport ───────────────────────────────────────────────────────────
+  { username: "skysports",            displayName: "Sky Sports",              category: "SPORTS",        postHourEAT: 13, isCreator: false },
+  { username: "bbcsport",             displayName: "BBC Sport",               category: "SPORTS",        postHourEAT: 14, isCreator: false },
+  { username: "eurosport",            displayName: "Eurosport",               category: "SPORTS",        postHourEAT: 15, isCreator: false },
+  { username: "sportscenter",         displayName: "SportsCenter",            category: "SPORTS",        postHourEAT: 16, isCreator: false },
+  { username: "theathletic",          displayName: "The Athletic",            category: "SPORTS",        postHourEAT: 17, isCreator: false },
+  { username: "talksport",            displayName: "talkSPORT",               category: "SPORTS",        postHourEAT: 18, isCreator: false },
+  { username: "sportbible",           displayName: "SPORTbible",              category: "SPORTS",        postHourEAT: 19, isCreator: false },
+  { username: "givemesport",          displayName: "GiveMeSport",             category: "SPORTS",        postHourEAT: 20, isCreator: false },
+  { username: "90min",                displayName: "90min Football",          category: "SPORTS",        postHourEAT: 7,  isCreator: false },
+  // ── Athletics / Olympics ──────────────────────────────────────────────────
+  { username: "worldathletics",       displayName: "World Athletics",         category: "SPORTS",        postHourEAT: 8,  isCreator: false },
+  { username: "olympics",             displayName: "Olympics",                category: "SPORTS",        postHourEAT: 9,  isCreator: false },
+  // ── Boxing / MMA ──────────────────────────────────────────────────────────
+  { username: "espnmma",              displayName: "ESPN MMA",                category: "SPORTS",        postHourEAT: 10, isCreator: false },
+  { username: "boxingnews",           displayName: "Boxing News",             category: "SPORTS",        postHourEAT: 11, isCreator: false },
+  // ── Cricket / Rugby ───────────────────────────────────────────────────────
+  { username: "icc",                  displayName: "ICC Cricket",             category: "SPORTS",        postHourEAT: 12, isCreator: false },
+  { username: "rugbyworldcup",        displayName: "Rugby World Cup",         category: "SPORTS",        postHourEAT: 13, isCreator: false },
+  // ── Formula 1 ─────────────────────────────────────────────────────────────
+  { username: "f1",                   displayName: "Formula 1",               category: "SPORTS",        postHourEAT: 14, isCreator: false },
+  { username: "nba",                  displayName: "NBA",                     category: "SPORTS",        postHourEAT: 9,  isCreator: false },
+  { username: "nfl",                  displayName: "NFL",                     category: "SPORTS",        postHourEAT: 10, isCreator: false },
+  // ── Comedy & Viral ────────────────────────────────────────────────────────
+  { username: "9gag",                 displayName: "9GAG",                    category: "COMEDY",        postHourEAT: 11, isCreator: false },
+  { username: "ladbible",             displayName: "LADbible",                category: "ENTERTAINMENT", postHourEAT: 12, isCreator: false },
+  { username: "unilad",               displayName: "UNILAD",                  category: "ENTERTAINMENT", postHourEAT: 13, isCreator: false },
+  { username: "barstoolsports",       displayName: "Barstool Sports",         category: "COMEDY",        postHourEAT: 14, isCreator: false },
+  { username: "funnyordie",           displayName: "Funny Or Die",            category: "COMEDY",        postHourEAT: 15, isCreator: false },
+  // ── Fashion & Lifestyle ───────────────────────────────────────────────────
+  { username: "vogue",                displayName: "Vogue",                   category: "FASHION",       postHourEAT: 16, isCreator: false },
+  { username: "gq",                   displayName: "GQ Magazine",             category: "FASHION",       postHourEAT: 17, isCreator: false },
+  { username: "cosmopolitan",         displayName: "Cosmopolitan",            category: "FASHION",       postHourEAT: 18, isCreator: false },
+  { username: "elle",                 displayName: "Elle Magazine",           category: "FASHION",       postHourEAT: 19, isCreator: false },
+  // ── Global News Entertainment ─────────────────────────────────────────────
+  { username: "aljazeeraenglish",     displayName: "Al Jazeera English",      category: "ENTERTAINMENT", postHourEAT: 20, isCreator: false },
+  { username: "cnn",                  displayName: "CNN",                     category: "ENTERTAINMENT", postHourEAT: 21, isCreator: false },
+  { username: "dylan.page",           displayName: "Dylan Page",              category: "ENTERTAINMENT", postHourEAT: 19, isCreator: true  },
 ];
 
 // Content filter — reject promotional/ad content
@@ -551,24 +690,34 @@ async function fetchTikWMTrending(): Promise<VideoItem[]> {
 
   const items: VideoItem[] = [];
 
-  // Always include 2 guaranteed Kenya terms + 3 random global terms for variety
+  // Always include 4 guaranteed terms + 6 random global terms for variety
   const GUARANTEED = [
-    { keyword: "nairobi", cat: "ENTERTAINMENT", name: "TikTok Nairobi" },
-    { keyword: "celebrity news", cat: "CELEBRITY", name: "TikTok Celebrity News" },
+    { keyword: "nairobi viral", cat: "ENTERTAINMENT", name: "TikTok Nairobi" },
+    { keyword: "celebrity news today", cat: "CELEBRITY", name: "TikTok Celebrity News" },
+    { keyword: "viral video trending", cat: "ENTERTAINMENT", name: "TikTok Viral Trending" },
+    { keyword: "africa entertainment viral", cat: "ENTERTAINMENT", name: "TikTok Africa Entertainment" },
+    { keyword: "football highlights today", cat: "SPORTS", name: "TikTok Football Highlights" },
+    { keyword: "premier league goals", cat: "SPORTS", name: "TikTok Premier League Goals" },
+    { keyword: "champions league highlights", cat: "SPORTS", name: "TikTok UCL Highlights" },
+    { keyword: "messi ronaldo skills", cat: "SPORTS", name: "TikTok Messi Ronaldo" },
+    { keyword: "football viral moment", cat: "SPORTS", name: "TikTok Football Viral" },
+    { keyword: "soccer goal compilation", cat: "SPORTS", name: "TikTok Soccer Goals" },
   ];
-  const randomTerms = [...SEARCH_TERMS].sort(() => Math.random() - 0.5).slice(0, 2);
+  const randomTerms = [...SEARCH_TERMS].sort(() => Math.random() - 0.5).slice(0, 6);
   const shuffled = [...GUARANTEED, ...randomTerms];
 
-  // Run searches sequentially — stops early when we have 5+ videos to avoid Vercel timeout
+  // Run searches sequentially — collect up to 20 videos
   for (const term of shuffled) {
-    if (items.length >= 5) break;
+    if (items.length >= 20) break;
     try {
-      const body = new URLSearchParams({ keywords: term.keyword, count: "5", cursor: "0", HD: "1" });
-      const res = await fetch("https://www.tikwm.com/api/feed/search", {
+      // Route through Cloudflare Worker to bypass Vercel IP blocks on TikWM
+      const WORKER_URL = process.env.CLOUDFLARE_WORKER_URL || "https://auto-ppp-tv.euginemicah.workers.dev";
+      const WORKER_SECRET = process.env.WORKER_SECRET || "ppptvWorker2024";
+      const res = await fetch(`${WORKER_URL}/tikwm-search`, {
         method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": "Mozilla/5.0 (compatible; PPPTVBot/1.0)" },
-        body: body.toString(),
-        signal: AbortSignal.timeout(6000),
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${WORKER_SECRET}` },
+        body: JSON.stringify({ keywords: term.keyword, count: "10", cursor: "0" }),
+        signal: AbortSignal.timeout(15000),
       });
       if (!res.ok) continue;
       const data = await res.json() as any;
@@ -600,6 +749,82 @@ async function fetchTikWMTrending(): Promise<VideoItem[]> {
   return items;
 }
 
+// ── Worker-proxied video fetch — bypasses Vercel IP blocks ───────────────────
+async function fetchVideosViaWorker(): Promise<VideoItem[]> {
+  try {
+    const WORKER_URL = process.env.CLOUDFLARE_WORKER_URL || "https://auto-ppp-tv.euginemicah.workers.dev";
+    const WORKER_SECRET = process.env.WORKER_SECRET || "ppptvWorker2024";
+    const r = await fetch(`${WORKER_URL}/fetch-videos`, {
+      headers: { "Authorization": `Bearer ${WORKER_SECRET}` },
+      signal: AbortSignal.timeout(20000),
+    });
+    if (!r.ok) return [];
+    const data = await r.json() as any;
+    return (data.videos || []).map((v: any) => ({
+      id: v.id,
+      title: v.title,
+      url: v.url,
+      directVideoUrl: v.directVideoUrl || undefined,
+      thumbnail: v.thumbnail || "",
+      publishedAt: new Date(v.publishedAt),
+      sourceName: v.sourceName,
+      sourceType: v.sourceType as any,
+      category: v.category,
+    }));
+  } catch { return []; }
+}
+
+// ── Mutembei TV Facebook scraper ─────────────────────────────────────────────
+// Tier 1: Facebook Graph API (if FACEBOOK_ACCESS_TOKEN is set)
+// Tier 2: HTML scrape fallback
+function extractFacebookVideos(html: string): Array<{ id: string; title: string; source?: string; thumbnail?: string; created_time: string }> {
+  const videos: Array<{ id: string; title: string; source?: string; thumbnail?: string; created_time: string }> = [];
+  // Try to extract video data from embedded JSON in script tags
+  const scriptRegex = /<script[^>]*type="application\/json"[^>]*>([\s\S]*?)<\/script>/g;
+  let match;
+  while ((match = scriptRegex.exec(html)) !== null) {
+    try {
+      const data = JSON.parse(match[1]);
+      const str = JSON.stringify(data);
+      // Look for video objects with id + created_time
+      const videoRegex = /"id":"(\d{10,})","created_time":"([^"]+)"/g;
+      let vm;
+      while ((vm = videoRegex.exec(str)) !== null) {
+        const id = vm[1];
+        if (!videos.find(v => v.id === id)) {
+          videos.push({ id, title: "Mutembei TV Video", created_time: vm[2] });
+        }
+      }
+    } catch {}
+  }
+  return videos.slice(0, 25);
+}
+
+export async function fetchMutembeiTVVideos(): Promise<VideoItem[]> {
+  // Route through Cloudflare Worker — bypasses Vercel IP blocks on Facebook
+  try {
+    const WORKER_URL = process.env.CLOUDFLARE_WORKER_URL || "https://auto-ppp-tv.euginemicah.workers.dev";
+    const WORKER_SECRET = process.env.WORKER_SECRET || "ppptvWorker2024";
+    const res = await fetch(`${WORKER_URL}/fetch-mutembei`, {
+      headers: { "Authorization": `Bearer ${WORKER_SECRET}` },
+      signal: AbortSignal.timeout(20000),
+    });
+    if (!res.ok) return [];
+    const data = await res.json() as any;
+    return (data.videos || []).map((v: any) => ({
+      id: v.id,
+      title: v.title || "Mutembei TV Video",
+      url: v.url,
+      directVideoUrl: v.directVideoUrl || undefined,
+      thumbnail: v.thumbnail || "",
+      publishedAt: new Date(v.publishedAt || Date.now()),
+      sourceName: "Mutembei TV",
+      sourceType: (v.directVideoUrl ? "direct-mp4" : "facebook") as any,
+      category: "ENTERTAINMENT",
+    }));
+  } catch { return []; }
+}
+
 export async function fetchAllVideoSources(): Promise<VideoItem[]> {
   // Initialize bloom filter — use try/catch in case of API changes
   if (!bloom) {
@@ -608,12 +833,28 @@ export async function fetchAllVideoSources(): Promise<VideoItem[]> {
   }
 
   const allResults = await Promise.allSettled([
-    // TikWM search — most reliable, returns direct CDN URLs
+    // Mutembei TV — priority Kenyan source (prepended so it scores first)
+    fetchMutembeiTVVideos(),
+    // Worker-proxied sources (Twitter/X Nitter RSS + Dailymotion — bypasses Vercel IP blocks)
+    fetchVideosViaWorker(),
+    // TikWM search via worker proxy
     fetchTikWMTrending(),
-    // Reddit native videos — only 2 feeds to stay under timeout
-    ...REDDIT_FEEDS.slice(0, 2).map(f => fetchRedditFeed(f.url, f.name, f.cat)),
-    // YouTube RSS — only 2 channels
-    ...YOUTUBE_CHANNELS.slice(0, 2).map(ch => fetchYouTubeChannel(ch.id, ch.name, ch.cat)),
+    // Priority TikTok accounts — always scraped every run
+    ...["complex", "raptvusa", "worldstarhiphop", "hotnewhiphop", "theshaderoom", "tmz", "spmbuzz", "tukokenya", "433", "bleacherreport", "goal", "skysportsnews", "espn", "nba", "fabrizioromano", "footballdaily", "footballhighlights", "premierleague", "championsleague", "fifaworldcup"]
+      .map(username => {
+        const acct = TIKTOK_ACCOUNTS.find(a => a.username === username);
+        return acct ? fetchTikTokAccountVideos(acct) : Promise.resolve([]);
+      }),
+    // Random rotation of remaining accounts
+    ...TIKTOK_ACCOUNTS
+      .filter(a => !["complex","raptvusa","worldstarhiphop","hotnewhiphop","theshaderoom","tmz","spmbuzz","tukokenya","433","bleacherreport"].includes(a.username))
+      .sort(() => Math.random() - 0.5)
+      .slice(0, 15)
+      .map(a => fetchTikTokAccountVideos(a)),
+    // YouTube RSS
+    ...YOUTUBE_CHANNELS.slice(0, 6).map(ch => fetchYouTubeChannel(ch.id, ch.name, ch.cat)),
+    // News RSS with video embeds
+    ...NEWS_RSS_FEEDS.slice(0, 10).map(f => fetchNewsRSSWithVideo(f.url, f.name, f.cat)),
   ]);
 
   const all: VideoItem[] = [];

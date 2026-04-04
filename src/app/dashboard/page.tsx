@@ -94,11 +94,11 @@ function AIPipelineStatus() {
 }
 
 // ── 8. Emergency post button ──────────────────────────────────────────────────
-function EmergencyPost({ onTrigger, triggering }: { onTrigger: () => void; triggering: boolean }) {
+function EmergencyPost({ onTrigger, triggering, confirm, onConfirm }: { onTrigger: () => void; triggering: boolean; confirm: boolean; onConfirm: () => void }) {
   return (
     <div style={{ display: "flex", gap: 8 }}>
-      <button onClick={onTrigger} disabled={triggering} style={{ background: triggering ? "#1a0a0a" : `linear-gradient(135deg,${R},#c00)`, color: "#fff", border: "none", borderRadius: 10, padding: "14px 20px", fontSize: 13, fontWeight: 800, cursor: triggering ? "not-allowed" : "pointer", letterSpacing: 1, textTransform: "uppercase" as const, boxShadow: triggering ? "none" : `0 4px 20px rgba(229,9,20,.4)`, display: "flex", alignItems: "center", gap: 6, flex: 1, justifyContent: "center" }}>
-        {triggering ? <><Spin /> Triggering…</> : "🚀 Post Now"}
+      <button onClick={confirm ? onTrigger : onConfirm} disabled={triggering} style={{ background: triggering ? "#1a0a0a" : confirm ? `linear-gradient(135deg,#f59e0b,#d97706)` : `linear-gradient(135deg,${R},#c00)`, color: "#fff", border: "none", borderRadius: 10, padding: "14px 20px", fontSize: 13, fontWeight: 800, cursor: triggering ? "not-allowed" : "pointer", letterSpacing: 1, textTransform: "uppercase" as const, boxShadow: triggering ? "none" : `0 4px 20px rgba(229,9,20,.4)`, display: "flex", alignItems: "center", gap: 6, flex: 1, justifyContent: "center" }}>
+        {triggering ? <><Spin /> Triggering…</> : confirm ? "⚠ Confirm? (3s)" : "🚀 Post Now"}
       </button>
       <Link href="/composer" style={{ background: "#0f0f0f", color: "#e5e5e5", border: "1px solid #2a2a2a", borderRadius: 10, padding: "14px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer", letterSpacing: .5, textTransform: "uppercase" as const, textDecoration: "none", display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" as const }}>
         ✏️ Compose
@@ -257,6 +257,7 @@ export default function Dashboard() {
   const [toast, setToast] = useState<{msg:string;type:"ok"|"err"}|null>(null);
   const [triggering, setTriggering] = useState(false);
   const [clearing, setClearing] = useState(false);
+  const [confirmTrigger, setConfirmTrigger] = useState(false);
 
   const fetchPosts = useCallback(async () => {
     try { const r = await fetch("/api/post-log"); if (r.ok) { const d = await r.json(); setPosts(d.log||[]); } }
@@ -291,10 +292,16 @@ export default function Dashboard() {
   }
 
   async function triggerNow() {
+    setConfirmTrigger(false);
     setTriggering(true);
     try { await fetch("/api/automate", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + (process.env.NEXT_PUBLIC_AUTOMATE_SECRET || "ppptvWorker2024") } }); showToast("Pipeline triggered!","ok"); setTimeout(fetchPosts,15000); }
     catch(e:any) { showToast("Trigger failed: "+e.message,"err"); }
     finally { setTriggering(false); }
+  }
+
+  function handleConfirm() {
+    setConfirmTrigger(true);
+    setTimeout(() => setConfirmTrigger(false), 3000);
   }
 
   async function clearCache() {
@@ -306,7 +313,16 @@ export default function Dashboard() {
 
   function showToast(msg:string, type:"ok"|"err") { setToast({msg,type}); setTimeout(()=>setToast(null),4000); }
 
-  const sorted = [...posts].map(norm).sort((a,b)=>new Date(b.at||0).getTime()-new Date(a.at||0).getTime());
+  const sorted = (() => {
+    const mapped = [...posts].map(norm).sort((a,b)=>new Date(b.at||0).getTime()-new Date(a.at||0).getTime());
+    const seen = new Set<string>();
+    return mapped.filter(p => {
+      const key = p.id || p.title?.toLowerCase().replace(/[^a-z0-9]/g,"").slice(0,60);
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  })();
   const today = sorted.filter(p=>new Date(p.at||0).toDateString()===new Date().toDateString());
   const todayCount = today.length;
   const igOkToday = today.filter(p=>p.igOk).length;
@@ -425,7 +441,7 @@ export default function Dashboard() {
 
           {/* Right panel */}
           <div style={{display:"flex",flexDirection:"column" as const,gap:10}}>
-            <EmergencyPost onTrigger={triggerNow} triggering={triggering}/>
+            <EmergencyPost onTrigger={triggerNow} triggering={triggering} confirm={confirmTrigger} onConfirm={handleConfirm}/>
             <button onClick={clearCache} disabled={clearing} style={{background:"#0a0a0a",color:"#555",border:"1px solid #1a1a1a",borderRadius:8,padding:"10px",fontSize:11,fontWeight:600,cursor:clearing?"not-allowed":"pointer"}}>
               {clearing?<><Spin/> Clearing…</>:"🗑 Clear Seen Cache"}
             </button>

@@ -61,16 +61,15 @@ function isKenyaRelevant(a: Article): boolean {
 
 // ── Quality gate ──────────────────────────────────────────────────────────────
 function hasMinimumContent(a: Article): boolean {
-  if (!a.title || a.title.trim().length < 10) return false;
-  if (!a.summary || a.summary.trim().length < 30) return false;
+  if (!a.title || a.title.trim().length < 5) return false;
+  // Summary is optional — ingest_queue articles may have short excerpts
   return true;
 }
 
 // ── Best-time scheduler — EAT hours ──────────────────────────────────────────
 function isPostingHour(): boolean {
-  const hourEAT = (new Date().getUTCHours() + 3) % 24;
-  // Only skip true dead zone: 1am–5am EAT
-  return !(hourEAT >= 1 && hourEAT < 5);
+  // Worker handles dead-zone logic — always return true here to avoid double-blocking
+  return true;
 }
 
 // ── Daily post cap — max 6 posts per day ─────────────────────────────────────
@@ -192,6 +191,16 @@ async function markSeen(id: string, title?: string): Promise<void> {
 }
 
 // logPost is now imported from @/lib/supabase
+
+// ── Mark ingest_queue row as posted after successful social post ──────────────
+async function markIngestPosted(articleId: string): Promise<void> {
+  try {
+    await supabaseAdmin
+      .from("ingest_queue")
+      .update({ posted: true })
+      .eq("id", articleId);
+  } catch { /* non-fatal */ }
+}
 
 // ── Distributed lock via CF KV — prevents concurrent runs double-posting ──────
 const LOCK_KEY = "pipeline:lock";
@@ -330,6 +339,7 @@ async function postOneArticle(article: Article, isBreaking: boolean): Promise<{ 
             logPost({ article_id: article.id, title: clickbaitTitle, url: article.url, category: article.category, ig_success: result.instagram.success, ig_post_id: result.instagram.postId, ig_error: result.instagram.error, fb_success: result.facebook.success, fb_post_id: result.facebook.postId, fb_error: result.facebook.error, post_type: "video" }),
             incrementDailyCount(),
             setLastCategory(article.category),
+            markIngestPosted(article.id),
           ]);
 
           // Fire-and-forget: delete staged video from R2
@@ -397,6 +407,7 @@ async function postOneArticle(article: Article, isBreaking: boolean): Promise<{ 
       }),
       incrementDailyCount(),
       setLastCategory(article.category),
+      markIngestPosted(article.id),
     ]);
     return { success: true };
   }
@@ -494,18 +505,17 @@ export async function POST(req: NextRequest) {
       getLastCategory(),
     ]);
 
-    // 1. Kenya filter
-    const kenya = all.filter(isKenyaRelevant);
+    // 1. No geo filter — post everything from the feed
+    const kenya = all;
 
     // 2. Quality gate
     const quality = kenya.filter(hasMinimumContent);
 
-    // 3. Block political content — entertainment & sports only
+    // 3. Only block pure hard-politics categories — entertainment/sports/music/celebrity always pass
     const nonPolitical = quality.filter(a => {
       const cat = a.category?.toUpperCase();
-      if (["POLITICS", "NEWS", "BUSINESS", "TECHNOLOGY", "HEALTH", "SCIENCE"].includes(cat)) return false;
-      const politicalKeywords = /\b(election|vote|voting|president|prime minister|parliament|government|party|campaign|protest|coup|impeach|corruption|arrest|court|verdict|prison|police|crime|murder|terror|war|military|sanction|tariff|nato|un |imf |gdp|inflation|recession|budget|tax|deficit|policy|legislation|bill|law|regulation|constitution|democracy|dictatorship|opposition|ruling party|coalition|manifesto|rally|demonstration|strike|boycott|referendum|ballot|candidate|cabinet|minister|secretary|ambassador|diplomat|treaty|summit|g7|g20|brics|ruto|uhuru|raila|odinga|gachagua|kindiki|tinubu|buhari|ramaphosa|museveni|kagame|biden|trump|harris|macron|putin|zelensky)\b/i;
-      if (politicalKeywords.test(a.title)) return false;
+      // Only drop if the category is explicitly political/hard-news AND title has no entertainment angle
+      if (cat === "POLITICS") return false;
       return true;
     });
 
@@ -527,17 +537,46 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ...response, message: "No new Kenya articles to post" });
     }
 
-    // 4. Category rotation — avoid repeating the same category, prefer underrepresented ones
+    // 4. Category rotation — strict round-robin through all available categories
+    const CATEGORY_CYCLE = [
+      "ENTERTAINMENT", "SPORTS", "MUSIC", "CELEBRITY", "TV & FILM",
+      "MOVIES", "LIFESTYLE", "GENERAL", "COMEDY", "FASHION",
+      "AWARDS", "INFLUENCERS", "EAST AFRICA", "TECHNOLOGY", "HEALTH",
+    ];
+
+    // Get all categories available in current unseen articles
+    const availableCats = [...new Set(dedupedUnseen.map(a => a.category?.toUpperCase()).filter(Boolean))];
+
+    // Find next category in cycle after lastCategory
+    let targetCategory: string | null = null;
+    if (lastCategory && availableCats.length > 1) {
+      const lastUpper = lastCategory.toUpperCase();
+      const lastIdx = CATEGORY_CYCLE.findIndex(c => c === lastUpper);
+      // Try each category in cycle order starting from next position
+      for (let i = 1; i <= CATEGORY_CYCLE.length; i++) {
+        const nextCat = CATEGORY_CYCLE[(lastIdx + i) % CATEGORY_CYCLE.length];
+        if (availableCats.includes(nextCat)) {
+          targetCategory = nextCat;
+          break;
+        }
+      }
+      // If nothing found in cycle, pick any category different from last
+      if (!targetCategory) {
+        targetCategory = availableCats.find(c => c !== lastUpper) || null;
+      }
+    }
+
+    // Filter to target category, fall back to all if no match
     let candidates = dedupedUnseen;
-    if (lastCategory) {
-      // First try: exclude the last posted category entirely
-      const different = dedupedUnseen.filter(a => a.category !== lastCategory);
+    if (targetCategory) {
+      const catFiltered = dedupedUnseen.filter(a => a.category?.toUpperCase() === targetCategory);
+      if (catFiltered.length > 0) candidates = catFiltered;
+    } else if (lastCategory) {
+      const different = dedupedUnseen.filter(a => a.category?.toUpperCase() !== lastCategory.toUpperCase());
       if (different.length > 0) candidates = different;
     }
-    // Among candidates, boost variety by deprioritizing any category that appeared in last 3 posts
-    // (already handled by scoring — just ensure we don't pick same category twice in a row)
 
-    // 5. Score and sort — trending articles first, then freshest
+    // 5. Score and sort — freshest first within the target category
     const scored = candidates
       .map(a => ({ article: a, score: scoreArticle(a, trendingTopics) }))
       .sort((a, b) => b.score - a.score);

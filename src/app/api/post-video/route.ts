@@ -328,10 +328,13 @@ export async function POST(req: NextRequest) {
       if (anySuccess) {
         publishStories(imageBuffer, WORKER_URL, WORKER_SECRET).catch(() => {});
         await logPost({
-          articleId: article.id, title: headline, url: article.url,
-          category: article.category, instagram: igResult, facebook: fbResult,
-          twitter: xResult,
-          postedAt: new Date().toISOString(), manualPost: true, postType: "video",
+          article_id: article.id, title: headline, url: article.url,
+          category: article.category,
+          source_name: article.sourceName || "PPP TV",
+          post_type: "video",
+          ig_success: igResult.success, ig_post_id: igResult.postId, ig_error: igResult.error,
+          fb_success: fbResult.success, fb_post_id: fbResult.postId, fb_error: fbResult.error,
+          posted_at: new Date().toISOString(),
         });
         alertPostSuccess({ title: headline, url: article.url, ig: igResult.success, fb: fbResult.success, x: xResult.success, category }).catch(() => {});
       } else {

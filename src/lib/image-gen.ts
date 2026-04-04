@@ -101,18 +101,44 @@ async function loadEmojiAsset(_code: string, segment: string): Promise<string | 
   return undefined;
 }
 
+const WORKER_URL = process.env.CLOUDFLARE_WORKER_URL || "https://auto-ppp-tv.euginemicah.workers.dev";
+
 async function fetchImageBuffer(url: string): Promise<Buffer | null> {
+  if (!url?.trim()) return null;
   try {
     if (url.startsWith("data:")) {
       const base64 = url.split(",")[1];
       return Buffer.from(base64, "base64");
     }
+
+    // Try direct fetch first
     const res = await fetch(url, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1)",
+        "Referer": "https://ppp-tv-site-final.vercel.app",
+      },
+      signal: AbortSignal.timeout(12000),
+    });
+    if (res.ok) {
+      const ct = res.headers.get("content-type") || "";
+      if (ct.startsWith("image/") || ct.startsWith("application/octet")) {
+        return Buffer.from(await res.arrayBuffer());
+      }
+    }
+
+    // Fallback: proxy through Cloudflare worker (bypasses hotlink protection)
+    const proxyRes = await fetch(`${WORKER_URL}/img?url=${encodeURIComponent(url)}`, {
       headers: { "User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1)" },
       signal: AbortSignal.timeout(12000),
     });
-    if (!res.ok) return null;
-    return Buffer.from(await res.arrayBuffer());
+    if (proxyRes.ok) {
+      const ct = proxyRes.headers.get("content-type") || "";
+      if (ct.startsWith("image/") || ct.startsWith("application/octet")) {
+        return Buffer.from(await proxyRes.arrayBuffer());
+      }
+    }
+
+    return null;
   } catch { return null; }
 }
 

@@ -1,9 +1,27 @@
 "use client";
+import { useState } from "react";
 import Shell from "../shell";
 
 const RED = "#E50914";
+const WORKER_URL = "https://auto-ppp-tv.euginemicah.workers.dev";
 
 export default function SettingsPage() {
+  const [workerStatus, setWorkerStatus] = useState<{ latency?: number; error?: string } | null>(null);
+  const [testingWorker, setTestingWorker] = useState(false);
+
+  async function testWorker() {
+    setTestingWorker(true);
+    setWorkerStatus(null);
+    const start = Date.now();
+    try {
+      const r = await fetch(WORKER_URL, { signal: AbortSignal.timeout(8000) });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      setWorkerStatus({ latency: Date.now() - start });
+    } catch (e: any) {
+      setWorkerStatus({ error: e.message || "Connection failed" });
+    }
+    setTestingWorker(false);
+  }
   const config = [
     { section: "Auto-Poster", items: [
       { key: "Schedule", value: "Every 15 minutes", note: "Configured in cloudflare/wrangler.toml" },
@@ -62,6 +80,21 @@ export default function SettingsPage() {
             Configure API keys in your Vercel project settings:<br />
             <code style={{ color: "#666", fontSize: 11 }}>FACEBOOK_ACCESS_TOKEN · FACEBOOK_PAGE_ID · INSTAGRAM_BUSINESS_ACCOUNT_ID · GEMINI_API_KEY · AUTOMATE_SECRET · CLOUDFLARE_WORKER_URL · WORKER_SECRET</code>
           </div>
+        </div>
+
+        <div style={{ background: "#1f1f1f", border: "1px solid #2a2a2a", borderRadius: 10, padding: "16px 18px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 2 }}>Worker Connection</div>
+            <div style={{ fontSize: 11, color: "#444" }}>{WORKER_URL}</div>
+            {workerStatus && (
+              <div style={{ fontSize: 12, marginTop: 4, color: workerStatus.error ? "#f87171" : "#4ade80", fontWeight: 600 }}>
+                {workerStatus.error ? `✗ ${workerStatus.error}` : `✓ ${workerStatus.latency}ms`}
+              </div>
+            )}
+          </div>
+          <button onClick={testWorker} disabled={testingWorker} style={{ background: testingWorker ? "#111" : "#0a0a0a", border: "1px solid #2a2a2a", color: testingWorker ? "#444" : "#888", borderRadius: 6, padding: "8px 16px", fontSize: 12, fontWeight: 600, cursor: testingWorker ? "not-allowed" : "pointer", whiteSpace: "nowrap" as const }}>
+            {testingWorker ? "Testing…" : "Test Worker"}
+          </button>
         </div>
       </div>
     </Shell>
