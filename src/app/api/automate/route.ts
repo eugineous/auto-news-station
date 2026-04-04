@@ -486,17 +486,33 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ...response, message: "No new Kenya articles to post" });
     }
 
-    // 4. Category rotation — avoid repeating the same category, prefer underrepresented ones
-    let candidates = dedupedUnseen;
+    // 4. Category rotation — strict round-robin, never repeat the last category
+    const CATEGORY_CYCLE = ["ENTERTAINMENT", "SPORTS", "MUSIC", "CELEBRITY", "TV & FILM", "LIFESTYLE", "GENERAL", "COMEDY", "FASHION"];
+    
+    // Find next category in cycle after lastCategory
+    let targetCategory: string | null = null;
     if (lastCategory) {
-      // First try: exclude the last posted category entirely
-      const different = dedupedUnseen.filter(a => a.category !== lastCategory);
+      const lastIdx = CATEGORY_CYCLE.findIndex(c => c === lastCategory.toUpperCase());
+      // Try each category in cycle order starting from next
+      for (let i = 1; i <= CATEGORY_CYCLE.length; i++) {
+        const nextCat = CATEGORY_CYCLE[(lastIdx + i) % CATEGORY_CYCLE.length];
+        if (dedupedUnseen.some(a => a.category?.toUpperCase() === nextCat)) {
+          targetCategory = nextCat;
+          break;
+        }
+      }
+    }
+
+    // Filter to target category, fall back to anything different from last
+    let candidates = dedupedUnseen;
+    if (targetCategory) {
+      candidates = dedupedUnseen.filter(a => a.category?.toUpperCase() === targetCategory);
+    } else if (lastCategory) {
+      const different = dedupedUnseen.filter(a => a.category?.toUpperCase() !== lastCategory.toUpperCase());
       if (different.length > 0) candidates = different;
     }
-    // Among candidates, boost variety by deprioritizing any category that appeared in last 3 posts
-    // (already handled by scoring — just ensure we don't pick same category twice in a row)
 
-    // 5. Score and sort — trending articles first, then freshest
+    // 5. Score and sort — freshest first within the target category
     const scored = candidates
       .map(a => ({ article: a, score: scoreArticle(a, trendingTopics) }))
       .sort((a, b) => b.score - a.score);
