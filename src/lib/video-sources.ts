@@ -432,6 +432,22 @@ const TIKTOK_ACCOUNTS: TikTokAccount[] = [
   { username: "bleacherreport",       displayName: "Bleacher Report",         category: "SPORTS",        postHourEAT: 20, isCreator: false },
   { username: "goal",                 displayName: "Goal Football",           category: "SPORTS",        postHourEAT: 7,  isCreator: false },
   { username: "433",                  displayName: "433 Football",            category: "SPORTS",        postHourEAT: 8,  isCreator: false },
+  { username: "footballdaily",        displayName: "Football Daily",          category: "SPORTS",        postHourEAT: 9,  isCreator: false },
+  { username: "footballhighlights",   displayName: "Football Highlights",     category: "SPORTS",        postHourEAT: 10, isCreator: false },
+  { username: "premierleague",        displayName: "Premier League",          category: "SPORTS",        postHourEAT: 11, isCreator: false },
+  { username: "championsleague",      displayName: "Champions League",        category: "SPORTS",        postHourEAT: 12, isCreator: false },
+  { username: "fifaworldcup",         displayName: "FIFA World Cup",          category: "SPORTS",        postHourEAT: 13, isCreator: false },
+  { username: "laligaen",             displayName: "La Liga",                 category: "SPORTS",        postHourEAT: 14, isCreator: false },
+  { username: "seriea",               displayName: "Serie A",                 category: "SPORTS",        postHourEAT: 15, isCreator: false },
+  { username: "bundesliga",           displayName: "Bundesliga",              category: "SPORTS",        postHourEAT: 16, isCreator: false },
+  { username: "realmadrid",           displayName: "Real Madrid",             category: "SPORTS",        postHourEAT: 17, isCreator: false },
+  { username: "fcbarcelona",          displayName: "FC Barcelona",            category: "SPORTS",        postHourEAT: 18, isCreator: false },
+  { username: "manchestercity",       displayName: "Manchester City",         category: "SPORTS",        postHourEAT: 19, isCreator: false },
+  { username: "manchesterunited",     displayName: "Manchester United",       category: "SPORTS",        postHourEAT: 20, isCreator: false },
+  { username: "chelseafc",            displayName: "Chelsea FC",              category: "SPORTS",        postHourEAT: 7,  isCreator: false },
+  { username: "arsenal",              displayName: "Arsenal FC",              category: "SPORTS",        postHourEAT: 8,  isCreator: false },
+  { username: "liverpoolfc",          displayName: "Liverpool FC",            category: "SPORTS",        postHourEAT: 9,  isCreator: false },
+  { username: "transfermarkt",        displayName: "Transfermarkt",           category: "SPORTS",        postHourEAT: 10, isCreator: false },
   { username: "nba",                  displayName: "NBA",                     category: "SPORTS",        postHourEAT: 9,  isCreator: false },
   { username: "nfl",                  displayName: "NFL",                     category: "SPORTS",        postHourEAT: 10, isCreator: false },
   // ── Comedy & Viral ────────────────────────────────────────────────────────
@@ -636,6 +652,12 @@ async function fetchTikWMTrending(): Promise<VideoItem[]> {
     { keyword: "celebrity news today", cat: "CELEBRITY", name: "TikTok Celebrity News" },
     { keyword: "viral video trending", cat: "ENTERTAINMENT", name: "TikTok Viral Trending" },
     { keyword: "africa entertainment viral", cat: "ENTERTAINMENT", name: "TikTok Africa Entertainment" },
+    { keyword: "football highlights today", cat: "SPORTS", name: "TikTok Football Highlights" },
+    { keyword: "premier league goals", cat: "SPORTS", name: "TikTok Premier League Goals" },
+    { keyword: "champions league highlights", cat: "SPORTS", name: "TikTok UCL Highlights" },
+    { keyword: "messi ronaldo skills", cat: "SPORTS", name: "TikTok Messi Ronaldo" },
+    { keyword: "football viral moment", cat: "SPORTS", name: "TikTok Football Viral" },
+    { keyword: "soccer goal compilation", cat: "SPORTS", name: "TikTok Soccer Goals" },
   ];
   const randomTerms = [...SEARCH_TERMS].sort(() => Math.random() - 0.5).slice(0, 6);
   const shuffled = [...GUARANTEED, ...randomTerms];
@@ -774,7 +796,7 @@ export async function fetchAllVideoSources(): Promise<VideoItem[]> {
     // TikWM search via worker proxy
     fetchTikWMTrending(),
     // Priority TikTok accounts — always scraped every run
-    ...["complex", "raptvusa", "worldstarhiphop", "hotnewhiphop", "theshaderoom", "tmz", "spmbuzz", "tukokenya", "433", "bleacherreport"]
+    ...["complex", "raptvusa", "worldstarhiphop", "hotnewhiphop", "theshaderoom", "tmz", "spmbuzz", "tukokenya", "433", "bleacherreport", "goal", "skysportsnews", "espn", "nba", "fabrizioromano", "footballdaily", "footballhighlights", "premierleague", "championsleague", "fifaworldcup"]
       .map(username => {
         const acct = TIKTOK_ACCOUNTS.find(a => a.username === username);
         return acct ? fetchTikTokAccountVideos(acct) : Promise.resolve([]);
