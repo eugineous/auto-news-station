@@ -321,6 +321,8 @@ export async function generateAIContent(
   article: Article,
   _options?: { isVideo?: boolean; videoType?: string; tone?: "formal" | "casual" | "hype" | "sheng"; language?: "en" | "sw" }
 ): Promise<AIContent> {
+  const tone = _options?.tone || "casual";
+  const language = _options?.language || "en";
   const hasGemini = !!process.env.GEMINI_API_KEY;
 
   const isSheng = tone === "sheng";
