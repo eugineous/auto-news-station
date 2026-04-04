@@ -2,7 +2,8 @@ name = "auto-ppp-tv"
 main = "worker.js"
 compatibility_date = "2024-01-01"
 
-# Cron: every 5 minutes (smart throttled) + daily cleanup
+# Cron: every 5 minutes (checks jitter — actually posts every 12-20 min randomly) + daily cleanup
+# Jitter logic in worker.js prevents shadow bans by randomizing actual post timing
 [triggers]
 crons = ["*/5 * * * *", "0 3 * * *"]
 

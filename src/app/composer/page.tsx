@@ -5,7 +5,7 @@ import Shell from "../shell";
 const PINK="#FF007A", GREEN="#4ade80", RED="#f87171", PURPLE="#a855f7";
 const ORANGE="#f97316", YELLOW="#facc15", CYAN="#22d3ee", BLUE="#3b82f6";
 
-type Tab = "compose" | "cockpit" | "sources" | "agent" | "queue";
+type Tab = "compose" | "studio" | "cockpit" | "sources" | "agent" | "queue";
 type PostStatus = "idle" | "posting" | "success" | "error";
 
 const FETCH_OPTS: RequestInit = { credentials: "include" };
@@ -845,6 +845,260 @@ function QueueTab({onCompose}:{onCompose:(url:string)=>void}){
   );
 }
 
+// ── Link Studio Tab ────────────────────────────────────────────────────────────
+// Paste any URL → AI generates headline + caption → pick ratio → preview + post
+const RATIOS: [string, string, number][] = [
+  ["9:16","Reels / TikTok / Stories",9/16],
+  ["4:5","IG Feed Portrait",4/5],
+  ["1:1","Square",1],
+  ["16:9","Landscape / YouTube",16/9],
+];
+
+function StudioTab({onCompose}:{onCompose:(url:string)=>void}){
+  const [url,setUrl]=useState("");
+  const [loading,setLoading]=useState(false);
+  const [ratio,setRatio]=useState("9:16");
+  const [headline,setHeadline]=useState("");
+  const [caption,setCaption]=useState("");
+  const [category,setCategory]=useState("GENERAL");
+  const [thumbUrl,setThumbUrl]=useState("");
+  const [thumbSrc,setThumbSrc]=useState<string|null>(null);
+  const [thumbLoading,setThumbLoading]=useState(false);
+  const [copied,setCopied]=useState(false);
+  const [error,setError]=useState("");
+
+  // Regenerate thumb preview when headline, category, thumbUrl, or ratio changes
+  useEffect(()=>{
+    if(!headline.trim()&&!thumbUrl)return;
+    setThumbLoading(true);
+    const t=setTimeout(()=>{
+      const src=`/api/preview-image?${new URLSearchParams({title:headline||"PPP TV KENYA",category,imageUrl:thumbUrl,ratio})}`;
+      const img=new Image();
+      img.onload=()=>{setThumbSrc(src);setThumbLoading(false);};
+      img.onerror=()=>{setThumbSrc(null);setThumbLoading(false);};
+      img.src=src;
+    },400);
+    return()=>clearTimeout(t);
+  },[headline,category,thumbUrl,ratio]);
+
+  async function fetchStudio(){
+    const target=url.trim();
+    if(!target)return;
+    setLoading(true);setError("");setThumbSrc(null);
+    try{
+      const r=await fetch("/api/preview-url",{credentials:"include",method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:target})});
+      const d=await r.json() as any;
+      if(d.error&&!d.ai){setError(d.message||d.error);setLoading(false);return;}
+      if(d.ai?.clickbaitTitle)setHeadline(d.ai.clickbaitTitle.toUpperCase().slice(0,120));
+      else if(d.scraped?.title)setHeadline(d.scraped.title.toUpperCase().slice(0,120));
+      if(d.ai?.caption)setCaption(d.ai.caption);
+      if(d.category)setCategory(d.category);
+      const img=d.scraped?.videoThumbnailUrl||d.scraped?.imageUrl||"";
+      if(img)setThumbUrl(img);
+    }catch(e:any){setError(e.message||"Fetch failed");}
+    setLoading(false);
+  }
+
+  async function copyCaption(){
+    await navigator.clipboard.writeText(caption);
+    setCopied(true);setTimeout(()=>setCopied(false),2000);
+  }
+
+  const catColor=CAT_COLORS[category]||"#555";
+  // Dimensions for preview box based on ratio
+  const ratioVal=RATIOS.find(r=>r[0]===ratio)?.[2]??1;
+  const previewW=260;
+  const previewH=Math.round(previewW/ratioVal);
+
+  return(
+    <div style={{display:"flex",flexDirection:"column" as const,gap:18}}>
+      {/* Header */}
+      <div style={{padding:"12px 14px",background:"#0a0a0a",border:"1px solid #1a1a1a",borderRadius:10}}>
+        <div style={{fontSize:11,fontWeight:800,letterSpacing:2,textTransform:"uppercase" as const,color:PINK,marginBottom:4}}>🎬 Link Studio</div>
+        <div style={{fontSize:11,color:"#444"}}>Paste any URL — AI writes the headline & caption. Pick your ratio. Preview & post.</div>
+      </div>
+
+      {/* URL Input */}
+      <div>
+        <label style={lbl}>URL — Article · Video · Tweet · TikTok · Instagram</label>
+        <div style={{display:"flex",gap:8}}>
+          <input
+            value={url}
+            onChange={e=>setUrl(e.target.value)}
+            onKeyDown={e=>{if(e.key==="Enter")fetchStudio();}}
+            placeholder="https://… paste any link"
+            style={{...inp,flex:1}}
+          />
+          <button
+            onClick={fetchStudio}
+            disabled={!url.trim()||loading}
+            style={{background:url.trim()&&!loading?PINK:"#111",border:"none",color:"#fff",borderRadius:7,padding:"11px 18px",fontSize:12,fontWeight:800,cursor:"pointer",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap" as const}}
+          >
+            {loading?<><Spin/>Generating…</>:"✨ Generate"}
+          </button>
+        </div>
+        {error&&<div style={{marginTop:5,fontSize:11,color:RED}}>{error}</div>}
+      </div>
+
+      {/* Ratio Selector */}
+      <div>
+        <label style={lbl}>Aspect Ratio</label>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap" as const}}>
+          {RATIOS.map(([r,desc])=>(
+            <button
+              key={r}
+              onClick={()=>setRatio(r)}
+              style={{
+                padding:"7px 14px",borderRadius:8,fontSize:11,fontWeight:700,cursor:"pointer",
+                border:`1px solid ${ratio===r?PINK:"#1a1a1a"}`,
+                background:ratio===r?PINK+"22":"#0a0a0a",
+                color:ratio===r?PINK:"#444",
+                transition:"all .15s",
+              }}
+            >
+              <div style={{fontSize:13,fontWeight:800}}>{r}</div>
+              <div style={{fontSize:9,opacity:.7}}>{desc}</div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Main preview + editing panel */}
+      {(headline||caption||thumbSrc)&&(
+        <div style={{display:"flex",gap:16,alignItems:"flex-start",flexWrap:"wrap" as const}}>
+          {/* Thumbnail preview */}
+          <div style={{flexShrink:0}}>
+            <label style={lbl}>Thumbnail Preview</label>
+            <div style={{
+              width:previewW,
+              height:previewH,
+              background:"#0a0a0a",
+              border:"1px solid #1a1a1a",
+              borderRadius:8,
+              overflow:"hidden",
+              position:"relative" as const,
+              display:"flex",
+              alignItems:"center",
+              justifyContent:"center",
+            }}>
+              {thumbLoading&&(
+                <div style={{position:"absolute" as const,inset:0,background:"rgba(0,0,0,.7)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:2}}>
+                  <Spin size={18}/>
+                </div>
+              )}
+              {thumbSrc?(
+                <img src={thumbSrc} alt="" style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>
+              ):(
+                <div style={{textAlign:"center" as const,color:"#333",fontSize:11}}>
+                  {headline?"Generating preview…":"Enter URL to generate"}
+                </div>
+              )}
+            </div>
+            <div style={{marginTop:6,display:"flex",gap:4,flexWrap:"wrap" as const}}>
+              {RATIOS.map(([r])=>(
+                <button key={r} onClick={()=>setRatio(r)}
+                  style={{fontSize:9,padding:"2px 7px",borderRadius:4,border:`1px solid ${ratio===r?PINK+"66":"#222"}`,background:"transparent",color:ratio===r?PINK:"#444",cursor:"pointer",fontWeight:700}}>
+                  {r}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Editing panel */}
+          <div style={{flex:1,minWidth:200,display:"flex",flexDirection:"column" as const,gap:12}}>
+            {/* Category */}
+            <div>
+              <label style={lbl}>Category</label>
+              <div style={{display:"flex",gap:4,flexWrap:"wrap" as const}}>
+                {CATS.slice(0,12).map(c=>(
+                  <button key={c} onClick={()=>setCategory(c)} style={{padding:"3px 9px",borderRadius:20,fontSize:9,fontWeight:600,cursor:"pointer",border:`1px solid ${category===c?catColor:"#1a1a1a"}`,background:category===c?catColor+"22":"#0a0a0a",color:category===c?catColor:"#555"}}>
+                    {c}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Headline */}
+            <div>
+              <label style={lbl}>Headline (thumbnail text)</label>
+              <input
+                value={headline}
+                onChange={e=>setHeadline(e.target.value.toUpperCase())}
+                placeholder="AI HEADLINE APPEARS HERE…"
+                maxLength={120}
+                style={{...inp,textTransform:"uppercase" as const,letterSpacing:1,fontWeight:700}}
+              />
+              <span style={{fontSize:9,color:"#333",marginTop:3,display:"block"}}>{headline.length}/120</span>
+            </div>
+
+            {/* Caption */}
+            <div>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:5}}>
+                <label style={{...lbl,marginBottom:0}}>Caption</label>
+                <button onClick={copyCaption} style={{background:"none",border:`1px solid #222`,color:copied?GREEN:"#555",borderRadius:4,padding:"2px 8px",fontSize:9,fontWeight:700,cursor:"pointer"}}>
+                  {copied?"✓ Copied":"Copy"}
+                </button>
+              </div>
+              <textarea
+                value={caption}
+                onChange={e=>setCaption(e.target.value)}
+                rows={7}
+                placeholder="AI caption appears here — edit freely…"
+                style={{...inp,resize:"vertical" as const,lineHeight:1.6,fontSize:12}}
+              />
+              <span style={{fontSize:9,color:"#333",marginTop:3,display:"block"}}>{caption.length} chars</span>
+            </div>
+
+            {/* Actions */}
+            <div style={{display:"flex",gap:8,flexWrap:"wrap" as const}}>
+              <button
+                onClick={()=>onCompose(url)}
+                disabled={!url.trim()}
+                style={{flex:1,padding:"11px 0",fontSize:11,fontWeight:800,letterSpacing:1,textTransform:"uppercase" as const,color:"#fff",background:url.trim()?PINK:"#111",border:"none",borderRadius:7,cursor:url.trim()?"pointer":"not-allowed",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}
+              >
+                🎬 Open in Compose & Post
+              </button>
+              <button
+                onClick={fetchStudio}
+                disabled={!url.trim()||loading}
+                style={{padding:"11px 14px",fontSize:11,fontWeight:800,color:PINK,background:PINK+"11",border:`1px solid ${PINK}44`,borderRadius:7,cursor:"pointer"}}
+              >
+                {loading?<Spin size={11}/>:"↻ Regenerate"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Thumbnail URL manual override */}
+      {headline&&(
+        <div>
+          <label style={lbl}>Custom Thumbnail URL <span style={{color:"#333",fontWeight:400,textTransform:"none" as const}}>(optional override)</span></label>
+          <input
+            value={thumbUrl}
+            onChange={e=>setThumbUrl(e.target.value)}
+            placeholder="https://… paste a different image URL"
+            style={{...inp}}
+          />
+        </div>
+      )}
+
+      {/* Tips */}
+      {!headline&&!loading&&(
+        <div style={{padding:"16px",background:"#050505",border:"1px solid #111",borderRadius:10,fontSize:11,color:"#333",lineHeight:1.7}}>
+          <div style={{color:"#555",fontWeight:700,marginBottom:8}}>What Link Studio does:</div>
+          <div>✦ Paste any article, tweet, TikTok, YouTube or Instagram link</div>
+          <div>✦ AI writes a punchy headline for the thumbnail</div>
+          <div>✦ AI writes a full journalist-style caption with emoji</div>
+          <div>✦ Pick your ratio: 9:16 for Reels/TikTok, 4:5 for IG feed, 1:1 square, 16:9 landscape</div>
+          <div>✦ Preview the branded thumbnail at your chosen ratio</div>
+          <div>✦ Hit "Open in Compose" to post it with one more click</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function ComposerPage(){
   const [tab,setTab]=useState<Tab>("compose");
@@ -855,7 +1109,7 @@ export default function ComposerPage(){
   function goCompose(url:string){setComposeUrl(url);setTab("compose");}
   function handleProgress(pct:number,step:string){setProgress({pct,step});}
 
-  const TABS:[Tab,string][]=[["compose","✏️ Compose"],["cockpit","⚡ Cockpit"],["sources","📡 Sources"],["agent","🤖 Agent"],["queue","📋 Queue"]];
+  const TABS:[Tab,string][]=[["compose","✏️ Compose"],["studio","🎬 Studio"],["cockpit","⚡ Cockpit"],["sources","📡 Sources"],["agent","🤖 Agent"],["queue","📋 Queue"]];
 
   return(
     <Shell>
@@ -866,12 +1120,13 @@ export default function ComposerPage(){
             <span style={{width:8,height:8,borderRadius:"50%",background:PINK,display:"inline-block",boxShadow:`0 0 8px ${PINK}`}}/>
             <span style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:28,letterSpacing:3}}>VIDEO OPS</span>
           </div>
-          <p style={{fontSize:11,color:"#333",margin:0}}>Compose · Monitor · Scrape · Agent · Queue</p>
+          <p style={{fontSize:11,color:"#333",margin:0}}>Compose · Studio · Monitor · Scrape · Agent · Queue</p>
         </div>
         <div style={{display:"flex",gap:3,marginBottom:22,padding:3,background:"#0a0a0a",borderRadius:8,border:"1px solid #1a1a1a"}}>
           {TABS.map(([t,label])=>(<button key={t} onClick={()=>setTab(t)} style={{flex:1,padding:"9px 0",fontSize:10,fontWeight:800,letterSpacing:1,textTransform:"uppercase" as const,border:"none",borderRadius:6,cursor:"pointer",transition:"all .15s",background:tab===t?PINK:"transparent",color:tab===t?"#fff":"#444"}}>{label}</button>))}
         </div>
         {tab==="compose"&&<ComposeTab key={composeUrl} initialUrl={composeUrl} onSuccess={()=>{setRefreshKey(k=>k+1);setTab("cockpit");}} onProgress={handleProgress}/>}
+        {tab==="studio"&&<StudioTab onCompose={goCompose}/>}
         {tab==="cockpit"&&<CockpitTab key={`cockpit-${refreshKey}`} onCompose={goCompose}/>}
         {tab==="sources"&&<SourcesTab key={`sources-${refreshKey}`} onCompose={goCompose}/>}
         {tab==="agent"&&<AgentTab key={`agent-${refreshKey}`} onCompose={goCompose}/>}

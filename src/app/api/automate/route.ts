@@ -494,7 +494,7 @@ export async function POST(req: NextRequest) {
     ];
 
     // Get all categories available in current unseen articles
-    const availableCats = [...new Set(dedupedUnseen.map(a => a.category?.toUpperCase()).filter(Boolean))];
+    const availableCats = Array.from(new Set(dedupedUnseen.map(a => a.category?.toUpperCase()).filter(Boolean)));
 
     // Find next category in cycle after lastCategory
     let targetCategory: string | null = null;

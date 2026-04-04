@@ -80,6 +80,23 @@ export default {
           { url: "https://deadline.com/feed/",                            name: "Deadline",              cat: "TV & FILM"     },
           { url: "https://www.billboard.com/feed/",                       name: "Billboard",             cat: "MUSIC"         },
           { url: "https://feeds.bbci.co.uk/news/entertainment_and_arts/rss.xml", name: "BBC Entertainment", cat: "ENTERTAINMENT" },
+          // Science & Tech (Gen Z loves this)
+          { url: "https://feeds.bbci.co.uk/news/science_and_environment/rss.xml", name: "BBC Science",          cat: "SCIENCE"        },
+          { url: "https://www.sciencedaily.com/rss/top/science.xml",              name: "Science Daily",         cat: "SCIENCE"        },
+          { url: "https://techcrunch.com/feed/",                                  name: "TechCrunch",            cat: "TECHNOLOGY"     },
+          { url: "https://www.theverge.com/rss/index.xml",                        name: "The Verge",             cat: "TECHNOLOGY"     },
+          { url: "https://feeds.arstechnica.com/arstechnica/technology-lab",      name: "Ars Technica",          cat: "TECHNOLOGY"     },
+          { url: "https://www.space.com/feeds/all",                               name: "Space.com",             cat: "SCIENCE"        },
+          // Lifestyle & Wellness
+          { url: "https://www.refinery29.com/en-us/rss.xml",                      name: "Refinery29",            cat: "LIFESTYLE"      },
+          { url: "https://www.buzzfeed.com/celebrity.xml",                        name: "BuzzFeed Celebrity",    cat: "CELEBRITY"      },
+          // More Sports
+          { url: "https://www.espn.com/espn/rss/news",                           name: "ESPN",                  cat: "SPORTS"         },
+          { url: "https://www.bleacherreport.com/articles/feed",                  name: "Bleacher Report",       cat: "SPORTS"         },
+          // More African entertainment
+          { url: "https://www.bellanaija.com/feed/",                              name: "BellaNaija Nigeria",    cat: "CELEBRITY"      },
+          { url: "https://pulse.ng/entertainment/feed/",                          name: "Pulse Nigeria",         cat: "CELEBRITY"      },
+          { url: "https://www.notjustok.com/feed/",                               name: "NotJustOk",             cat: "MUSIC"          },
         ];
 
         await Promise.allSettled(FEEDS.map(async feed => {
@@ -629,42 +646,66 @@ export default {
 
         // Method 1: TikWM user feed API (best - full audio, HD)
         const TIKTOK_ACCOUNTS = [
-          { u: "citizen.digital",       cat: "ENTERTAINMENT" },
-          { u: "tukokenya",             cat: "ENTERTAINMENT" },
-          { u: "ntvkenya",              cat: "ENTERTAINMENT" },
-          { u: "spmbuzz",               cat: "CELEBRITY"     },
-          { u: "pulselive_ke",          cat: "ENTERTAINMENT" },
-          { u: "ghafla",                cat: "CELEBRITY"     },
-          { u: "kenya.news.arena",      cat: "ENTERTAINMENT" },
-          { u: "thenewsguyke",          cat: "ENTERTAINMENT" },
-          { u: "sheyii_given",          cat: "ENTERTAINMENT" },
-          { u: "urbannewsgang",         cat: "ENTERTAINMENT" },
-          { u: "mutembeitv",            cat: "ENTERTAINMENT" },
-          { u: "bongotrending",         cat: "ENTERTAINMENT" },
-          { u: "tanzaniaentertainment", cat: "ENTERTAINMENT" },
-          { u: "harmonize_tz",          cat: "MUSIC"         },
-          { u: "zuchu_official",        cat: "MUSIC"         },
-          { u: "nbs_television",        cat: "ENTERTAINMENT" },
-          { u: "ntvuganda",             cat: "ENTERTAINMENT" },
-          { u: "bellanaija",            cat: "CELEBRITY"     },
-          { u: "pulse.nigeria",         cat: "ENTERTAINMENT" },
-          { u: "instablog9ja",          cat: "CELEBRITY"     },
-          { u: "tmz",                   cat: "CELEBRITY"     },
-          { u: "theshaderoom",          cat: "CELEBRITY"     },
-          { u: "enews",                 cat: "CELEBRITY"     },
-          { u: "complex",               cat: "MUSIC"         },
-          { u: "hotnewhiphop",          cat: "MUSIC"         },
-          { u: "billboard",             cat: "MUSIC"         },
-          { u: "espn",                  cat: "SPORTS"        },
-          { u: "skysportsnews",         cat: "SPORTS"        },
-          { u: "goal",                  cat: "SPORTS"        },
-          { u: "bleacherreport",        cat: "SPORTS"        },
-          { u: "variety",               cat: "TV & FILM"     },
-          { u: "aljazeeraenglish",      cat: "ENTERTAINMENT" },
-          { u: "bbcnews",               cat: "ENTERTAINMENT" },
-          { u: "cnn",                   cat: "ENTERTAINMENT" },
-          { u: "dylan.page",            cat: "ENTERTAINMENT" },
-          { u: "fabrizioromano",        cat: "SPORTS"        },
+          // Kenya & East Africa (primary sources)
+          { u: "citizen.digital",         cat: "ENTERTAINMENT" },
+          { u: "tukokenya",               cat: "ENTERTAINMENT" },
+          { u: "ntvkenya",                cat: "ENTERTAINMENT" },
+          { u: "spmbuzz",                 cat: "CELEBRITY"     },
+          { u: "pulselive_ke",            cat: "ENTERTAINMENT" },
+          { u: "ghafla",                  cat: "CELEBRITY"     },
+          { u: "kenya.news.arena",        cat: "ENTERTAINMENT" },
+          { u: "thenewsguyke",            cat: "ENTERTAINMENT" },
+          { u: "sheyii_given",            cat: "ENTERTAINMENT" },
+          { u: "urbannewsgang",           cat: "ENTERTAINMENT" },
+          { u: "mutembeitv",              cat: "ENTERTAINMENT" },
+          // Kenya music
+          { u: "khaligraphjones",         cat: "MUSIC"         },
+          { u: "nadia.mukami",            cat: "MUSIC"         },
+          { u: "sautisol",                cat: "MUSIC"         },
+          // Bongo/Tanzania
+          { u: "bongotrending",           cat: "ENTERTAINMENT" },
+          { u: "tanzaniaentertainment",   cat: "ENTERTAINMENT" },
+          { u: "harmonize_tz",            cat: "MUSIC"         },
+          { u: "zuchu_official",          cat: "MUSIC"         },
+          { u: "wcbwasafi",               cat: "MUSIC"         },
+          // East Africa
+          { u: "nbs_television",          cat: "ENTERTAINMENT" },
+          { u: "ntvuganda",               cat: "ENTERTAINMENT" },
+          // Africa wide
+          { u: "bellanaija",              cat: "CELEBRITY"     },
+          { u: "pulse.nigeria",           cat: "ENTERTAINMENT" },
+          { u: "instablog9ja",            cat: "CELEBRITY"     },
+          { u: "tundeednut",              cat: "CELEBRITY"     },
+          // US Celebrity (high engagement in Kenya)
+          { u: "tmz",                     cat: "CELEBRITY"     },
+          { u: "theshaderoom",            cat: "CELEBRITY"     },
+          { u: "enews",                   cat: "CELEBRITY"     },
+          // Music global
+          { u: "complex",                 cat: "MUSIC"         },
+          { u: "hotnewhiphop",            cat: "MUSIC"         },
+          { u: "billboard",               cat: "MUSIC"         },
+          { u: "colors",                  cat: "MUSIC"         },
+          // Sports
+          { u: "espn",                    cat: "SPORTS"        },
+          { u: "skysportsnews",           cat: "SPORTS"        },
+          { u: "goal",                    cat: "SPORTS"        },
+          { u: "bleacherreport",          cat: "SPORTS"        },
+          { u: "fabrizioromano",          cat: "SPORTS"        },
+          { u: "433",                     cat: "SPORTS"        },
+          // TV & Film
+          { u: "variety",                 cat: "TV & FILM"     },
+          { u: "trailers",                cat: "MOVIES"        },
+          // Science & Tech (Gen Z)
+          { u: "nasa",                    cat: "SCIENCE"       },
+          { u: "sciencemax",              cat: "SCIENCE"       },
+          { u: "techinsider",             cat: "TECHNOLOGY"    },
+          // Comedy
+          { u: "flaqo",                   cat: "COMEDY"        },
+          { u: "ericwainaina",            cat: "COMEDY"        },
+          // News
+          { u: "bbcnews",                 cat: "ENTERTAINMENT" },
+          { u: "aljazeeraenglish",        cat: "ENTERTAINMENT" },
+          { u: "dylan.page",              cat: "ENTERTAINMENT" },
         ];
         const selected = [...TIKTOK_ACCOUNTS].sort(() => Math.random() - 0.5).slice(0, 12);
         await Promise.allSettled(selected.map(async ({ u, cat }) => {
@@ -704,21 +745,43 @@ export default {
 
         // Method 2: TikTok trending via TikWM search (different quota from user feed)
         const SEARCH_TERMS = [
-          { kw: "kenya celebrity gossip",    cat: "CELEBRITY"     },
-          { kw: "nairobi viral 2025",        cat: "ENTERTAINMENT" },
-          { kw: "bongo music new",           cat: "MUSIC"         },
-          { kw: "tanzania entertainment",    cat: "ENTERTAINMENT" },
-          { kw: "nigeria celebrity",         cat: "CELEBRITY"     },
-          { kw: "afrobeats viral",           cat: "MUSIC"         },
-          { kw: "east africa viral",         cat: "ENTERTAINMENT" },
-          { kw: "celebrity news today",      cat: "CELEBRITY"     },
-          { kw: "football highlights today", cat: "SPORTS"        },
-          { kw: "music video official",      cat: "MUSIC"         },
-          { kw: "comedy skit viral",         cat: "COMEDY"        },
-          { kw: "nollywood 2025",            cat: "TV & FILM"     },
-          { kw: "premier league goal",       cat: "SPORTS"        },
-          { kw: "ugandan entertainment",     cat: "ENTERTAINMENT" },
-          { kw: "diamond platnumz new",      cat: "MUSIC"         },
+          // Kenya & East Africa
+          { kw: "kenya celebrity gossip 2025",    cat: "CELEBRITY"     },
+          { kw: "nairobi viral video 2025",        cat: "ENTERTAINMENT" },
+          { kw: "kenyan music new release",        cat: "MUSIC"         },
+          { kw: "sauti sol khaligraph",            cat: "MUSIC"         },
+          { kw: "kenyan tiktok viral",             cat: "ENTERTAINMENT" },
+          // Bongo/Tanzania
+          { kw: "bongo flava new 2025",            cat: "MUSIC"         },
+          { kw: "diamond platnumz zuchu 2025",     cat: "MUSIC"         },
+          { kw: "harmonize new song",              cat: "MUSIC"         },
+          { kw: "tanzania entertainment viral",    cat: "ENTERTAINMENT" },
+          // Africa wide
+          { kw: "afrobeats banger 2025",           cat: "MUSIC"         },
+          { kw: "burna boy wizkid davido",         cat: "MUSIC"         },
+          { kw: "africa celebrity drama",          cat: "CELEBRITY"     },
+          { kw: "nollywood movie scene viral",     cat: "TV & FILM"     },
+          { kw: "nigeria celebrity gossip",        cat: "CELEBRITY"     },
+          { kw: "east africa viral comedy",        cat: "COMEDY"        },
+          // Sports
+          { kw: "premier league goal highlights",  cat: "SPORTS"        },
+          { kw: "football skills viral 2025",      cat: "SPORTS"        },
+          { kw: "champions league goal",           cat: "SPORTS"        },
+          { kw: "eliud kipchoge marathon",         cat: "SPORTS"        },
+          { kw: "kenya athletics world record",    cat: "SPORTS"        },
+          // Science & Tech (Gen Z loves)
+          { kw: "ai technology mind blowing",      cat: "SCIENCE"       },
+          { kw: "space discovery nasa 2025",       cat: "SCIENCE"       },
+          { kw: "science experiment viral",        cat: "SCIENCE"       },
+          { kw: "electric vehicle tesla viral",    cat: "TECHNOLOGY"    },
+          // Entertainment global
+          { kw: "celebrity news viral today",      cat: "CELEBRITY"     },
+          { kw: "movie trailer new 2025",          cat: "MOVIES"        },
+          { kw: "netflix show viral scene",        cat: "TV & FILM"     },
+          { kw: "comedy skit hilarious viral",     cat: "COMEDY"        },
+          // Lifestyle
+          { kw: "nairobi food viral",              cat: "LIFESTYLE"     },
+          { kw: "africa fashion style viral",      cat: "LIFESTYLE"     },
         ];
         const searchSelected = [...SEARCH_TERMS].sort(() => Math.random() - 0.5).slice(0, 5);
         await Promise.allSettled(searchSelected.map(async ({ kw, cat }) => {
@@ -1097,62 +1160,75 @@ async function triggerAutomate(env) {
   const secret = env.AUTOMATE_SECRET;
   if (!secret) { console.warn("[auto-ppp-tv] AUTOMATE_SECRET not set"); return; }
 
-  // -- Smart throttle - shadowban prevention --
-  // Instagram hard limit: 50 posts/24h. We target max 25/day (safe zone).
-  // Cron fires every 5 min = 288 ticks/day. We skip most ticks randomly.
-  // Target: ~25 posts/day = fire roughly every 58 min on average.
-  // Strategy: check posts today, enforce max 25, add random jitter.
+  // -- Smart throttle + jitter — shadowban prevention --
+  // Strategy: post every 12-20 minutes RANDOMLY to mimic human behavior.
+  // Jitter prevents Instagram/TikTok pattern detection that leads to shadow bans.
+  // Cron fires every 5 min — most ticks are skipped, only fire when jitter window opens.
   const today = new Date().toISOString().slice(0, 10);
   const todayCountRaw = await env.SEEN_ARTICLES.get(`daily:${today}`);
   const todayCount = todayCountRaw ? parseInt(todayCountRaw) : 0;
 
-  // Hard cap: never exceed 50 posts/day (IG's actual limit)
-  const MAX_DAILY = 50;
+  // Hard cap: never exceed 48 posts/day (safe zone, IG limit is 50)
+  const MAX_DAILY = 48;
   if (todayCount >= MAX_DAILY) {
     console.log(`[throttle] Daily cap reached (${todayCount}/${MAX_DAILY}) - skipping`);
     return;
   }
 
-  // Time-based throttle: enforce minimum gap between posts
-  // As day fills up, increase minimum gap to spread posts evenly
   const lastPostTime = await env.SEEN_ARTICLES.get("last:post:time");
   const msSinceLast = lastPostTime ? Date.now() - parseInt(lastPostTime) : Infinity;
+  const minsSinceLast = msSinceLast / 60000;
   const hoursSinceLast = msSinceLast / 3600000;
 
-  // FORCE POST if no video in last 3 hours - override all throttles
-  const forcePost = hoursSinceLast >= 3;
+  // FORCE POST if nothing has been posted in 90 minutes — keeps station alive 24/7
+  const forcePost = hoursSinceLast >= 1.5;
 
   if (!forcePost) {
-    // Minimum gap: 3 minutes (allows ~5-min cadence with jitter)
-    const minGapMs = 3 * 60 * 1000;
-    if (msSinceLast < minGapMs) {
-      console.log(`[throttle] Too soon since last post (${Math.round(msSinceLast/60000)}m ago, min 3m) - skipping`);
+    // ── JITTER LOGIC: post every 12-20 minutes randomly ──────────────────────
+    // We store the next allowed post time so each post schedules the next one.
+    const nextPostTime = await env.SEEN_ARTICLES.get("next:post:time");
+    const now = Date.now();
+
+    if (nextPostTime && now < parseInt(nextPostTime)) {
+      const waitMin = Math.round((parseInt(nextPostTime) - now) / 60000);
+      console.log(`[jitter] Next post in ${waitMin}m - skipping this tick`);
+      return;
+    }
+
+    // Also enforce absolute minimum: never post twice within 10 minutes
+    const hardMinGap = 10 * 60 * 1000;
+    if (msSinceLast < hardMinGap) {
+      console.log(`[throttle] Too soon (${Math.round(minsSinceLast)}m ago, hard min 10m) - skipping`);
       return;
     }
   } else {
-    console.log(`[throttle] FORCE POST - no video in ${Math.round(hoursSinceLast * 60)}m`);
+    console.log(`[throttle] FORCE POST — no content in ${Math.round(hoursSinceLast * 60)}m`);
   }
 
-  // Random skip: only skip during off-peak, and only if not a force post
+  // Dead zone: 1am-5:45am EAT - no posting (audience is asleep)
   const hourEAT = (new Date().getUTCHours() + 3) % 24;
-  // Dead zone: 1am-5:50am EAT - skip entirely (unless force post)
+  const minuteEAT = new Date().getUTCMinutes();
   if (!forcePost && hourEAT >= 1 && hourEAT < 6) {
-    // Allow from 5:50am — check minutes too
-    const minuteUTC = new Date().getUTCMinutes();
-    const minuteEAT = minuteUTC; // minutes are same regardless of timezone
-    if (!(hourEAT === 5 && minuteEAT >= 50)) {
+    if (!(hourEAT === 5 && minuteEAT >= 45)) {
       console.log(`[throttle] Dead zone (${hourEAT}:${minuteEAT.toString().padStart(2,'0')} EAT) - skipping`);
       return;
     }
   }
-  // Peak hours (7am-10pm EAT): always post when eligible
-  // Off-peak: 80% chance - still post regularly outside peak
+
+  // Off-peak (6am-7am and 10pm-1am): 85% chance to post
   const isPeak = hourEAT >= 7 && hourEAT <= 22;
-  const postChance = isPeak ? 1.0 : 0.80;
+  const postChance = isPeak ? 1.0 : 0.85;
   if (!forcePost && Math.random() > postChance) {
-    console.log(`[throttle] Random skip (off-peak hour ${hourEAT}:00 EAT)`);
+    console.log(`[throttle] Random skip (off-peak ${hourEAT}:${minuteEAT.toString().padStart(2,'0')} EAT)`);
     return;
   }
+
+  // ── Schedule next post with jitter: 12-20 minutes from now ─────────────────
+  // Random jitter within window creates natural, human-like posting pattern
+  const jitterMinutes = 12 + Math.floor(Math.random() * 9); // 12, 13, 14... 20 min
+  const nextPostMs = Date.now() + jitterMinutes * 60 * 1000;
+  await env.SEEN_ARTICLES.put("next:post:time", String(nextPostMs), { expirationTtl: 30 * 60 }); // expires in 30min
+  console.log(`[jitter] Posting now — next post window opens in ${jitterMinutes}m`);
 
   // Record this post attempt time only after confirmed success (updated below)
   // await env.SEEN_ARTICLES.put("last:post:time", ...) - moved to after pipeline fires
