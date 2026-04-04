@@ -62,8 +62,9 @@ async function fetchSportsFromPPPTV(): Promise<Article[]> {
     // Image from enclosure or media:content
     const imgMatch = e.match(/<enclosure[^>]+url="([^"]+\.(?:jpg|jpeg|png|webp)[^"]*)"/)
       || e.match(/<media:content[^>]+url="([^"]+)"/)
-      || e.match(/<media:thumbnail[^>]+url="([^"]+)"/);
-    const imageUrl = imgMatch?.[1] || "";
+      || e.match(/<media:thumbnail[^>]+url="([^"]+)"/)
+      || e.match(/https?:\/\/[^\s"'<>]+\.(?:jpg|jpeg|png|webp)[^\s"'<>]*/);
+    const imageUrl = imgMatch?.[1] || imgMatch?.[0] || "";
 
     if (!link) continue;
     const id = createHash("sha256").update(link).digest("hex").slice(0, 16);
