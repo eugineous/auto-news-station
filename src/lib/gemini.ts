@@ -92,7 +92,32 @@ async function generateTitleWithGemini(article: Article): Promise<string> {
   return response.text?.trim().replace(/^["']|["']$/g, "").toUpperCase() ?? "";
 }
 
-// ── Caption system prompt (for NVIDIA) ───────────────────────────────────────
+// ── Entertainment caption system prompt (non-news categories) ────────────────
+const ENTERTAINMENT_CAPTION_SYSTEM = `You are the senior content writer at PPP TV Kenya — Kenya's #1 entertainment and sports media brand on Instagram and Facebook.
+
+PAGE IDENTITY: PPP TV Kenya is the go-to source for entertainment, sports, music, celebrity news, and lifestyle content in Kenya and East Africa. Every caption must sound like a premium Kenyan media brand with personality, voice, and editorial flair.
+
+STRUCTURE (3 parts, blank line between each):
+
+1. HOOK — The FIRST sentence MUST be a strong curiosity or emotional hook. Create tension, conflict, emotional pull, or a surprising reveal. Do NOT copy the headline. Do NOT start with the person's name followed by a boring fact. Make the reader feel something or want to know more.
+
+2. NARRATIVE — 2–3 sentences of context using verified facts from the article. Tell the story: what happened, who is involved, what it means. Write like a storyteller, not a press release. Use specific names, places, and details.
+
+3. CTA — End with a content-matched call to action that fits the story's intent. A CTA will be injected separately — leave a natural closing sentence that invites engagement.
+
+RULES — CRITICAL:
+- NO "Source:" lines anywhere in the caption body
+- NO URLs anywhere in the caption body
+- NO "PPP TV Verdict" or any generic branding slogans
+- NO ALL CAPS anywhere in the caption body
+- NO copying the article headline verbatim as the first sentence
+- No hashtags in caption (they go in the first comment)
+- Emojis are encouraged — use 2–4 relevant emojis to make the post feel human
+- Max 150 words total
+- Sound like a premium Kenyan media brand with personality and voice
+- Write in casual, engaging Kenyan English unless instructed otherwise`;
+
+// ── Caption system prompt (for news categories) ───────────────────────────────────────
 const CAPTION_SYSTEM = `You are the senior content writer at PPP TV Kenya — Kenya's #1 entertainment and sports media brand on Instagram and Facebook.
 
 PAGE IDENTITY: PPP TV Kenya is the go-to source for entertainment, sports, music, celebrity news, and lifestyle content in Kenya and East Africa. Every caption should reinforce this identity.
@@ -148,7 +173,7 @@ const HOOK_PATTERNS = [
 // These go in the FIRST COMMENT, not the caption (keeps caption clean, boosts reach)
 const HASHTAG_BANK: Record<string, string[]> = {
   MUSIC:         ["#KenyaMusic", "#AfrobeatKenya", "#NairobiMusic", "#KenyanArtist", "#EastAfricaMusic", "#PPPTVKenya", "#MusicKE", "#NewMusic"],
-  CELEBRITY:     ["#KenyaCelebrity", "#NairobiCelebs", "#KenyanCelebs", "#PPPTVKenya", "#NairobiGossip", "#KenyaEntertainment", "#CelebNews"],
+  CELEBRITY:     ["#KenyaCelebrity", "#KenyaCeleb", "#NairobiCelebs", "#KenyanCelebs", "#PPPTVKenya", "#NairobiGossip", "#KenyaEntertainment", "#CelebNews"],
   ENTERTAINMENT: ["#KenyaEntertainment", "#NairobiEntertainment", "#PPPTVKenya", "#KenyaNews", "#EntertainmentKE", "#NairobiLife"],
   "TV & FILM":   ["#KenyaTV", "#NairobiFilm", "#KenyanFilm", "#PPPTVKenya", "#AfricanFilm", "#KenyaMovies", "#NairobiCinema"],
   MOVIES:        ["#KenyaMovies", "#NairobiCinema", "#AfricanFilm", "#PPPTVKenya", "#MovieNews", "#FilmKenya"],
@@ -181,6 +206,96 @@ function getHashtags(category: string): string {
 
 function getEngagementCTA(): { cta: string; type: "debate" | "tag" | "save" | "share" | "poll" } {
   return ENGAGEMENT_CTAS[Math.floor(Math.random() * ENGAGEMENT_CTAS.length)];
+}
+
+// Drama/conflict keywords for CELEBRITY intent detection
+const CELEBRITY_DRAMA_KEYWORDS = ["split", "breakup", "break up", "fight", "beef", "drama", "cheating", "divorce", "exposed"];
+
+// Opportunity keywords for ENTERTAINMENT intent detection
+const ENTERTAINMENT_OPPORTUNITY_KEYWORDS = ["job", "hiring", "opportunity", "apply", "vacancy"];
+
+export function getMatchedCTA(
+  category: string,
+  title: string
+): { cta: string; type: "debate" | "tag" | "save" | "share" | "poll" } {
+  const cat = category.toUpperCase();
+  const titleLower = title.toLowerCase();
+
+  if (cat === "SPORTS") {
+    const sportsCTAs = [
+      { cta: "Who are you backing? 👇", type: "poll" as const },
+      { cta: "Drop your prediction below 🔥", type: "poll" as const },
+    ];
+    return sportsCTAs[Math.floor(Math.random() * sportsCTAs.length)];
+  }
+
+  if (cat === "CELEBRITY") {
+    const hasDrama = CELEBRITY_DRAMA_KEYWORDS.some(kw => titleLower.includes(kw));
+    if (hasDrama) {
+      const dramaCTAs = [
+        { cta: "Pick a side 👇", type: "debate" as const },
+        { cta: "Whose side are you on? 💬", type: "debate" as const },
+      ];
+      return dramaCTAs[Math.floor(Math.random() * dramaCTAs.length)];
+    }
+    return { cta: "What do you think? Drop it below 👇", type: "debate" as const };
+  }
+
+  if (cat === "MUSIC") {
+    const musicCTAs = [
+      { cta: "Stream it now — link in bio 🎵", type: "share" as const },
+      { cta: "Who's your favourite Kenyan artist? 👇", type: "debate" as const },
+    ];
+    return musicCTAs[Math.floor(Math.random() * musicCTAs.length)];
+  }
+
+  if (cat === "ENTERTAINMENT") {
+    const hasOpportunity = ENTERTAINMENT_OPPORTUNITY_KEYWORDS.some(kw => titleLower.includes(kw));
+    if (hasOpportunity) {
+      return { cta: "Send this to someone who needs to see it 👀", type: "share" as const };
+    }
+  }
+
+  if (cat === "TV & FILM" || cat === "MOVIES") {
+    const filmCTAs = [
+      { cta: "Would you watch this? 👇", type: "poll" as const },
+      { cta: "Tag someone to watch this with 🎬", type: "tag" as const },
+    ];
+    return filmCTAs[Math.floor(Math.random() * filmCTAs.length)];
+  }
+
+  return { cta: "What do you think? Drop it below 👇", type: "debate" as const };
+}
+
+// ── Entertainment caption prompt builder ─────────────────────────────────────
+function entertainmentCaptionPrompt(
+  article: Article,
+  hookPattern: string,
+  toneInstruction: string
+): string {
+  const content = (article.fullBody?.trim().length ?? 0) > 50
+    ? article.fullBody.trim().slice(0, 2000)
+    : (article.summary?.trim() ?? "");
+
+  return (
+    `Write a PPP TV Kenya caption for this ${article.category} story.\n\n` +
+    `CATEGORY: ${article.category}\n` +
+    `TITLE: ${article.title}\n` +
+    (article.summary ? `SUMMARY: ${article.summary.slice(0, 300)}\n` : "") +
+    (content ? `ARTICLE:\n${content}\n\n` : "\n") +
+    `HOOK APPROACH: ${hookPattern}\n\n` +
+    `TONE: ${toneInstruction}\n\n` +
+    `RULES:\n` +
+    `- First sentence MUST be a strong hook — curiosity, tension, or emotional pull\n` +
+    `- Follow with 2–3 sentences of narrative context using facts from the article\n` +
+    `- End with a natural closing line that invites engagement (CTA will be appended separately)\n` +
+    `- NO "Source:" lines — attribution goes in the first comment, not here\n` +
+    `- NO URLs in the caption body\n` +
+    `- NO "PPP TV Verdict" or generic branding slogans\n` +
+    `- NO ALL CAPS\n` +
+    `- Max 150 words\n` +
+    `- Reply with ONLY the caption text — no labels, no preamble`
+  );
 }
 
 // ── Credibility verification — cross-reference before posting ────────────────
@@ -248,21 +363,6 @@ export async function generateAIContent(
   const hasGemini = !!process.env.GEMINI_API_KEY;
   const hasNvidia = !!process.env.NVIDIA_API_KEY;
 
-  // ── Non-news: skip AI rewrite, use original content as-is ────────────────
-  if (!isNewsCategory(article.category)) {
-    const rawTitle = article.title.replace(/#\w+/g, "").replace(/\s{2,}/g, " ").trim().toUpperCase().slice(0, 120);
-    const rawCaption = (article.fullBody?.trim() || article.summary?.trim() || article.title).slice(0, 500);
-    const hashtags = getHashtags(article.category);
-    const cta = getEngagementCTA();
-    const caption = rawCaption + "\n\n" + cta.cta + "\n\nSource: " + (article.sourceName || "PPP TV Kenya");
-    return {
-      clickbaitTitle: rawTitle,
-      caption,
-      firstComment: hashtags,
-      engagementType: cta.type,
-    };
-  }
-
   const isSheng = tone === "sheng";
   const isSwahili = language === "sw";
 
@@ -282,33 +382,42 @@ export async function generateAIContent(
     ? `Write in formal journalistic style. Professional, factual, no slang, no emojis.`
     : `Write in casual, conversational Kenyan English. Friendly, relatable, engaging.`;
 
-  const captionPrompt =
-    `You MUST use Google Search for context before writing. This is always required.\n\n` +
-    `REQUIRED SEARCHES (do all before writing):\n` +
-    `1. Search: "${article.title}" — get full context and latest developments\n` +
-    `2. Search every person mentioned — verify their CURRENT title/role today\n` +
-    `3. Search any statistics or claims — confirm accuracy\n` +
-    `4. Search for any related recent news that adds context\n\n` +
-    `KNOWN KENYA FACTS (verify still current via search):\n` +
-    `- William Ruto = President of Kenya since September 2022\n` +
-    `- Uhuru Kenyatta = FORMER President (left office Sept 2022) — NEVER call him "President"\n` +
-    `- Raila Odinga = Opposition leader — has NEVER been president\n` +
-    `- Kithure Kindiki = Deputy President since October 2024\n` +
-    `- Rigathi Gachagua = FORMER Deputy President (impeached October 2024)\n\n` +
-    `AFTER RESEARCHING, write the PPP TV Kenya caption:\n\n` +
-    `TITLE: ${article.title}\n` +
-    `CATEGORY: ${article.category}\n` +
-    `SOURCE: ${article.sourceName || "PPP TV Kenya"}\n` +
-    `SOURCE URL: ${article.url}\n` +
-    (content ? `ARTICLE:\n${content}\n\n` : "\n") +
-    `LEDE APPROACH: ${hookPattern}\n\n` +
-    `TONE: ${toneInstruction}\n\n` +
-    `RULES:\n` +
-    `- Use your search results to add context and correct any outdated information\n` +
-    `- Only write facts confirmed by your Google Search results or the article above\n` +
-    `- No clickbait. No curiosity gaps. No invented details.\n` +
-    `- End with: "Source: ${article.sourceName || "PPP TV Kenya"}"\n` +
-    `- Reply with ONLY the caption text — no labels, no preamble.`;
+  const isNews = isNewsCategory(article.category);
+
+  // News categories use the journalist-style prompt with Google Search grounding.
+  // Non-news categories use the entertainment-specific prompt (hook + narrative + CTA).
+  const activeCaptionPrompt = isNews
+    ? (
+      `You MUST use Google Search for context before writing. This is always required.\n\n` +
+      `REQUIRED SEARCHES (do all before writing):\n` +
+      `1. Search: "${article.title}" — get full context and latest developments\n` +
+      `2. Search every person mentioned — verify their CURRENT title/role today\n` +
+      `3. Search any statistics or claims — confirm accuracy\n` +
+      `4. Search for any related recent news that adds context\n\n` +
+      `KNOWN KENYA FACTS (verify still current via search):\n` +
+      `- William Ruto = President of Kenya since September 2022\n` +
+      `- Uhuru Kenyatta = FORMER President (left office Sept 2022) — NEVER call him "President"\n` +
+      `- Raila Odinga = Opposition leader — has NEVER been president\n` +
+      `- Kithure Kindiki = Deputy President since October 2024\n` +
+      `- Rigathi Gachagua = FORMER Deputy President (impeached October 2024)\n\n` +
+      `AFTER RESEARCHING, write the PPP TV Kenya caption:\n\n` +
+      `TITLE: ${article.title}\n` +
+      `CATEGORY: ${article.category}\n` +
+      `SOURCE: ${article.sourceName || "PPP TV Kenya"}\n` +
+      `SOURCE URL: ${article.url}\n` +
+      (content ? `ARTICLE:\n${content}\n\n` : "\n") +
+      `LEDE APPROACH: ${hookPattern}\n\n` +
+      `TONE: ${toneInstruction}\n\n` +
+      `RULES:\n` +
+      `- Use your search results to add context and correct any outdated information\n` +
+      `- Only write facts confirmed by your Google Search results or the article above\n` +
+      `- No clickbait. No curiosity gaps. No invented details.\n` +
+      `- End with: "Source: ${article.sourceName || "PPP TV Kenya"}"\n` +
+      `- Reply with ONLY the caption text — no labels, no preamble.`
+    )
+    : entertainmentCaptionPrompt(article, hookPattern, toneInstruction);
+
+  const activeSystemPrompt = isNews ? CAPTION_SYSTEM : ENTERTAINMENT_CAPTION_SYSTEM;
 
   // Run title (Gemini+Search) and caption (Gemini+Search) in parallel
   // NVIDIA is used as fallback for caption only (it has no search capability)
@@ -318,9 +427,9 @@ export async function generateAIContent(
       const client = getGeminiClient(process.env.GEMINI_API_KEY!);
       const response = await client.models.generateContent({
         model: "gemini-2.5-flash",
-        contents: captionPrompt,
+        contents: activeCaptionPrompt,
         config: {
-          systemInstruction: CAPTION_SYSTEM,
+          systemInstruction: activeSystemPrompt,
           temperature: 0.6,
           maxOutputTokens: 800,
           tools: [{ googleSearch: {} }],
@@ -385,10 +494,25 @@ export async function generateAIContent(
   caption = caption.replace(/#\w+/g, "").replace(/\n{3,}/g, "\n\n").trim();
   if (!caption || caption.length < 40) caption = buildExcerptCaption(article);
 
-  // Build first comment: hashtags + engagement CTA (keeps caption clean)
-  const engagementCTA = getEngagementCTA();
+  // Strip source/URL clutter from caption body (applies to all categories)
+  // The news CAPTION_SYSTEM prompt instructs the model to end with "Source: [name]" —
+  // that line is intentionally stripped here and moved to firstComment instead.
+  caption = caption
+    .replace(/^Source:\s*.+$/gim, "")
+    .replace(/^Credit:\s*.+$/gim, "")
+    .replace(/https?:\/\/\S+/g, "")
+    .replace(/PPP TV Verdict[:\s]*/gi, "")
+    .replace(/The story is just getting started\.?/gi, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+  // Build first comment: hashtags + source attribution (keeps caption body clean)
+  // Non-news categories get a content-matched CTA; news categories keep the generic one
+  const engagementCTA = isNews
+    ? getEngagementCTA()
+    : getMatchedCTA(article.category, article.title);
   const hashtags = getHashtags(article.category);
-  const firstComment = `${hashtags}`;
+  const firstComment = `${hashtags}\n\nSource: ${article.sourceName || "PPP TV Kenya"} | ${article.url}`;
 
   // Inject engagement CTA into caption if AI didn't include one
   const hasCTA = /tag|comment|share|save|think|agree|disagree/i.test(caption.slice(-100));
@@ -442,9 +566,28 @@ function buildExcerptCaption(article: Article): string {
     })
     .join(" ")
     .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 500);
-  return (cleaned || article.title) + "\n\nWhat do you think? 👇";
+    .trim();
+
+  // Rewrite the excerpt so it doesn't start verbatim with the raw article body.
+  // Split into sentences and skip the first (which mirrors the headline), then
+  // lead with a context intro derived from the article title.
+  const sentences = cleaned.match(/[^.!?]+[.!?]+/g) ?? [];
+  let excerpt = "";
+  if (sentences.length > 1) {
+    // Use sentences 2+ as the body (skip the verbatim first sentence)
+    excerpt = sentences.slice(1).join(" ").trim().slice(0, 400);
+  }
+  if (!excerpt || excerpt.length < 30) {
+    // Fallback: use the full cleaned text but prefix with a context line
+    excerpt = cleaned.slice(0, 400);
+  }
+
+  // Build a short context intro from the title so the caption doesn't open verbatim
+  const titleIntro = article.title
+    ? `Here's what we know about "${article.title.slice(0, 80)}".\n\n`
+    : "";
+
+  return (titleIntro + (excerpt || article.title)).trim() + "\n\nWhat do you think? 👇";
 }
 
 function stripLeadingHeadline(caption: string, originalTitle: string): string {

@@ -42,11 +42,16 @@ export default function IntelligencePage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch("/api/post-log", { credentials: "include" })
-      .then(r => r.json())
-      .then((d: any) => setPosts(d.log || []))
-      .catch(() => {})
-      .finally(() => setLoading(false));
+    const load = () => {
+      fetch("/api/post-log", { credentials: "include" })
+        .then(r => r.json())
+        .then((d: any) => setPosts(d.log || []))
+        .catch(() => {})
+        .finally(() => setLoading(false));
+    };
+    load();
+    const t = setInterval(load, 30000);
+    return () => clearInterval(t);
   }, []);
 
   // Best posting hours (EAT)

@@ -5,6 +5,8 @@ import { generateImage } from "@/lib/image-gen";
 import { publish, publishStories, publishVideo } from "@/lib/publisher";
 import { Article, SchedulerResponse } from "@/lib/types";
 import { logPost, isArticleSeen, markArticleSeen, getBlacklist, getPostLog } from "@/lib/supabase";
+import { getMixBudget, updateBudget, selectPipeline, todayStr } from "@/lib/content-mix";
+import { getNextDueSeries, generateSeriesPost, logSeriesPost } from "@/lib/series-engine";
 
 export const maxDuration = 300;
 
@@ -266,10 +268,7 @@ async function postOneArticle(article: Article, isBreaking: boolean): Promise<{ 
     caption += "\n\nRead more 👇";
   }
 
-  // Always append article link
-  if (article.url && !caption.includes(article.url)) {
-    caption += `\n\n${article.url}`;
-  }
+  // URL attribution is handled in firstComment by generateAIContent — do not append inline
 
   // Generate thumbnail using AI clickbait title
   const articleWithAITitle = { ...article, title: clickbaitTitle };
@@ -436,6 +435,58 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    // ── Mix budget check — determine which pipeline to run ────────────────────
+    const today = todayStr();
+    const budget = await getMixBudget(today);
+    const pipeline = selectPipeline(budget);
+
+    // ── Series pipeline ───────────────────────────────────────────────────────
+    if (pipeline === "series") {
+      const now = new Date();
+      const dueSeries = await getNextDueSeries(now);
+      if (dueSeries) {
+        try {
+          const seriesPost = await generateSeriesPost(dueSeries);
+          const igPost = { platform: "instagram" as const, caption: seriesPost.caption, articleUrl: "" };
+          const fbPost = { platform: "facebook" as const, caption: seriesPost.caption, articleUrl: "" };
+
+          // Generate a placeholder 1x1 image buffer for the series post
+          const placeholderBuffer = Buffer.alloc(0);
+          const result = await publish({ ig: igPost, fb: fbPost }, placeholderBuffer).catch(() => ({
+            instagram: { success: false as const, postId: undefined, error: "publish failed" },
+            facebook: { success: false as const, postId: undefined, error: "publish failed" },
+            twitter: { success: false as const, postId: undefined, error: "skipped" },
+          }));
+
+          const anySuccess = result.instagram.success || result.facebook.success;
+          if (anySuccess) {
+            await Promise.all([
+              logPost({
+                title: seriesPost.seriesName,
+                category: dueSeries.category,
+                ig_success: result.instagram.success,
+                ig_post_id: result.instagram.postId,
+                ig_error: result.instagram.error,
+                fb_success: result.facebook.success,
+                fb_post_id: result.facebook.postId,
+                fb_error: result.facebook.error,
+                post_type: "image",
+              }),
+              logSeriesPost(dueSeries.id, seriesPost),
+              updateBudget(today, "series").catch(() => {}),
+            ]);
+            return NextResponse.json({ posted: 1, pipeline: "series", series: seriesPost.seriesName });
+          }
+        } catch (err: any) {
+          console.warn("[automate] series pipeline failed, falling through to viral_clip:", err.message);
+        }
+      }
+      // No series due or series failed — fall through to viral_clip
+    }
+
+    // ── Feature video pipeline — future work, fall through ───────────────────
+    // if (pipeline === "feature_video") { ... }
+
     // Fetch articles + trending topics in parallel
     const [all, trendingTopics, lastCategory] = await Promise.all([
       fetchArticles(50),

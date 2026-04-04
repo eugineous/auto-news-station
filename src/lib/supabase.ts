@@ -182,3 +182,161 @@ export async function getCategoryBreakdown(days = 7): Promise<{ category: string
       .sort((a, b) => b.count - a.count);
   } catch { return []; }
 }
+
+// ── Entertainment Reach Engine ────────────────────────────────────────────────
+
+export type EntertainmentCategory =
+  | "COMEDY"
+  | "MUSIC"
+  | "DANCE"
+  | "FASHION"
+  | "SPORTS_BANTER"
+  | "POP_CULTURE"
+  | "STREET_CONTENT"
+  | "CELEBRITY"
+  | "MEMES"
+  | "VIRAL_TRENDS"
+  | "TV_FILM"
+  | "INFLUENCERS"
+  | "EAST_AFRICA";
+
+export interface SeriesFormat {
+  id: string;
+  name: string;
+  emoji: string;
+  description: string;
+  cadence: "daily" | "weekly" | "biweekly";
+  day_of_week?: number | null;
+  time_eat: number;
+  content_type: "video" | "carousel" | "image";
+  category: EntertainmentCategory;
+  tone: "funny" | "informative" | "hype" | "debate" | "inspirational";
+  platforms: string[];
+  hashtag_set: string[];
+  template_prompt: string;
+  cover_style: "bold" | "minimal" | "meme" | "countdown";
+  source_keywords: string[];
+  active: boolean;
+  created_at: string;
+  last_posted_at?: string | null;
+  total_posts: number;
+}
+
+export interface MixBudgetRow {
+  date: string;
+  viral_clip_count: number;
+  series_count: number;
+  feature_video_count: number;
+  daily_target: number;
+  last_updated: string;
+}
+
+export interface SeriesPostLogEntry {
+  id?: string;
+  format_id: string;
+  series_name: string;
+  week_number: number;
+  platforms: string[];
+  caption: string;
+  result?: Record<string, unknown> | null;
+  created_at?: string;
+}
+
+// ── series_formats CRUD ───────────────────────────────────────────────────────
+
+export async function getSeriesFormats(): Promise<SeriesFormat[]> {
+  try {
+    const { data } = await supabaseAdmin
+      .from("series_formats")
+      .select("*")
+      .order("name", { ascending: true });
+    return (data as SeriesFormat[]) || [];
+  } catch { return []; }
+}
+
+export async function getSeriesFormatById(id: string): Promise<SeriesFormat | null> {
+  try {
+    const { data } = await supabaseAdmin
+      .from("series_formats")
+      .select("*")
+      .eq("id", id)
+      .maybeSingle();
+    return (data as SeriesFormat) ?? null;
+  } catch { return null; }
+}
+
+export async function upsertSeriesFormat(format: Partial<SeriesFormat>): Promise<void> {
+  try {
+    await supabaseAdmin
+      .from("series_formats")
+      .upsert(format, { onConflict: "id" });
+  } catch (err) {
+    console.warn("[supabase] upsertSeriesFormat failed:", err);
+  }
+}
+
+export async function updateSeriesFormatStatus(id: string, active: boolean): Promise<void> {
+  try {
+    await supabaseAdmin
+      .from("series_formats")
+      .update({ active })
+      .eq("id", id);
+  } catch (err) {
+    console.warn("[supabase] updateSeriesFormatStatus failed:", err);
+  }
+}
+
+// ── mix_budget CRUD ───────────────────────────────────────────────────────────
+
+export async function getMixBudgetRow(date: string): Promise<MixBudgetRow | null> {
+  try {
+    const { data } = await supabaseAdmin
+      .from("mix_budget")
+      .select("*")
+      .eq("date", date)
+      .maybeSingle();
+    return (data as MixBudgetRow) ?? null;
+  } catch { return null; }
+}
+
+export async function upsertMixBudget(row: Partial<MixBudgetRow>): Promise<void> {
+  try {
+    await supabaseAdmin
+      .from("mix_budget")
+      .upsert({ ...row, last_updated: new Date().toISOString() }, { onConflict: "date" });
+  } catch (err) {
+    console.warn("[supabase] upsertMixBudget failed:", err);
+  }
+}
+
+// ── series_post_log CRUD ──────────────────────────────────────────────────────
+
+export async function logSeriesPost(entry: SeriesPostLogEntry): Promise<void> {
+  try {
+    await supabaseAdmin.from("series_post_log").insert({
+      format_id: entry.format_id,
+      series_name: entry.series_name,
+      week_number: entry.week_number,
+      platforms: entry.platforms,
+      caption: entry.caption,
+      result: entry.result ?? null,
+    });
+  } catch (err) {
+    console.warn("[supabase] logSeriesPost failed:", err);
+  }
+}
+
+export async function getSeriesPostLog(
+  formatId: string,
+  limit = 20,
+): Promise<SeriesPostLogEntry[]> {
+  try {
+    const { data } = await supabaseAdmin
+      .from("series_post_log")
+      .select("*")
+      .eq("format_id", formatId)
+      .order("created_at", { ascending: false })
+      .limit(limit);
+    return (data as SeriesPostLogEntry[]) || [];
+  } catch { return []; }
+}

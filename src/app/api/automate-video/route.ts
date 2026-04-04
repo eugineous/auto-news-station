@@ -201,7 +201,10 @@ export async function POST(req: NextRequest) {
     const fbToken = process.env.FACEBOOK_ACCESS_TOKEN;
     const fbPageId = process.env.FACEBOOK_PAGE_ID;
 
-    if (!igToken || !igAccountId || !fbToken || !fbPageId) {
+    // Dry-run: return video candidates without posting (used by Sources tab preview)
+    const isDryRun = req.headers.get("X-Dry-Run") === "true";
+
+    if (!isDryRun && (!igToken || !igAccountId || !fbToken || !fbPageId)) {
       return NextResponse.json({ error: "Social credentials not configured" }, { status: 500 });
     }
 
@@ -228,6 +231,18 @@ export async function POST(req: NextRequest) {
 
     if (mergedVideos.length === 0) {
       return NextResponse.json({ posted: 0, message: "No videos found from any source" });
+    }
+
+    // Dry-run: return candidates without posting (Sources tab preview)
+    if (isDryRun) {
+      return NextResponse.json({
+        videos: mergedVideos.slice(0, 30).map(v => ({
+          id: v.id, title: v.title, url: v.url,
+          thumbnail: v.thumbnail, sourceName: v.sourceName,
+          sourceType: v.sourceType, category: v.category,
+          publishedAt: v.publishedAt, directVideoUrl: (v as any).directVideoUrl,
+        })),
+      });
     }
 
     // ── Blacklist filter (Supabase) ───────────────────────────────────────────

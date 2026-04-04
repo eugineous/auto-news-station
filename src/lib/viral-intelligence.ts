@@ -215,3 +215,156 @@ export function isOptimalPostingTime(category: string): boolean {
   // Allow 1 hour window around each peak
   return peaks.some(peak => Math.abs(hourEAT - peak) <= 1);
 }
+
+// ── Entertainment Reach Engine Extensions ─────────────────────────────────────
+
+/**
+ * 13 entertainment categories for PPP TV Kenya content classification.
+ * Re-exported from supabase.ts for convenience.
+ */
+export type EntertainmentCategory =
+  | "COMEDY"
+  | "MUSIC"
+  | "DANCE"
+  | "FASHION"
+  | "SPORTS_BANTER"
+  | "POP_CULTURE"
+  | "STREET_CONTENT"
+  | "CELEBRITY"
+  | "MEMES"
+  | "VIRAL_TRENDS"
+  | "TV_FILM"
+  | "INFLUENCERS"
+  | "EAST_AFRICA";
+
+/**
+ * Detailed viral score breakdown for entertainment content.
+ */
+export interface EntertainmentViralScore {
+  /** Weighted total score 0-100 */
+  total: number;
+  /** Recency score 0-100; 0 for content older than 48h */
+  recency: number;
+  /** Engagement score 0-100 based on plays/likes/shares/comments */
+  engagement: number;
+  /** Kenya relevance 0-100; +25 boost for Kenyan content */
+  kenyaRelevance: number;
+  /** Category heat score 0-100 based on current popularity weights */
+  categoryHeat: number;
+  /** Trend match score 0-100; pass 0 if no trending topics available */
+  trendMatch: number;
+}
+
+/** Category heat weights — higher = hotter right now */
+const CATEGORY_HEAT_MAP: Record<EntertainmentCategory, number> = {
+  COMEDY:        85,
+  MUSIC:         90,
+  DANCE:         80,
+  FASHION:       75,
+  SPORTS_BANTER: 85,
+  POP_CULTURE:   70,
+  STREET_CONTENT:80,
+  CELEBRITY:     90,
+  MEMES:         95,
+  VIRAL_TRENDS:  95,
+  TV_FILM:       65,
+  INFLUENCERS:   70,
+  EAST_AFRICA:   75,
+};
+
+/**
+ * Returns +25 if the item has Kenyan signals (isKenyan flag, or title/sourceName
+ * contains "kenya", "nairobi", or "kenyan"), otherwise 0.
+ */
+export function getKenyaBoost(item: {
+  isKenyan?: boolean;
+  title: string;
+  sourceName?: string;
+}): number {
+  if (item.isKenyan) return 25;
+  const haystack = `${item.title} ${item.sourceName || ""}`.toLowerCase();
+  if (/kenya|nairobi|kenyan/.test(haystack)) return 25;
+  return 0;
+}
+
+/**
+ * Returns the heat score (0-100) for a given EntertainmentCategory.
+ * Falls back to 70 for unknown categories.
+ */
+export function getCategoryHeat(category: EntertainmentCategory | string): number {
+  return CATEGORY_HEAT_MAP[category as EntertainmentCategory] ?? 70;
+}
+
+/**
+ * Calculates a detailed entertainment viral score using the weighted formula:
+ *   total = recency×0.35 + engagement×0.30 + kenyaRelevance×0.20 + categoryHeat×0.10 + trendMatch×0.05
+ *
+ * All output fields are clamped to [0, 100].
+ * Content older than 48h receives recency = 0.
+ */
+export function calculateEntertainmentViralScore(item: {
+  publishedAt: Date;
+  playCount?: number;
+  likeCount?: number;
+  shareCount?: number;
+  commentCount?: number;
+  title: string;
+  category: EntertainmentCategory | string;
+  isKenyan?: boolean;
+  sourceName?: string;
+  trendMatch?: number;
+}): EntertainmentViralScore {
+  const ageMs = Date.now() - item.publishedAt.getTime();
+  const ageHours = ageMs / 3_600_000;
+
+  // Recency: 0 for content older than 48h, exponential decay otherwise
+  const recency = ageHours > 48
+    ? 0
+    : clamp(Math.round(100 * Math.exp(-ageHours / 12)));
+
+  // Engagement score
+  const plays    = item.playCount    || 0;
+  const likes    = item.likeCount    || 0;
+  const shares   = item.shareCount   || 0;
+  const comments = item.commentCount || 0;
+  const rawEng = plays > 0
+    ? Math.round(((likes + shares * 3 + comments * 2) / Math.max(plays, 1)) * 1000)
+    : Math.round((likes + shares * 3 + comments * 2) / 100);
+  const engagement = clamp(rawEng);
+
+  // Kenya relevance: base 50, +25 boost for Kenyan signals, clamped to 100
+  const boost = getKenyaBoost({ isKenyan: item.isKenyan, title: item.title, sourceName: item.sourceName });
+  const kenyaRelevance = clamp(50 + boost);
+
+  // Category heat
+  const categoryHeat = clamp(getCategoryHeat(item.category));
+
+  // Trend match (caller-supplied, default 0)
+  const trendMatch = clamp(item.trendMatch ?? 0);
+
+  // Weighted total
+  const total = clamp(Math.round(
+    recency      * 0.35 +
+    engagement   * 0.30 +
+    kenyaRelevance * 0.20 +
+    categoryHeat * 0.10 +
+    trendMatch   * 0.05
+  ));
+
+  return { total, recency, engagement, kenyaRelevance, categoryHeat, trendMatch };
+}
+
+/** Clamps a number to [0, 100]. */
+function clamp(n: number): number {
+  return Math.max(0, Math.min(100, n));
+}
+
+/**
+ * Sorts up to 100 ViralItems by viralScore descending.
+ * Items beyond the first 100 are discarded.
+ */
+export function rankBatch(items: ViralItem[]): ViralItem[] {
+  return items
+    .slice(0, 100)
+    .sort((a, b) => b.viralScore - a.viralScore);
+}

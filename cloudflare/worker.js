@@ -528,9 +528,87 @@ export default {
       } catch (err) { return json({ error: err.message }, 500); }
     }
 
-    // ── /r2-health ────────────────────────────────────────────────────────────
-    if (url.pathname === "/r2-health") {
+    // ── /tikwm-account ────────────────────────────────────────────────────────
+    // Proxies TikTok account video fetch through CF IPs (Vercel IPs are blocked by TikWM)
+    if (url.pathname === "/tikwm-account" && request.method === "POST") {
       if (!authed) return new Response("Unauthorized", { status: 401 });
+      try {
+        const { username, count = 10 } = await request.json();
+        if (!username) return json({ error: "username required" }, 400);
+        const body = new URLSearchParams({ unique_id: username, count: String(count), cursor: "0" });
+        const r = await fetch("https://www.tikwm.com/api/user/posts", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": "Mozilla/5.0 (compatible; PPPTVBot/1.0)" },
+          body: body.toString(),
+          signal: AbortSignal.timeout(15000),
+        });
+        if (!r.ok) return json({ videos: [] });
+        const data = await r.json();
+        if (data.code !== 0 || !data.data?.videos) return json({ videos: [] });
+        return json({ videos: data.data.videos });
+      } catch (err) { return json({ videos: [], error: err.message }); }
+    }
+
+    // ── /tikwm-search ─────────────────────────────────────────────────────────
+    // Proxies TikTok keyword search through CF IPs
+    if (url.pathname === "/tikwm-search" && request.method === "POST") {
+      if (!authed) return new Response("Unauthorized", { status: 401 });
+      try {
+        const { keyword, count = 20 } = await request.json();
+        if (!keyword) return json({ error: "keyword required" }, 400);
+        const body = new URLSearchParams({ keywords: keyword, count: String(count), cursor: "0", HD: "1" });
+        const r = await fetch("https://www.tikwm.com/api/feed/search", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": "Mozilla/5.0 (compatible; PPPTVBot/1.0)" },
+          body: body.toString(),
+          signal: AbortSignal.timeout(15000),
+        });
+        if (!r.ok) return json({ videos: [] });
+        const data = await r.json();
+        return json({ videos: data.data?.videos || [] });
+      } catch (err) { return json({ videos: [], error: err.message }); }
+    }
+
+    // ── /resolve-cobalt ───────────────────────────────────────────────────────
+    // Resolves a video URL to a direct MP4 using Cobalt v10 API
+    if (url.pathname === "/resolve-cobalt" && request.method === "POST") {
+      if (!authed) return new Response("Unauthorized", { status: 401 });
+      try {
+        const { videoUrl } = await request.json();
+        if (!videoUrl) return json({ error: "videoUrl required" }, 400);
+
+        // Cobalt v10 public instances — try each until one works
+        const COBALT_INSTANCES = [
+          "https://api.cobalt.tools",
+          "https://cobalt.ggtyler.dev",
+          "https://cobalt.api.timelessnesses.me",
+          "https://cobaltapi.orangelabeler.com",
+        ];
+
+        for (const instance of COBALT_INSTANCES) {
+          try {
+            const r = await fetch(`${instance}/`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "Accept": "application/json" },
+              body: JSON.stringify({ url: videoUrl, videoQuality: "720", downloadMode: "auto", filenameStyle: "basic" }),
+              signal: AbortSignal.timeout(15000),
+            });
+            if (!r.ok) continue;
+            const data = await r.json();
+            if (data.status === "tunnel" || data.status === "redirect" || data.status === "stream") {
+              return json({ success: true, url: data.url });
+            }
+            if (data.status === "picker" && data.picker?.[0]?.url) {
+              return json({ success: true, url: data.picker[0].url });
+            }
+          } catch { continue; }
+        }
+        return json({ error: "All Cobalt instances failed" }, 502);
+      } catch (err) { return json({ error: err.message }, 500); }
+    }
+
+    // ── /r2-health ────────────────────────────────────────────────────────────
+    if (url.pathname === "/r2-health") {      if (!authed) return new Response("Unauthorized", { status: 401 });
       try {
         const testKey = `health-check-${Date.now()}`;
         await env.VIDEOS.put(testKey, "ok", { expirationTtl: 60 });

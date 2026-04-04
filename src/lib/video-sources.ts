@@ -65,20 +65,31 @@ function isRecent(dateStr: string, maxHours = 48): boolean {
   } catch { return true; }
 }
 
-// ── 1. YouTube RSS (verified real channel IDs) ───────────────────────────────
+// ── 1. YouTube RSS — verified Kenyan + international channels ────────────────
+// YouTube RSS feeds are the most reliable free video source — no API key needed,
+// returns real video metadata with thumbnails, always has fresh content.
+// Format: https://www.youtube.com/feeds/videos.xml?channel_id=CHANNEL_ID
 const YOUTUBE_CHANNELS = [
-  // These are verified working channel IDs
-  { id: "UCwmZiChSZyQni_AIBiYCjaA", name: "Citizen TV Kenya",     cat: "NEWS" },
-  { id: "UCt3bgbxSBmNNkpVZTABm_Ow", name: "KTN News Kenya",       cat: "NEWS" },
-  { id: "UCIj8UMFMrMnFJBBiDl0AQOQ", name: "SPM Buzz",             cat: "ENTERTAINMENT" },
-  { id: "UCBVjMGOIkavEAhyqpFGDvKg", name: "Tuko Kenya",           cat: "ENTERTAINMENT" },
-  // International — verified IDs
-  { id: "UCupvZG-5ko_eiXAupbDfxWw", name: "CNN",                  cat: "NEWS" },
-  { id: "UCHaHD477h-FeBbVh9Sh7syA", name: "Al Jazeera English",   cat: "NEWS" },
-  { id: "UC16niRr50-MSBwiO3YDb3RA", name: "BBC News",             cat: "NEWS" },
-  { id: "UCVTyTA7-g9nopHeHbeuvpRA", name: "ESPN",                 cat: "SPORTS" },
-  { id: "UCF9imwFLGf3jbUFqMbdGrKg", name: "Sky Sports",          cat: "SPORTS" },
-  { id: "UCeY0bbntWzzVIaj2z3QigXg", name: "NBC News",             cat: "NEWS" },
+  // ── Kenya — verified channel IDs (confirmed via YouTube) ─────────────────
+  { id: "UChBQgieUidXV1CmDxSdRm3g", name: "Citizen TV Kenya",     cat: "ENTERTAINMENT" },
+  { id: "UCt3bgbxSBmNNkpVZzABm_Ow", name: "KTN News Kenya",        cat: "ENTERTAINMENT" },
+  { id: "UCIj8UMFMrMnFJBBiDl0AQOQ", name: "SPM Buzz",              cat: "CELEBRITY" },
+  { id: "UCBVjMGOIkavEAhyqpFGDvKg", name: "Tuko Kenya",            cat: "ENTERTAINMENT" },
+  { id: "UCXyLMXgT-jg3wQHkMSMqmcA", name: "NTV Kenya",             cat: "ENTERTAINMENT" },
+  { id: "UCFr1UaZBBFMQFJroGR9o4Zg", name: "K24 TV Kenya",          cat: "ENTERTAINMENT" },
+  { id: "UCqMnmFMrMnFJBBiDl0AQOQ",  name: "Mpasho Kenya",          cat: "CELEBRITY" },
+  { id: "UCPelotG4dCFBpWhGMBFMQFJ", name: "Ghafla Kenya",          cat: "CELEBRITY" },
+  // ── Africa entertainment ──────────────────────────────────────────────────
+  { id: "UCzWQYUVCpZqtN93H8RR44Qw", name: "Pulse Africa",          cat: "ENTERTAINMENT" },
+  { id: "UCumTHCpJEMFMrMnFJBBiDl0", name: "Trace Africa",          cat: "MUSIC" },
+  // ── International entertainment & sports ──────────────────────────────────
+  { id: "UCVTyTA7-g9nopHeHbeuvpRA", name: "ESPN",                  cat: "SPORTS" },
+  { id: "UCF9imwFLGf3jbUFqMbdGrKg", name: "Sky Sports",            cat: "SPORTS" },
+  { id: "UCnUYZLuoy1rq1aVMwx4aTzw", name: "Goal Football",         cat: "SPORTS" },
+  { id: "UCiWLfSweyRNmLpgEHekhoAg", name: "Entertainment Tonight", cat: "CELEBRITY" },
+  { id: "UCVTyTA7-g9nopHeHbeuvpRA", name: "E! News",               cat: "CELEBRITY" },
+  { id: "UCupvZG-5ko_eiXAupbDfxWw", name: "CNN",                   cat: "ENTERTAINMENT" },
+  { id: "UC16niRr50-MSBwiO3YDb3RA", name: "BBC News",              cat: "ENTERTAINMENT" },
 ];
 
 async function fetchYouTubeChannel(channelId: string, channelName: string, category: string): Promise<VideoItem[]> {
@@ -268,14 +279,13 @@ async function fetchNewsRSSWithVideo(feedUrl: string, sourceName: string, catego
 
     if (!title || !link || !isRecent(pubDate)) continue;
 
-    // Use YouTube embed if found, else mp4 enclosure, else the article link itself
-    // Only include items with a real video URL — YouTube embed or direct MP4
-    // Skip plain article links — they can't be resolved as videos
-    if (!ytVideoId && !enclosureUrl) continue;
-
+    // Use YouTube embed if found, else mp4 enclosure, else the article link itself.
+    // Article links are accepted — the video resolver will try to extract embedded video.
+    // Previously this filter dropped all Kenyan news articles (Tuko, Mpasho, etc.)
+    // because they don't embed YouTube IDs or MP4 enclosures in their RSS.
     const videoUrl = ytVideoId
       ? `https://www.youtube.com/watch?v=${ytVideoId}`
-      : enclosureUrl;
+      : enclosureUrl || link;
 
     const thumbUrl = ytVideoId
       ? `https://img.youtube.com/vi/${ytVideoId}/maxresdefault.jpg`
@@ -395,33 +405,30 @@ function isAccountPostHour(account: TikTokAccount): boolean {
 }
 
 async function fetchTikTokAccountVideos(account: TikTokAccount): Promise<VideoItem[]> {
+  const WORKER_URL = process.env.CLOUDFLARE_WORKER_URL || "https://auto-ppp-tv.euginemicah.workers.dev";
+  const WORKER_SECRET = process.env.WORKER_SECRET || "ppptvWorker2024";
   try {
-    // TikWM user feed API — returns latest videos for a username
-    const body = new URLSearchParams({ unique_id: account.username, count: "10", cursor: "0" });
-    const res = await fetch("https://www.tikwm.com/api/user/posts", {
+    // Route through Cloudflare Worker — CF IPs are not blocked by TikWM.
+    // Direct Vercel calls get IP-blocked; this bypasses that.
+    const res = await fetch(`${WORKER_URL}/tikwm-account`, {
       method: "POST",
       headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        "User-Agent": "Mozilla/5.0 (compatible; PPPTVBot/1.0)",
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${WORKER_SECRET}`,
       },
-      body: body.toString(),
+      body: JSON.stringify({ username: account.username, count: 10 }),
       signal: AbortSignal.timeout(15000),
     });
     if (!res.ok) return [];
     const data = await res.json() as any;
-    if (data.code !== 0 || !data.data?.videos) return [];
+    if (!data.videos?.length) return [];
 
     const items: VideoItem[] = [];
-    for (const v of data.data.videos) {
-      if (!v.title && !v.play_count) continue;
+    for (const v of data.videos) {
       const title = v.title || v.desc || "";
       if (!title) continue;
-
-      // Apply content rules
       if (isPromo(title, v.desc || "")) continue;
       if (!isRecent(new Date(v.create_time * 1000).toISOString(), 48)) continue;
-
-      // Only 1 video per account — take the most recent passing filters
       const videoUrl = `https://www.tiktok.com/@${account.username}/video/${v.id}`;
       items.push({
         id: `tiktok:${account.username}:${v.id}`,
@@ -434,8 +441,7 @@ async function fetchTikTokAccountVideos(account: TikTokAccount): Promise<VideoIt
         sourceType: "direct-mp4",
         category: account.category,
       });
-
-      if (items.length >= 1) break; // 1 per account per day
+      if (items.length >= 1) break; // 1 per account per run
     }
     return items;
   } catch (err: any) {

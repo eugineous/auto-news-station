@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from "react";
 import Shell from "../shell";
 
 const RED = "#E50914";
-const CATS = ["CELEBRITY","MUSIC","TV & FILM","FASHION","EVENTS","AWARDS","EAST AFRICA","GENERAL"];
+const CATS = ["CELEBRITY","MUSIC","TV & FILM","SPORTS","MOVIES","ENTERTAINMENT","FASHION","EVENTS","AWARDS","EAST AFRICA","COMEDY","INFLUENCERS","LIFESTYLE","GENERAL"];
 
 interface LogEntry {
   articleId: string; title: string; category: string;
