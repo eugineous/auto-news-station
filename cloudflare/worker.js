@@ -1233,7 +1233,31 @@ async function triggerAutomate(env) {
         }).catch(e => console.error("[burst] carousel failed:", e.message))
       : Promise.resolve();
 
-    await Promise.all([imagePromise, videoPromise, carouselPromise]);
+    // Sports desk — runs every other tick (alternates with carousel)
+    const sportsVideoPromise = nextCount % 2 === 0
+      ? fetch(`${appUrl}/api/automate-sports`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json" },
+          body: "{}",
+          signal: AbortSignal.timeout(280000),
+        }).then(r => r.json()).then(d => {
+          console.log(`[burst] sports-video: posted=${d.posted}`);
+        }).catch(e => console.error("[burst] sports-video failed:", e.message))
+      : Promise.resolve();
+
+    // Sports news desk — runs every 3rd tick
+    const sportsNewsPromise = nextCount % 3 === 1
+      ? fetch(`${appUrl}/api/automate-sports-news`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json" },
+          body: "{}",
+          signal: AbortSignal.timeout(120000),
+        }).then(r => r.json()).then(d => {
+          console.log(`[burst] sports-news: posted=${d.posted}`);
+        }).catch(e => console.error("[burst] sports-news failed:", e.message))
+      : Promise.resolve();
+
+    await Promise.all([imagePromise, videoPromise, carouselPromise, sportsVideoPromise, sportsNewsPromise]);
   } catch (err) {
     console.error("[auto-ppp-tv] trigger failed:", err.message);
   }
