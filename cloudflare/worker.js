@@ -1093,7 +1093,7 @@ async function triggerAutomate(env) {
     return;
   }
 
-  const appUrl = env.VERCEL_APP_URL || "https://auto-news-station-roylandz-media.vercel.app";
+  const appUrl = env.VERCEL_APP_URL || "https://auto-news-station.vercel.app";
   const secret = env.AUTOMATE_SECRET;
   if (!secret) { console.warn("[auto-ppp-tv] AUTOMATE_SECRET not set"); return; }
 
