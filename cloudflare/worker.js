@@ -1135,10 +1135,15 @@ async function triggerAutomate(env) {
 
   // Random skip: only skip during off-peak, and only if not a force post
   const hourEAT = (new Date().getUTCHours() + 3) % 24;
-  // Dead zone: 1am-5am EAT - skip entirely (unless force post)
-  if (!forcePost && hourEAT >= 1 && hourEAT < 5) {
-    console.log(`[throttle] Dead zone (${hourEAT}:00 EAT) - skipping`);
-    return;
+  // Dead zone: 1am-5:50am EAT - skip entirely (unless force post)
+  if (!forcePost && hourEAT >= 1 && hourEAT < 6) {
+    // Allow from 5:50am — check minutes too
+    const minuteUTC = new Date().getUTCMinutes();
+    const minuteEAT = minuteUTC; // minutes are same regardless of timezone
+    if (!(hourEAT === 5 && minuteEAT >= 50)) {
+      console.log(`[throttle] Dead zone (${hourEAT}:${minuteEAT.toString().padStart(2,'0')} EAT) - skipping`);
+      return;
+    }
   }
   // Peak hours (7am-10pm EAT): always post when eligible
   // Off-peak: 80% chance - still post regularly outside peak
