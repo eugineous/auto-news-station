@@ -62,21 +62,31 @@ function PlatformHealth({ igOk, fbOk }: { igOk: boolean; fbOk: boolean }) {
   );
 }
 
-// ── 5. AI pipeline status ─────────────────────────────────────────────────────
+// ── 5. AI pipeline status — fetches real data from /api/admin/health ─────────
 function AIPipelineStatus() {
+  const [health, setHealth] = useState<any>(null);
+  useEffect(() => {
+    fetch("/api/admin/health").then(r => r.ok ? r.json() : null).then(d => setHealth(d)).catch(() => {});
+    const t = setInterval(() => {
+      fetch("/api/admin/health").then(r => r.ok ? r.json() : null).then(d => setHealth(d)).catch(() => {});
+    }, 60000);
+    return () => clearInterval(t);
+  }, []);
+
+  const deps = health?.dependencies || {};
   const systems = [
-    { label: "Gemini AI", status: "Active", ok: true },
-    { label: "Auto-Poster", status: "LIVE", ok: true },
-    { label: "CF Cron", status: "10 min", ok: true },
-    { label: "R2 Storage", status: "Online", ok: true },
+    { label: "Gemini AI",    ok: deps.geminiApi?.ok,        status: deps.geminiApi?.ok ? "Active" : deps.geminiApi?.error ? "Error" : "…" },
+    { label: "Auto-Poster",  ok: deps.cloudflareWorker?.ok, status: deps.cloudflareWorker?.ok ? "LIVE" : deps.cloudflareWorker?.error ? "Down" : "…" },
+    { label: "R2 Storage",   ok: deps.r2Storage?.ok,        status: deps.r2Storage?.ok ? "Online" : deps.r2Storage?.error ? "Down" : "…" },
+    { label: "Meta API",     ok: deps.metaGraphApi?.ok,     status: deps.metaGraphApi?.ok ? "OK" : deps.metaGraphApi?.error ? "Error" : "…" },
   ];
   return (
     <div style={{ display: "flex", gap: 6, flexWrap: "wrap" as const }}>
       {systems.map(s => (
-        <div key={s.label} style={{ display: "flex", alignItems: "center", gap: 5, background: "#0f0f0f", border: `1px solid ${s.ok ? "#1a3a1a" : "#3a1a1a"}`, borderRadius: 6, padding: "4px 10px" }}>
-          <span style={{ width: 5, height: 5, borderRadius: "50%", background: s.ok ? GR : "#f87171", display: "inline-block" }} />
+        <div key={s.label} style={{ display: "flex", alignItems: "center", gap: 5, background: "#0f0f0f", border: `1px solid ${s.ok === undefined ? "#1a1a1a" : s.ok ? "#1a3a1a" : "#3a1a1a"}`, borderRadius: 6, padding: "4px 10px" }}>
+          <span style={{ width: 5, height: 5, borderRadius: "50%", background: s.ok === undefined ? "#444" : s.ok ? GR : "#f87171", display: "inline-block" }} />
           <span style={{ fontSize: 10, color: "#555" }}>{s.label}</span>
-          <span style={{ fontSize: 10, color: s.ok ? GR : "#f87171", fontWeight: 700 }}>{s.status}</span>
+          <span style={{ fontSize: 10, color: s.ok === undefined ? "#444" : s.ok ? GR : "#f87171", fontWeight: 700 }}>{s.status}</span>
         </div>
       ))}
     </div>
@@ -284,7 +294,7 @@ export default function Dashboard() {
   async function triggerNow() {
     setConfirmTrigger(false);
     setTriggering(true);
-    try { await fetch("https://auto-ppp-tv.euginemicah.workers.dev/trigger", { headers: { Authorization: "Bearer ppptvWorker2024" } }); showToast("Pipeline triggered!","ok"); setTimeout(fetchPosts,15000); }
+    try { await fetch("/api/automate", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + (process.env.NEXT_PUBLIC_AUTOMATE_SECRET || "ppptvWorker2024") } }); showToast("Pipeline triggered!","ok"); setTimeout(fetchPosts,15000); }
     catch(e:any) { showToast("Trigger failed: "+e.message,"err"); }
     finally { setTriggering(false); }
   }
@@ -296,7 +306,7 @@ export default function Dashboard() {
 
   async function clearCache() {
     setClearing(true);
-    try { const r = await fetch("https://auto-ppp-tv.euginemicah.workers.dev/clear-cache",{method:"POST",headers:{Authorization:"Bearer ppptvWorker2024"}}); const d = await r.json(); showToast(`Cleared ${d.cleared||0} seen articles`,"ok"); }
+    try { const r = await fetch("/api/admin/pipeline", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "clear-cache" }) }); const d = await r.json(); showToast(`Cleared ${d.cleared||0} seen articles`,"ok"); }
     catch(e:any) { showToast("Clear failed: "+e.message,"err"); }
     finally { setClearing(false); }
   }

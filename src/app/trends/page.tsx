@@ -13,7 +13,7 @@ const YELLOW = "#facc15";
 interface Trend {
   id: string;
   title: string;
-  source: "twitter" | "youtube" | "reddit" | "news";
+  source: "twitter" | "youtube" | "reddit" | "news" | "google_trends";
   volume?: number;
   category: string;
   url?: string;
@@ -22,10 +22,10 @@ interface Trend {
 }
 
 const SOURCE_COLOR: Record<string, string> = {
-  twitter: CYAN, youtube: RED, reddit: ORANGE, news: PURPLE,
+  twitter: CYAN, youtube: RED, reddit: ORANGE, news: PURPLE, google_trends: GREEN,
 };
 const SOURCE_ICON: Record<string, string> = {
-  twitter: "𝕏", youtube: "▶", reddit: "🔴", news: "📰",
+  twitter: "𝕏", youtube: "▶", reddit: "🔴", news: "📰", google_trends: "🇰🇪",
 };
 
 const WORKER = "https://auto-ppp-tv.euginemicah.workers.dev";
@@ -48,6 +48,12 @@ function Badge({ label, color }: { label: string; color: string }) {
 // Fetch trending topics from multiple sources via our API
 async function fetchTrends(): Promise<Trend[]> {
   const results: Trend[] = [];
+
+  // Google Trends Kenya — always first, most authoritative
+  try {
+    const r = await fetch("/api/trends/google_trends");
+    if (r.ok) { const d = await r.json(); results.push(...(d.trends || [])); }
+  } catch {}
 
   // YouTube trending (Kenya) via RSS
   try {
@@ -73,7 +79,7 @@ async function fetchTrends(): Promise<Trend[]> {
 export default function TrendsPage() {
   const [trends, setTrends] = useState<Trend[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<"all" | "twitter" | "youtube" | "reddit" | "news">("all");
+  const [filter, setFilter] = useState<"all" | "twitter" | "youtube" | "reddit" | "news" | "google_trends">("all");
   const [composing, setComposing] = useState<string | null>(null);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
 
@@ -96,7 +102,7 @@ export default function TrendsPage() {
   }
 
   const filtered = filter === "all" ? trends : trends.filter(t => t.source === filter);
-  const sources = ["all", "twitter", "youtube", "reddit", "news"] as const;
+  const sources = ["all", "google_trends", "twitter", "youtube", "reddit", "news"] as const;
 
   return (
     <Shell>
@@ -122,7 +128,7 @@ export default function TrendsPage() {
 
         {/* Stats bar */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, marginBottom: 20 }}>
-          {(["twitter", "youtube", "reddit", "news"] as const).map(s => (
+          {(["google_trends", "twitter", "youtube", "reddit", "news"] as const).map(s => (
             <div key={s} style={{ background: "#0f0f0f", border: `1px solid ${SOURCE_COLOR[s]}33`, borderRadius: 8, padding: "12px 14px" }}>
               <div style={{ fontSize: 18, marginBottom: 4 }}>{SOURCE_ICON[s]}</div>
               <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 26, color: SOURCE_COLOR[s], lineHeight: 1 }}>
@@ -137,7 +143,7 @@ export default function TrendsPage() {
         <div style={{ display: "flex", gap: 4, marginBottom: 20, flexWrap: "wrap" as const }}>
           {sources.map(s => (
             <button key={s} onClick={() => setFilter(s)} style={{ padding: "6px 14px", borderRadius: 20, fontSize: 11, fontWeight: 700, cursor: "pointer", border: `1px solid ${filter === s ? PINK : "#1a1a1a"}`, background: filter === s ? PINK : "#0a0a0a", color: filter === s ? "#fff" : "#555", transition: "all .15s", textTransform: "uppercase" as const, letterSpacing: 1 }}>
-              {s === "all" ? `All (${trends.length})` : `${SOURCE_ICON[s]} ${s} (${trends.filter(t => t.source === s).length})`}
+              {s === "all" ? `All (${trends.length})` : `${SOURCE_ICON[s]} ${s === "google_trends" ? "Kenya Trends" : s} (${trends.filter(t => t.source === s).length})`}
             </button>
           ))}
         </div>

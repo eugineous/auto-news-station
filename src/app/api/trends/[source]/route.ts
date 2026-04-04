@@ -188,15 +188,50 @@ async function getTwitter() {
   }));
 }
 
+// ── Google Trends Kenya (free, no API key) ────────────────────────────────────
+async function getGoogleTrendsKenya() {
+  const now = new Date().toISOString();
+  try {
+    const res = await fetch("https://trends.google.com/trends/hottrends/atom/feed?pn=p14", {
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; PPPTVBot/2.0)", "Accept": "application/rss+xml,*/*" },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return [];
+    const xml = await res.text();
+    const trends: any[] = [];
+    const itemRegex = /<item>([\s\S]*?)<\/item>/g;
+    let match, rank = 0;
+    while ((match = itemRegex.exec(xml)) !== null) {
+      const e = match[1];
+      const title = decodeXML((e.match(/<title>(.*?)<\/title>/) || [])[1] || "");
+      const link = (e.match(/<link>(.*?)<\/link>/) || [])[1] || "";
+      if (!title) continue;
+      rank++;
+      trends.push({
+        id: `gtrends:${rank}:${title.replace(/\s/g, "_")}`,
+        title,
+        source: "google_trends",
+        volume: (20 - rank) * 5000, // rank 1 = 95k, rank 20 = 5k
+        category: "TRENDING",
+        url: link || `https://trends.google.com/trends/explore?q=${encodeURIComponent(title)}&geo=KE`,
+        description: `#${rank} trending in Kenya right now`,
+        fetchedAt: now,
+      });
+    }
+    return trends.slice(0, 20);
+  } catch { return []; }
+}
+
 // ── Route handler ─────────────────────────────────────────────────────────────
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ source: string }> }) {
   const { source } = await params;
-  if (source === "youtube") return NextResponse.json({ trends: await getYouTube() });
-  if (source === "reddit")  return NextResponse.json({ trends: await getReddit() });
-  if (source === "news")    return NextResponse.json({ trends: await getNews() });
-  if (source === "twitter") return NextResponse.json({ trends: await getTwitter() });
+  if (source === "youtube")       return NextResponse.json({ trends: await getYouTube() });
+  if (source === "reddit")        return NextResponse.json({ trends: await getReddit() });
+  if (source === "news")          return NextResponse.json({ trends: await getNews() });
+  if (source === "twitter")       return NextResponse.json({ trends: await getTwitter() });
+  if (source === "google_trends") return NextResponse.json({ trends: await getGoogleTrendsKenya() });
   // "all" — fetch everything in parallel
-  const [yt, rd, nw, tw] = await Promise.all([getYouTube(), getReddit(), getNews(), getTwitter()]);
-  const all = [...yt, ...rd, ...nw, ...tw].sort((a,b)=>(b.volume||0)-(a.volume||0));
+  const [yt, rd, nw, tw, gt] = await Promise.all([getYouTube(), getReddit(), getNews(), getTwitter(), getGoogleTrendsKenya()]);
+  const all = [...gt, ...yt, ...rd, ...nw, ...tw].sort((a,b)=>(b.volume||0)-(a.volume||0));
   return NextResponse.json({ trends: all });
 }

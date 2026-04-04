@@ -201,7 +201,10 @@ export async function POST(req: NextRequest) {
     const fbToken = process.env.FACEBOOK_ACCESS_TOKEN;
     const fbPageId = process.env.FACEBOOK_PAGE_ID;
 
-    if (!igToken || !igAccountId || !fbToken || !fbPageId) {
+    // Dry-run: return video candidates without posting (used by Sources tab preview)
+    const isDryRun = req.headers.get("X-Dry-Run") === "true";
+
+    if (!isDryRun && (!igToken || !igAccountId || !fbToken || !fbPageId)) {
       return NextResponse.json({ error: "Social credentials not configured" }, { status: 500 });
     }
 
@@ -239,6 +242,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ posted: 0, message: "No videos found from any source" });
     }
 
+    // Dry-run: return candidates without posting (Sources tab preview)
+    if (isDryRun) {
+      return NextResponse.json({
+        videos: mergedVideos.slice(0, 30).map(v => ({
+          id: v.id, title: v.title, url: v.url,
+          thumbnail: v.thumbnail, sourceName: v.sourceName,
+          sourceType: v.sourceType, category: v.category,
+          publishedAt: v.publishedAt, directVideoUrl: (v as any).directVideoUrl,
+        })),
+      });
+    }
+
     // ── Blacklist filter (Supabase) ───────────────────────────────────────────
     const blacklistEntries = await getBlacklist();
 
@@ -274,7 +289,8 @@ export async function POST(req: NextRequest) {
         // Boost high-view videos: 1M+ gets +40, 200K+ gets +20
         const playCount = (v as any)._playCount || 0;
         const viewBoost = playCount >= 1000000 ? 40 : playCount >= 200000 ? 20 : 0;
-        const finalScore = viralScore + (isKenyan ? 25 : 0) + (hasDirect ? 10 : 0) + viewBoost;
+        const upvoteBoost = (v as any)._upvoteBoost || 0; // Reddit upvote score boost
+        const finalScore = viralScore + (isKenyan ? 25 : 0) + (hasDirect ? 10 : 0) + viewBoost + upvoteBoost;
         return { ...v, _score: finalScore, _isKenyan: isKenyan };
       })
       .sort((a, b) => {
@@ -514,8 +530,8 @@ export async function POST(req: NextRequest) {
     } catch { /* cover is optional */ }
 
     const [igResult, fbResult] = await Promise.all([
-      postReelToIG(staged.url, caption, coverUrl, igToken, igAccountId),
-      postVideoToFB(staged.url, caption, fbToken, fbPageId),
+      postReelToIG(staged.url, caption, coverUrl ?? undefined, igToken!, igAccountId!),
+      postVideoToFB(staged.url, caption, fbToken!, fbPageId!),
     ]);
 
     // R2 cleanup with retry
