@@ -489,88 +489,31 @@ export async function generateAIContent(
 // ── Gemini caption fallback ───────────────────────────────────────────────────
 async function generateCaptionWithGemini(article: Article, content: string): Promise<string> {
   const client = getGeminiClient(process.env.GEMINI_API_KEY!);
+  const hookPattern = HOOK_PATTERNS[Math.floor(Math.random() * HOOK_PATTERNS.length)];
+  const prompt =
+    `You MUST use Google Search before writing. Search the article title and verify all facts.\n\n` +
+    `REQUIRED: Search "${article.title}" and verify current titles of all people mentioned.\n` +
+    `KENYA FACTS: Ruto=current president, Uhuru=FORMER president, Kindiki=current DP, Gachagua=FORMER DP.\n\n` +
+    `TITLE: ${article.title}\n` +
+    `CATEGORY: ${article.category}\n` +
+    `SOURCE URL: ${article.url}\n` +
+    (content ? `ARTICLE:\n${content}\n\n` : "\n") +
+    `HOOK TECHNIQUE: ${hookPattern}\n\n` +
+    `Write a PPP TV Kenya caption using only verified facts. No hashtags. No ALL CAPS. No clickbait.\n` +
+    `End with: "Source: ${article.sourceName || "PPP TV Kenya"}"\n` +
+    `Reply with ONLY the caption text.`;
 
-  const paraphrasePrompt =
-    `You are a senior social media journalist at PPP TV Kenya — a professional news and entertainment media house.\n\n` +
-    `TASK: Write a news caption for Instagram and Facebook that summarizes this story.\n\n` +
-    `RULES:\n` +
-    `- Write like a real journalist at a media house (BBC, CNN, NTV Kenya style)\n` +
-    `- Lead with the most important fact: WHO did WHAT, WHERE, WHEN\n` +
-    `- Summarize the full story in 3-5 sentences — give the reader the complete picture\n` +
-    `- Use the exact facts from the article — do NOT add, invent, or change any detail\n` +
-    `- NO betting predictions, NO company promotions, NO brand deals\n` +
-    `- NO clickbait, NO "you won't believe", NO "stay tuned"\n` +
-    `- Write in clear, professional English — conversational but factual\n` +
-    `- 2-3 relevant emojis max in the body\n` +
-    `- End with: "Source: ${article.sourceName || "PPP TV Kenya"}"\n` +
-    `- Under 200 words total\n\n` +
-    `ARTICLE TITLE: ${rawTitle}\n` +
-    `ARTICLE BODY: ${body.slice(0, 1000)}\n` +
-    `SOURCE: ${article.sourceName || "PPP TV Kenya"}\n\n` +
-    `Reply with ONLY the caption. No labels, no preamble, no hashtags.`;
-
-  try {
-    const response = await client.models.generateContent({
-      model: "gemini-2.0-flash",
-      contents: paraphrasePrompt,
-      config: { temperature: 0.4, maxOutputTokens: 400 },
-      // NO googleSearch tool — fast, no verification, just paraphrase
-    });
-
-    let caption = response.text?.trim() ?? "";
-    if (!caption || caption.length < 20) throw new Error("empty response");
-
-    // Extract headline from first line if it's ALL CAPS
-    const lines = caption.split("\n").filter(l => l.trim());
-    let clickbaitTitle = rawTitle.toUpperCase().slice(0, 120);
-    if (lines[0] && lines[0] === lines[0].toUpperCase() && lines[0].length > 5) {
-      clickbaitTitle = lines[0].replace(/#\w+/g, "").trim().slice(0, 120);
-    }
-
-    // Append CTA and URL if not already present
-    if (!caption.includes(article.url || "")) {
-      caption += `\n\n${cta.cta}`;
-    }
-
-    return { clickbaitTitle, caption, firstComment: hashtags, engagementType: cta.type };
-  } catch (err: any) {
-    console.warn("[gemini] paraphrase failed, using fallback:", err.message);
-    const caption = buildParaphraseCaption(rawTitle, body, source, cta.cta, article.url);
-    return {
-      clickbaitTitle: rawTitle.toUpperCase().slice(0, 120),
-      caption,
-      firstComment: hashtags,
-      engagementType: cta.type,
-    };
-  }
-}
-
-function buildParaphraseCaption(title: string, body: string, source: string, cta: string, url?: string): string {
-  const cleaned = body
-    .replace(/<[^>]+>/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-
-  // Rewrite the excerpt so it doesn't start verbatim with the raw article body.
-  // Split into sentences and skip the first (which mirrors the headline), then
-  // lead with a context intro derived from the article title.
-  const sentences = cleaned.match(/[^.!?]+[.!?]+/g) ?? [];
-  let excerpt = "";
-  if (sentences.length > 1) {
-    // Use sentences 2+ as the body (skip the verbatim first sentence)
-    excerpt = sentences.slice(1).join(" ").trim().slice(0, 400);
-  }
-  if (!excerpt || excerpt.length < 30) {
-    // Fallback: use the full cleaned text but prefix with a context line
-    excerpt = cleaned.slice(0, 400);
-  }
-
-  // Build a short context intro from the title so the caption doesn't open verbatim
-  const titleIntro = article.title
-    ? `Here's what we know about "${article.title.slice(0, 80)}".\n\n`
-    : "";
-
-  return (titleIntro + (excerpt || article.title)).trim() + "\n\nWhat do you think? 👇";
+  const response = await client.models.generateContent({
+    model: "gemini-2.5-flash",
+    contents: prompt,
+    config: {
+      systemInstruction: CAPTION_SYSTEM,
+      temperature: 0.6,
+      maxOutputTokens: 800,
+      tools: [{ googleSearch: {} }],
+    },
+  });
+  return response.text?.trim() ?? "";
 }
 
 function stripLeadingHeadline(caption: string, originalTitle: string): string {
