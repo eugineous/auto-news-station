@@ -1,9 +1,9 @@
 import { createHash } from "crypto";
 import { Article } from "./types";
 
-// PPP TV site — primary source
-const PPPTV_SITE_URL = process.env.PPPTV_SITE_URL || "https://ppp-tv-site.vercel.app";
-const PPPTV_RSS_URL = PPPTV_SITE_URL + "/api/rss";
+// PPP TV site — primary source (correct final URL)
+const PPPTV_SITE_URL = process.env.PPPTV_SITE_URL || "https://ppp-tv-site-final.vercel.app";
+const PPPTV_RSS_BASE = PPPTV_SITE_URL + "/api/rss";
 
 // Worker feed fallback — external RSS feeds (Tuko, Mpasho, etc.)
 const PPPTV_FEED_URL = (process.env.PPPTV_WORKER_URL || "https://auto-ppp-tv.euginemicah.workers.dev") + "/feed";
@@ -89,7 +89,10 @@ function parseWorkerFeed(data: WorkerFeedResponse): Article[] {
 
 // ── Parse PPP TV site RSS feed directly ──────────────────────────────────────
 async function fetchFromPPPTVSite(limit: number): Promise<Article[]> {
-  const res = await fetch(PPPTV_RSS_URL, {
+  // Use `since` param to only fetch articles newer than last 2 hours — efficient polling
+  const since = new Date(Date.now() - 2 * 3600000).toISOString();
+  const url = `${PPPTV_RSS_BASE}?since=${encodeURIComponent(since)}&limit=${limit}`;
+  const res = await fetch(url, {
     headers: { "User-Agent": "PPPTVAutoPoster/5.0", "Accept": "application/rss+xml, application/xml, text/xml, */*" },
     signal: AbortSignal.timeout(15000),
     cache: "no-store",
