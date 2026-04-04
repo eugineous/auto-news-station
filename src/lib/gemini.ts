@@ -516,6 +516,36 @@ async function generateCaptionWithGemini(article: Article, content: string): Pro
   return response.text?.trim() ?? "";
 }
 
+function buildExcerptCaption(article: Article): string {
+  const body = article.fullBody?.trim() || article.summary?.trim() || article.title;
+  const cleaned = body
+    .split(/\n+/)
+    .filter(line => {
+      const t = line.trim();
+      if (!t) return false;
+      const upperRatio = (t.match(/[A-Z]/g) || []).length / Math.max(t.replace(/\s/g, "").length, 1);
+      return upperRatio < 0.7;
+    })
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const sentences = cleaned.match(/[^.!?]+[.!?]+/g) ?? [];
+  let excerpt = "";
+  if (sentences.length > 1) {
+    excerpt = sentences.slice(1).join(" ").trim().slice(0, 400);
+  }
+  if (!excerpt || excerpt.length < 30) {
+    excerpt = cleaned.slice(0, 400);
+  }
+
+  const titleIntro = article.title
+    ? `Here's what we know about "${article.title.slice(0, 80)}".\n\n`
+    : "";
+
+  return (titleIntro + (excerpt || article.title)).trim() + "\n\nWhat do you think? 👇";
+}
+
 function stripLeadingHeadline(caption: string, originalTitle: string): string {
   const lines = caption.split("\n");
   const first = lines[0].trim();
