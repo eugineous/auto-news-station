@@ -529,8 +529,8 @@ export async function POST(req: NextRequest) {
     } catch { /* cover is optional */ }
 
     const [igResult, fbResult] = await Promise.all([
-      postReelToIG(staged.url, caption, coverUrl ?? undefined, igToken, igAccountId),
-      postVideoToFB(staged.url, caption, fbToken, fbPageId),
+      postReelToIG(staged.url, caption, coverUrl ?? undefined, igToken!, igAccountId!),
+      postVideoToFB(staged.url, caption, fbToken!, fbPageId!),
     ]);
 
     // R2 cleanup with retry
