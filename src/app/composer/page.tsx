@@ -173,7 +173,7 @@ function ScannerColumn({
 
 // ── Edit Bay (Center Column) ──────────────────────────────────────────────────
 function EditBay({
-  bay, setBay, broadcastStatus, broadcastPct, onBroadcast, agentMode, isBreaking,
+  bay, setBay, broadcastStatus, broadcastPct, onBroadcast, agentMode, isBreaking, onManualFetch,
 }: {
   bay: EditBayState;
   setBay: (patch: Partial<EditBayState>) => void;
@@ -182,20 +182,34 @@ function EditBay({
   onBroadcast: () => void;
   agentMode: boolean;
   isBreaking: boolean;
+  onManualFetch: (url: string) => void;
 }) {
   const headlineRef = useRef<HTMLInputElement>(null);
-  const captionRef = useRef<HTMLTextAreaElement>(null);
+  const [manualUrl, setManualUrl] = useState("");
   const canBroadcast = bay.url && bay.headline && bay.caption && broadcastStatus !== "broadcasting";
   const cc = catColor(bay.category);
-
-  // Progress ring around phone frame
-  const RING_R = 8;
-  const circumference = 2 * Math.PI * RING_R;
-  const ringOffset = circumference - (broadcastPct / 100) * circumference;
   const ringColor = broadcastStatus === "error" ? "#f87171" : broadcastStatus === "success" ? GREEN : RED;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column" as const, height: "100%", alignItems: "center", padding: "12px 16px", gap: 12, overflow: "hidden" }}>
+    <div style={{ display: "flex", flexDirection: "column" as const, height: "100%", alignItems: "center", padding: "12px 16px", gap: 10, overflow: "hidden" }}>
+
+      {/* Manual URL input */}
+      <div style={{ display: "flex", gap: 6, width: "100%", flexShrink: 0 }}>
+        <input
+          value={manualUrl}
+          onChange={e => setManualUrl(e.target.value)}
+          onKeyDown={e => { if (e.key === "Enter" && manualUrl.trim()) { onManualFetch(manualUrl.trim()); setManualUrl(""); } }}
+          placeholder="Paste any URL — TikTok · YouTube · Instagram · Twitter · .mp4"
+          style={{ flex: 1, background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 6, padding: "7px 10px", color: "#aaa", fontSize: 10, outline: "none", fontFamily: "inherit", minWidth: 0 }}
+        />
+        <button
+          onClick={() => { if (manualUrl.trim()) { onManualFetch(manualUrl.trim()); setManualUrl(""); } }}
+          disabled={!manualUrl.trim() || bay.fetching}
+          style={{ background: manualUrl.trim() && !bay.fetching ? PINK : "#111", border: "none", color: "#fff", borderRadius: 6, padding: "7px 12px", fontSize: 10, fontWeight: 700, cursor: "pointer", flexShrink: 0 }}
+        >
+          {bay.fetching ? <Spin size={10} /> : "Fetch"}
+        </button>
+      </div>
 
       {/* Category selector */}
       <div style={{ display: "flex", gap: 4, flexWrap: "wrap" as const, justifyContent: "center", flexShrink: 0 }}>
@@ -283,7 +297,6 @@ function EditBay({
 
       {/* Caption */}
       <textarea
-        ref={captionRef}
         value={bay.caption}
         onChange={e => setBay({ caption: e.target.value })}
         placeholder={bay.generating ? "Generating caption…" : "Caption — AI generates automatically when video loads"}
@@ -522,6 +535,30 @@ export default function ComposerPage() {
     }
   }, [setBay]);
 
+  // ── Manual URL fetch → load into Edit Bay ──────────────────────────────────
+  const manualFetch = useCallback(async (url: string) => {
+    if (!url.trim()) return;
+    setBay({ url, headline: "", caption: "", thumbnail: "", resolvedVideoUrl: "", fetching: true, generating: true, dupWarning: false });
+    setBroadcastStatus("idle");
+    setBroadcastPct(0);
+    try {
+      const [previewRes, resolveRes] = await Promise.all([
+        fetch("/api/preview-url", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url }) }),
+        fetch("/api/resolve-video", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url }) }),
+      ]);
+      const preview = previewRes.ok ? await previewRes.json() as any : null;
+      const resolve = resolveRes.ok ? await resolveRes.json() as any : null;
+      const thumb = preview?.scraped?.videoThumbnailUrl || preview?.scraped?.imageUrl || "";
+      const headline = preview?.ai?.clickbaitTitle?.toUpperCase().slice(0, 120) || preview?.scraped?.title?.toUpperCase().slice(0, 120) || "";
+      const caption = preview?.ai?.caption || "";
+      const category = preview?.category || "GENERAL";
+      const resolvedUrl = resolve?.videoUrl || "";
+      setBay({ headline, caption, thumbnail: thumb, resolvedVideoUrl: resolvedUrl, category, fetching: false, generating: false });
+    } catch {
+      setBay({ fetching: false, generating: false });
+    }
+  }, [setBay]);
+
   // ── Broadcast ───────────────────────────────────────────────────────────────
   const broadcast = useCallback(async () => {
     if (!bay.url || !bay.headline || !bay.caption || broadcastStatus === "broadcasting") return;
@@ -653,7 +690,7 @@ export default function ComposerPage() {
 
           {/* Center: Edit Bay */}
           <div style={{ overflow: "hidden", background: "#030303" }}>
-            <EditBay bay={bay} setBay={setBay} broadcastStatus={broadcastStatus} broadcastPct={broadcastPct} onBroadcast={broadcast} agentMode={agentMode} isBreaking={isBreaking} />
+            <EditBay bay={bay} setBay={setBay} broadcastStatus={broadcastStatus} broadcastPct={broadcastPct} onBroadcast={broadcast} agentMode={agentMode} isBreaking={isBreaking} onManualFetch={manualFetch} />
           </div>
 
           {/* Right: Air Log */}
