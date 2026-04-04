@@ -486,27 +486,40 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ...response, message: "No new Kenya articles to post" });
     }
 
-    // 4. Category rotation — strict round-robin, never repeat the last category
-    const CATEGORY_CYCLE = ["ENTERTAINMENT", "SPORTS", "MUSIC", "CELEBRITY", "TV & FILM", "LIFESTYLE", "GENERAL", "COMEDY", "FASHION"];
-    
+    // 4. Category rotation — strict round-robin through all available categories
+    const CATEGORY_CYCLE = [
+      "ENTERTAINMENT", "SPORTS", "MUSIC", "CELEBRITY", "TV & FILM",
+      "MOVIES", "LIFESTYLE", "GENERAL", "COMEDY", "FASHION",
+      "AWARDS", "INFLUENCERS", "EAST AFRICA", "TECHNOLOGY", "HEALTH",
+    ];
+
+    // Get all categories available in current unseen articles
+    const availableCats = [...new Set(dedupedUnseen.map(a => a.category?.toUpperCase()).filter(Boolean))];
+
     // Find next category in cycle after lastCategory
     let targetCategory: string | null = null;
-    if (lastCategory) {
-      const lastIdx = CATEGORY_CYCLE.findIndex(c => c === lastCategory.toUpperCase());
-      // Try each category in cycle order starting from next
+    if (lastCategory && availableCats.length > 1) {
+      const lastUpper = lastCategory.toUpperCase();
+      const lastIdx = CATEGORY_CYCLE.findIndex(c => c === lastUpper);
+      // Try each category in cycle order starting from next position
       for (let i = 1; i <= CATEGORY_CYCLE.length; i++) {
         const nextCat = CATEGORY_CYCLE[(lastIdx + i) % CATEGORY_CYCLE.length];
-        if (dedupedUnseen.some(a => a.category?.toUpperCase() === nextCat)) {
+        if (availableCats.includes(nextCat)) {
           targetCategory = nextCat;
           break;
         }
       }
+      // If nothing found in cycle, pick any category different from last
+      if (!targetCategory) {
+        targetCategory = availableCats.find(c => c !== lastUpper) || null;
+      }
     }
 
-    // Filter to target category, fall back to anything different from last
+    // Filter to target category, fall back to all if no match
     let candidates = dedupedUnseen;
     if (targetCategory) {
-      candidates = dedupedUnseen.filter(a => a.category?.toUpperCase() === targetCategory);
+      const catFiltered = dedupedUnseen.filter(a => a.category?.toUpperCase() === targetCategory);
+      if (catFiltered.length > 0) candidates = catFiltered;
     } else if (lastCategory) {
       const different = dedupedUnseen.filter(a => a.category?.toUpperCase() !== lastCategory.toUpperCase());
       if (different.length > 0) candidates = different;
