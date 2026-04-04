@@ -225,22 +225,27 @@ export async function generateAIContent(
     };
   }
 
-  // ── Gemini: paraphrase only — no Google Search, no fact-checking, no rewrite ──
+  // ── Gemini: news media caption — summarize the story like a journalist ──────
   const client = getGeminiClient(process.env.GEMINI_API_KEY!);
 
   const paraphrasePrompt =
-    `You are a social media writer for PPP TV Kenya.\n\n` +
-    `TASK: Paraphrase the article below into a short Instagram/Facebook caption.\n` +
-    `- Keep ALL facts exactly as stated in the article — do NOT add, invent, or change any detail\n` +
-    `- Paraphrase the wording so it reads naturally as a social media post\n` +
-    `- Write a punchy headline (ALL CAPS, max 10 words) then 2-3 sentences of body\n` +
-    `- End with: "Source: ${source}"\n` +
-    `- No hashtags, no emojis in headline, 2-3 emojis in body max\n` +
-    `- Under 150 words total\n\n` +
+    `You are a senior social media journalist at PPP TV Kenya — a professional news and entertainment media house.\n\n` +
+    `TASK: Write a news caption for Instagram and Facebook that summarizes this story.\n\n` +
+    `RULES:\n` +
+    `- Write like a real journalist at a media house (BBC, CNN, NTV Kenya style)\n` +
+    `- Lead with the most important fact: WHO did WHAT, WHERE, WHEN\n` +
+    `- Summarize the full story in 3-5 sentences — give the reader the complete picture\n` +
+    `- Use the exact facts from the article — do NOT add, invent, or change any detail\n` +
+    `- NO betting predictions, NO company promotions, NO brand deals\n` +
+    `- NO clickbait, NO "you won't believe", NO "stay tuned"\n` +
+    `- Write in clear, professional English — conversational but factual\n` +
+    `- 2-3 relevant emojis max in the body\n` +
+    `- End with: "Source: ${article.sourceName || "PPP TV Kenya"}"\n` +
+    `- Under 200 words total\n\n` +
     `ARTICLE TITLE: ${rawTitle}\n` +
-    `ARTICLE BODY: ${body.slice(0, 800)}\n` +
-    `SOURCE URL: ${article.url}\n\n` +
-    `Reply with ONLY the caption. No labels, no preamble.`;
+    `ARTICLE BODY: ${body.slice(0, 1000)}\n` +
+    `SOURCE: ${article.sourceName || "PPP TV Kenya"}\n\n` +
+    `Reply with ONLY the caption. No labels, no preamble, no hashtags.`;
 
   try {
     const response = await client.models.generateContent({
@@ -283,7 +288,8 @@ function buildParaphraseCaption(title: string, body: string, source: string, cta
     .replace(/<[^>]+>/g, "")
     .replace(/\s+/g, " ")
     .trim()
-    .slice(0, 400);
-  const text = cleaned.length > 30 ? cleaned : title;
+    .slice(0, 500);
+  // Use body if it's a real summary, otherwise fall back to title
+  const text = cleaned.length > 40 ? cleaned : title;
   return `${text}\n\n${cta}\n\nSource: ${source}${url ? `\n${url}` : ""}`;
 }
