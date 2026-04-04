@@ -324,6 +324,7 @@ export async function generateAIContent(
   const tone = _options?.tone || "casual";
   const language = _options?.language || "en";
   const hasGemini = !!process.env.GEMINI_API_KEY;
+  const hasNvidia = !!process.env.NVIDIA_API_KEY;
 
   const isSheng = tone === "sheng";
   const isSwahili = language === "sw";
