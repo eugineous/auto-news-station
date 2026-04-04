@@ -192,16 +192,6 @@ async function markSeen(id: string, title?: string): Promise<void> {
 
 // logPost is now imported from @/lib/supabase
 
-// ── Mark ingest_queue row as posted after successful social post ──────────────
-async function markIngestPosted(articleId: string): Promise<void> {
-  try {
-    await supabaseAdmin
-      .from("ingest_queue")
-      .update({ posted: true })
-      .eq("id", articleId);
-  } catch { /* non-fatal */ }
-}
-
 // ── Distributed lock via CF KV — prevents concurrent runs double-posting ──────
 const LOCK_KEY = "pipeline:lock";
 const LOCK_TTL = 270; // 4.5 min — safely under the 10-min cron interval
@@ -339,7 +329,6 @@ async function postOneArticle(article: Article, isBreaking: boolean): Promise<{ 
             logPost({ article_id: article.id, title: clickbaitTitle, url: article.url, category: article.category, ig_success: result.instagram.success, ig_post_id: result.instagram.postId, ig_error: result.instagram.error, fb_success: result.facebook.success, fb_post_id: result.facebook.postId, fb_error: result.facebook.error, post_type: "video" }),
             incrementDailyCount(),
             setLastCategory(article.category),
-            markIngestPosted(article.id),
           ]);
 
           // Fire-and-forget: delete staged video from R2
@@ -407,7 +396,6 @@ async function postOneArticle(article: Article, isBreaking: boolean): Promise<{ 
       }),
       incrementDailyCount(),
       setLastCategory(article.category),
-      markIngestPosted(article.id),
     ]);
     return { success: true };
   }
