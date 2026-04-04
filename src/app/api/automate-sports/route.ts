@@ -20,14 +20,31 @@ const WORKER_SECRET = process.env.WORKER_SECRET || "ppptvWorker2024";
 
 async function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)); }
 
-// ── Sports-only TikTok accounts ───────────────────────────────────────────────
+// ── Sports-only TikTok accounts — 50+ channels ───────────────────────────────
 const SPORTS_TIKTOK_ACCOUNTS = [
-  "433", "bleacherreport", "goal", "skysportsnews", "espn", "nba", "nfl",
-  "fabrizioromano", "footballdaily", "footballhighlights", "premierleague",
-  "championsleague", "fifaworldcup", "laligaen", "seriea", "bundesliga",
-  "realmadrid", "fcbarcelona", "manchestercity", "manchesterunited",
-  "chelseafc", "arsenal", "liverpoolfc", "transfermarkt",
-  "footballkenya", "harambee stars", "gormahaiafc",
+  // ── Football / Soccer ─────────────────────────────────────────────────────
+  "433", "goal", "skysportsnews", "espn", "fabrizioromano", "footballdaily",
+  "footballhighlights", "premierleague", "championsleague", "fifaworldcup",
+  "laligaen", "seriea", "bundesliga", "realmadrid", "fcbarcelona",
+  "manchestercity", "manchesterunited", "chelseafc", "arsenal", "liverpoolfc",
+  "transfermarkt", "footballhd", "footballmemes", "footballnews", "soccernews",
+  "tottenhamhotspur", "acmilan", "juventusfc", "atleticomadrid", "psg",
+  "bvb", "intermilan", "bayernmunich", "benfica", "ajax",
+  "africafootball", "cafchampionsleague", "harambee_stars_ke", "gormahaiafc",
+  // ── Multi-sport ───────────────────────────────────────────────────────────
+  "bleacherreport", "nba", "nfl", "ufc", "wwenxt",
+  "skysports", "bbcsport", "eurosport", "sportscenter", "theathletic",
+  "talksport", "sportbible", "ladbiblesport", "givemesport", "90min",
+  // ── Athletics / Olympics ──────────────────────────────────────────────────
+  "worldathletics", "olympics", "kenyaathletics", "eliudkipchoge",
+  // ── Boxing / MMA ──────────────────────────────────────────────────────────
+  "espnmma", "boxingnews", "ufcfights",
+  // ── Cricket / Rugby ───────────────────────────────────────────────────────
+  "icc", "rugbyworldcup", "kenyarugby",
+  // ── Basketball ────────────────────────────────────────────────────────────
+  "nbaofficial", "euroleague",
+  // ── Formula 1 ─────────────────────────────────────────────────────────────
+  "f1", "formula1",
 ];
 
 // ── Sports TikWM search terms ─────────────────────────────────────────────────
