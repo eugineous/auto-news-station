@@ -5,13 +5,17 @@ import Link from "next/link";
 
 const NAV = [
   { href: "/dashboard",    icon: "⚡", label: "Command Center" },
-  { href: "/composer",     icon: "🎬", label: "Composer"       },
+  { href: "/composer",     icon: "🎬", label: "War Room"       },
   { href: "/trends",       icon: "🧠", label: "Trends"         },
+  { href: "/ideas",        icon: "💡", label: "Content Ideas"  },
+  { href: "/reach",        icon: "📊", label: "Reach"          },
   { href: "/calendar",     icon: "📅", label: "Calendar"       },
   { href: "/intelligence", icon: "🎯", label: "Audience"       },
-  { href: "/factory",      icon: "🏭", label: "Content Factory"},
+  { href: "/factory",      icon: "🏭", label: "Factory"        },
   { href: "/competitors",  icon: "📡", label: "Competitors"    },
-  { href: "/analytics",    icon: "📊", label: "Analytics"      },
+  { href: "/voice",        icon: "🎙️", label: "Brand Voice"   },
+  { href: "/sources",      icon: "📡", label: "Sources"        },
+  { href: "/analytics",    icon: "📈", label: "Analytics"      },
   { href: "/accounts",     icon: "🔗", label: "Accounts"       },
   { href: "/settings",     icon: "⚙️",  label: "Settings"      },
 ];

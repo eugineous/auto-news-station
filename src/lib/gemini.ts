@@ -277,12 +277,20 @@ function entertainmentCaptionPrompt(
     ? article.fullBody.trim().slice(0, 2000)
     : (article.summary?.trim() ?? "");
 
+  // Detect Reddit source and extract upvote context for the prompt
+  const isReddit = article.sourceName?.includes("upvotes") || article.url?.includes("reddit.com");
+  const redditContext = isReddit
+    ? `\nSOCIAL PROOF: This content already earned ${article.sourceName} on Reddit — it's proven viral. Reference this credibility in your caption (e.g. "This clip is breaking the internet..." or "The internet can't stop talking about this..."). Use the Reddit community's energy as your hook foundation.\n`
+    : "";
+
   return (
     `Write a PPP TV Kenya caption for this ${article.category} story.\n\n` +
     `CATEGORY: ${article.category}\n` +
     `TITLE: ${article.title}\n` +
+    (article.sourceName ? `SOURCE: ${article.sourceName}\n` : "") +
     (article.summary ? `SUMMARY: ${article.summary.slice(0, 300)}\n` : "") +
     (content ? `ARTICLE:\n${content}\n\n` : "\n") +
+    redditContext +
     `HOOK APPROACH: ${hookPattern}\n\n` +
     `TONE: ${toneInstruction}\n\n` +
     `RULES:\n` +

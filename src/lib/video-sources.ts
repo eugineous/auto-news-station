@@ -159,14 +159,33 @@ async function fetchDailymotionFeed(feedUrl: string, sourceName: string, categor
 }
 
 // ── 3. Reddit JSON API — focus on subreddits with native video posts ─────────
+// Sort by top (not new) to get proven viral content with upvote scores
 const REDDIT_FEEDS = [
-  { url: "https://www.reddit.com/r/videos/new.json?limit=25",             name: "r/Videos",          cat: "ENTERTAINMENT" },
-  { url: "https://www.reddit.com/r/PublicFreakout/new.json?limit=25",     name: "r/PublicFreakout",  cat: "NEWS" },
-  { url: "https://www.reddit.com/r/nextfuckinglevel/new.json?limit=25",   name: "r/NextLevel",       cat: "ENTERTAINMENT" },
-  { url: "https://www.reddit.com/r/sports/new.json?limit=25",             name: "r/Sports",          cat: "SPORTS" },
-  { url: "https://www.reddit.com/r/Music/new.json?limit=25",              name: "r/Music",           cat: "MUSIC" },
-  { url: "https://www.reddit.com/r/worldnews/new.json?limit=25",          name: "r/WorldNews",       cat: "NEWS" },
-  { url: "https://www.reddit.com/r/entertainment/new.json?limit=25",      name: "r/Entertainment",   cat: "ENTERTAINMENT" },
+  // ── Sports (high-engagement, proven viral) ────────────────────────────────
+  { url: "https://www.reddit.com/r/soccer/top.json?limit=25&t=day",          name: "r/soccer",          cat: "SPORTS" },
+  { url: "https://www.reddit.com/r/nba/top.json?limit=25&t=day",             name: "r/nba",             cat: "SPORTS" },
+  { url: "https://www.reddit.com/r/formula1/top.json?limit=25&t=day",        name: "r/formula1",        cat: "SPORTS" },
+  { url: "https://www.reddit.com/r/ufc/top.json?limit=25&t=day",             name: "r/ufc",             cat: "SPORTS" },
+  { url: "https://www.reddit.com/r/boxing/top.json?limit=25&t=day",          name: "r/boxing",          cat: "SPORTS" },
+  { url: "https://www.reddit.com/r/tennis/top.json?limit=25&t=day",          name: "r/tennis",          cat: "SPORTS" },
+  { url: "https://www.reddit.com/r/cricket/top.json?limit=25&t=day",         name: "r/cricket",         cat: "SPORTS" },
+  { url: "https://www.reddit.com/r/rugbyunion/top.json?limit=25&t=day",      name: "r/rugbyunion",      cat: "SPORTS" },
+  { url: "https://www.reddit.com/r/sports/top.json?limit=25&t=day",          name: "r/Sports",          cat: "SPORTS" },
+  // ── Entertainment ─────────────────────────────────────────────────────────
+  { url: "https://www.reddit.com/r/nextfuckinglevel/top.json?limit=25&t=day", name: "r/NextLevel",      cat: "ENTERTAINMENT" },
+  { url: "https://www.reddit.com/r/videos/top.json?limit=25&t=day",          name: "r/Videos",          cat: "ENTERTAINMENT" },
+  { url: "https://www.reddit.com/r/entertainment/top.json?limit=25&t=day",   name: "r/Entertainment",   cat: "ENTERTAINMENT" },
+  // ── Music ─────────────────────────────────────────────────────────────────
+  { url: "https://www.reddit.com/r/Music/top.json?limit=25&t=day",           name: "r/Music",           cat: "MUSIC" },
+  { url: "https://www.reddit.com/r/AfricanMusic/top.json?limit=25&t=day",    name: "r/AfricanMusic",    cat: "MUSIC" },
+  { url: "https://www.reddit.com/r/Afrobeats/top.json?limit=25&t=day",       name: "r/Afrobeats",       cat: "MUSIC" },
+  // ── Kenya ─────────────────────────────────────────────────────────────────
+  { url: "https://www.reddit.com/r/Kenya/top.json?limit=25&t=day",           name: "r/Kenya",           cat: "ENTERTAINMENT" },
+  { url: "https://www.reddit.com/r/nairobi/top.json?limit=25&t=day",         name: "r/nairobi",         cat: "ENTERTAINMENT" },
+  // ── Tech ──────────────────────────────────────────────────────────────────
+  { url: "https://www.reddit.com/r/technology/top.json?limit=25&t=day",      name: "r/technology",      cat: "TECHNOLOGY" },
+  { url: "https://www.reddit.com/r/Futurology/top.json?limit=25&t=day",      name: "r/Futurology",      cat: "TECHNOLOGY" },
+  { url: "https://www.reddit.com/r/gadgets/top.json?limit=25&t=day",         name: "r/gadgets",         cat: "TECHNOLOGY" },
 ];
 
 async function fetchRedditFeed(feedUrl: string, sourceName: string, category: string): Promise<VideoItem[]> {
@@ -190,19 +209,39 @@ async function fetchRedditFeed(feedUrl: string, sourceName: string, category: st
       if (!isNativeVideo && !isYouTube) continue;
       if (!isRecent(new Date(p.created_utc * 1000).toISOString())) continue;
 
-      const videoUrl = isNativeVideo ? p.media.reddit_video.fallback_url : postUrl;
+      // Minimum upvote threshold — only proven viral content
+      const score = p.score || 0;
+      if (score < 100) continue;
+
+      // For native Reddit videos: store the video URL (video-only track)
+      // Audio is at a separate URL — Cobalt handles merging via /resolve-cobalt
+      // We pass the Reddit post URL (not the DASH URL) so Cobalt can fetch both tracks
+      const videoUrl = isNativeVideo
+        ? `https://www.reddit.com${p.permalink}`  // pass post URL to Cobalt for audio+video merge
+        : postUrl;
+      const directVideoUrl = isNativeVideo
+        ? p.media.reddit_video.fallback_url  // video-only fallback if Cobalt fails
+        : undefined;
+
       if (!videoUrl) continue;
+
+      // Upvote-boosted virality score: score * 0.001 + comments * 0.05
+      // A 50k-upvote post gets +50 score boost — always ranks top
+      const upvoteBoost = Math.min(50, Math.round(score * 0.001 + (p.num_comments || 0) * 0.05));
 
       items.push({
         id: `reddit:${p.id}`,
         title: p.title,
         url: videoUrl,
-        directVideoUrl: isNativeVideo ? videoUrl : undefined,
+        directVideoUrl,
         thumbnail: p.thumbnail?.startsWith("http") ? p.thumbnail : "",
         publishedAt: new Date(p.created_utc * 1000),
-        sourceName,
+        // Embed upvote data in sourceName so caption generator can use it
+        sourceName: `${sourceName} · ${score.toLocaleString()} upvotes`,
         sourceType: isNativeVideo ? "reddit" : "youtube",
         category,
+        // Store upvoteBoost as a custom field for scoring in automate-video
+        ...(upvoteBoost > 0 ? { _upvoteBoost: upvoteBoost } as any : {}),
       });
     }
     return items.slice(0, 5);

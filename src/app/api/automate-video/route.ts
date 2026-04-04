@@ -289,7 +289,8 @@ export async function POST(req: NextRequest) {
         // Boost high-view videos: 1M+ gets +40, 200K+ gets +20
         const playCount = (v as any)._playCount || 0;
         const viewBoost = playCount >= 1000000 ? 40 : playCount >= 200000 ? 20 : 0;
-        const finalScore = viralScore + (isKenyan ? 25 : 0) + (hasDirect ? 10 : 0) + viewBoost;
+        const upvoteBoost = (v as any)._upvoteBoost || 0; // Reddit upvote score boost
+        const finalScore = viralScore + (isKenyan ? 25 : 0) + (hasDirect ? 10 : 0) + viewBoost + upvoteBoost;
         return { ...v, _score: finalScore, _isKenyan: isKenyan };
       })
       .sort((a, b) => {
