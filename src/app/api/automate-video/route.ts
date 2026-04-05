@@ -516,7 +516,7 @@ export async function POST(req: NextRequest) {
     // Generate branded PPP TV cover image and stage it to R2
     let coverUrl: string | undefined;
     try {
-      const imageBuffer = await generateImage(article, { isBreaking: false });
+      const imageBuffer = await generateImage(article, { isBreaking: false, ratio: "9:16" });
       const stageRes = await fetch(WORKER_URL + "/stage-image", {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": "Bearer " + WORKER_SECRET },

@@ -65,26 +65,23 @@ function isRecent(dateStr: string, maxHours = 72): boolean {
 // returns real video metadata with thumbnails, always has fresh content.
 // Format: https://www.youtube.com/feeds/videos.xml?channel_id=CHANNEL_ID
 const YOUTUBE_CHANNELS = [
-  // ── Kenya — verified channel IDs (confirmed via YouTube) ─────────────────
-  { id: "UChBQgieUidXV1CmDxSdRm3g", name: "Citizen TV Kenya",     cat: "ENTERTAINMENT" },
-  { id: "UCt3bgbxSBmNNkpVZzABm_Ow", name: "KTN News Kenya",        cat: "ENTERTAINMENT" },
-  { id: "UCIj8UMFMrMnFJBBiDl0AQOQ", name: "SPM Buzz",              cat: "CELEBRITY" },
-  { id: "UCBVjMGOIkavEAhyqpFGDvKg", name: "Tuko Kenya",            cat: "ENTERTAINMENT" },
-  { id: "UCXyLMXgT-jg3wQHkMSMqmcA", name: "NTV Kenya",             cat: "ENTERTAINMENT" },
-  { id: "UCFr1UaZBBFMQFJroGR9o4Zg", name: "K24 TV Kenya",          cat: "ENTERTAINMENT" },
-  { id: "UCqMnmFMrMnFJBBiDl0AQOQ",  name: "Mpasho Kenya",          cat: "CELEBRITY" },
-  { id: "UCPelotG4dCFBpWhGMBFMQFJ", name: "Ghafla Kenya",          cat: "CELEBRITY" },
+  // ── Kenya — verified channel IDs ─────────────────────────────────────────
+  { id: "UChBQgieUidXV1CmDxSdRm3g", name: "Citizen TV Kenya",        cat: "ENTERTAINMENT" },
+  { id: "UCqBJ47FjJcl61fmSbcadAVg", name: "NTV Kenya",               cat: "ENTERTAINMENT" },
+  { id: "UCKVsdeoHExltrWMuK0hOWmg", name: "KTN News Kenya",          cat: "ENTERTAINMENT" },
+  { id: "UCt3SE-Mvs3WwP7UW-PiFdqQ", name: "K24 TV Kenya",            cat: "ENTERTAINMENT" },
+  { id: "UCeikCJsdGgJq6ktZy5dMbhQ", name: "SPM Buzz",                cat: "CELEBRITY"     },
+  { id: "UCl6ICaB9meBcSMQ5Zmr446g", name: "Tuko Kenya",              cat: "ENTERTAINMENT" },
   // ── Africa entertainment ──────────────────────────────────────────────────
-  { id: "UCzWQYUVCpZqtN93H8RR44Qw", name: "Pulse Africa",          cat: "ENTERTAINMENT" },
-  { id: "UCumTHCpJEMFMrMnFJBBiDl0", name: "Trace Africa",          cat: "MUSIC" },
-  // ── International entertainment & sports ──────────────────────────────────
-  { id: "UCVTyTA7-g9nopHeHbeuvpRA", name: "ESPN",                  cat: "SPORTS" },
-  { id: "UCF9imwFLGf3jbUFqMbdGrKg", name: "Sky Sports",            cat: "SPORTS" },
-  { id: "UCnUYZLuoy1rq1aVMwx4aTzw", name: "Goal Football",         cat: "SPORTS" },
-  { id: "UCiWLfSweyRNmLpgEHekhoAg", name: "Entertainment Tonight", cat: "CELEBRITY" },
-  { id: "UCVTyTA7-g9nopHeHbeuvpRA", name: "E! News",               cat: "CELEBRITY" },
-  { id: "UCupvZG-5ko_eiXAupbDfxWw", name: "CNN",                   cat: "ENTERTAINMENT" },
-  { id: "UC16niRr50-MSBwiO3YDb3RA", name: "BBC News",              cat: "ENTERTAINMENT" },
+  { id: "UCABZrkBsGdCRGpibJOkKKmw", name: "Coke Studio Africa",      cat: "MUSIC"         },
+  // ── International sports ─────────────────────────────────────────────────
+  { id: "UCiWLfSweyRNmLpgEHekhoAg", name: "ESPN",                    cat: "SPORTS"        },
+  { id: "UCTU_wC79Dgi9rh4e9-baTqA", name: "Sky Sports",              cat: "SPORTS"        },
+  { id: "UCZ7wY7MRDSygp63HIEfdQZA", name: "Sky Sports Football",     cat: "SPORTS"        },
+  { id: "UCNAf1k0yIjyGu3k9BwAg3lg", name: "Sky Sports PL",           cat: "SPORTS"        },
+  // ── International entertainment ──────────────────────────────────────────
+  { id: "UC16niRr50-MSBwiO3YDb3RA", name: "BBC News",                cat: "ENTERTAINMENT" },
+  { id: "UCupvZG-5ko_eiXAupbDfxWw", name: "CNN",                     cat: "ENTERTAINMENT" },
 ];
 
 async function fetchYouTubeChannel(channelId: string, channelName: string, category: string): Promise<VideoItem[]> {

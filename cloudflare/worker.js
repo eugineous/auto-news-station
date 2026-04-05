@@ -860,6 +860,94 @@ export default {
           } catch {}
         }));
 
+        // Method 4: Twitter/X via Nitter RSS (multiple instances for reliability)
+        // Nitter is an open-source Twitter frontend that provides RSS feeds.
+        // We try multiple instances in parallel and use whichever responds first.
+        const NITTER_INSTANCES = [
+          "https://nitter.privacydev.net",
+          "https://nitter.poast.org",
+          "https://nitter.1d4.us",
+          "https://nitter.net",
+        ];
+        const TWITTER_ACCOUNTS = [
+          // Kenya & East Africa
+          { u: "nairobiminutes",   cat: "ENTERTAINMENT" },
+          { u: "StandardKenya",    cat: "ENTERTAINMENT" },
+          { u: "citizentvkenya",   cat: "ENTERTAINMENT" },
+          { u: "NationMediaKE",    cat: "ENTERTAINMENT" },
+          { u: "pulse_kenya",      cat: "ENTERTAINMENT" },
+          { u: "SPMBuzz",          cat: "CELEBRITY"     },
+          { u: "GhaflaKenya",      cat: "CELEBRITY"     },
+          { u: "nairobiwire",      cat: "CELEBRITY"     },
+          { u: "Mpassho",          cat: "CELEBRITY"     },
+          // Global Sports
+          { u: "bleacherreport",   cat: "SPORTS"        },
+          { u: "ESPN",             cat: "SPORTS"        },
+          { u: "premierleague",    cat: "SPORTS"        },
+          { u: "ChampionsLeague",  cat: "SPORTS"        },
+          { u: "FabrizioRomano",   cat: "SPORTS"        },
+          // Global Celebrity/Entertainment
+          { u: "TMZ",              cat: "CELEBRITY"     },
+          { u: "TheShadeRoom",     cat: "CELEBRITY"     },
+          { u: "billboard",        cat: "MUSIC"         },
+          { u: "RollingStone",     cat: "MUSIC"         },
+          { u: "Variety",          cat: "TV & FILM"     },
+        ];
+
+        // Pick a random Nitter instance + 6 random accounts
+        const selectedAccounts = [...TWITTER_ACCOUNTS].sort(() => Math.random() - 0.5).slice(0, 6);
+        await Promise.allSettled(selectedAccounts.map(async ({ u, cat }) => {
+          // Try each Nitter instance until one works
+          for (const instance of NITTER_INSTANCES) {
+            try {
+              const rssUrl = `${instance}/${u}/rss`;
+              const r = await fetch(rssUrl, {
+                headers: { "User-Agent": "Mozilla/5.0 (compatible; PPPTVBot/2.0)", "Accept": "application/rss+xml, application/xml, text/xml, */*" },
+                signal: AbortSignal.timeout(6000),
+              });
+              if (!r.ok) continue;
+              const xml = await r.text();
+              if (!xml || xml.length < 200 || !xml.includes("<item>")) continue;
+
+              const itemRegex = /<item>([\s\S]*?)<\/item>/g;
+              let m;
+              let found = 0;
+              while ((m = itemRegex.exec(xml)) !== null && found < 2) {
+                const e = m[1];
+                const title = (e.match(/<title><!\[CDATA\[([\s\S]*?)\]\]>/) || e.match(/<title>([\s\S]*?)<\/title>/) || [])[1] || "";
+                const link = (e.match(/<link>(.*?)<\/link>/) || [])[1] || "";
+                const pubDate = (e.match(/<pubDate>(.*?)<\/pubDate>/) || [])[1] || "";
+                const thumbnail = e.match(/https?:\/\/[^\s"'<>]+\.(?:jpg|jpeg|png)(?:\?[^\s"'<>]*)?/)?.[0] || "";
+
+                if (!title || !link) continue;
+                // Only include tweets with images (indicates rich media content)
+                if (!thumbnail) continue;
+                const cleanTitle = title.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/<[^>]+>/g, "").trim();
+                if (!cleanTitle || cleanTitle.length < 10) continue;
+                const isJunk = /retweet|RT @|follow|poll|giveaway|discount|promo|#ad/i.test(cleanTitle);
+                if (isJunk) continue;
+                const ageHours = pubDate ? (Date.now() - new Date(pubDate).getTime()) / 3600000 : 0;
+                if (ageHours > 48) continue;
+
+                videos.push({
+                  id: `twitter:${u}:${link.split("/").pop()}`,
+                  title: cleanTitle.slice(0, 200),
+                  url: link.replace(instance, "https://twitter.com").replace("nitter.", "twitter.").replace(/https:\/\/[^/]+\/([^/]+\/status\/)/, "https://twitter.com/$1"),
+                  directVideoUrl: null,
+                  thumbnail,
+                  publishedAt: pubDate ? new Date(pubDate).toISOString() : new Date().toISOString(),
+                  sourceName: `@${u} on X`,
+                  sourceType: "twitter",
+                  category: cat,
+                  playCount: 0,
+                });
+                found++;
+              }
+              if (found > 0) break; // Got results from this instance, stop trying others
+            } catch {}
+          }
+        }));
+
         return json({ videos, count: videos.length });
       } catch (err) { return json({ error: err.message }, 500); }
     }

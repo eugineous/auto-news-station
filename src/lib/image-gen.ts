@@ -237,19 +237,57 @@ export async function generateImage(article: Article, opts: ImageOptions = {}): 
             },
           },
 
-          // ── PPP TV Logo — top-left corner, bigger and bolder ────────────
+          // ── Top bar: PPP TV KENYA branding strip ────────────────────────
           {
             type: "div",
             props: {
               style: {
                 display: "flex",
-                position: "absolute", top: 40, left: 40,
+                position: "absolute", top: 0, left: 0, right: 0,
+                height: 80,
+                background: "rgba(0,0,0,0.75)",
+                alignItems: "center",
+                justifyContent: "space-between",
+                paddingLeft: 36, paddingRight: 36,
+              },
+              children: [
+                {
+                  type: "span",
+                  props: {
+                    style: {
+                      color: BRAND.red, fontSize: 36, fontWeight: 700,
+                      letterSpacing: 5, lineHeight: 1,
+                    },
+                    children: "PPP TV KENYA",
+                  },
+                },
+                {
+                  type: "span",
+                  props: {
+                    style: {
+                      color: "rgba(255,255,255,0.5)", fontSize: 28, fontWeight: 400,
+                      letterSpacing: 2, lineHeight: 1,
+                    },
+                    children: "24/7 GEN Z ENTERTAINMENT",
+                  },
+                },
+              ],
+            },
+          },
+
+          // ── PPP TV Logo — top-left corner, below top bar ─────────────────
+          {
+            type: "div",
+            props: {
+              style: {
+                display: "flex",
+                position: "absolute", top: 96, left: 40,
               },
               children: [{
                 type: "img",
                 props: {
                   src: PPP_LOGO_B64,
-                  style: { width: 280, height: 112, objectFit: "contain" },
+                  style: { width: 240, height: 96, objectFit: "contain" },
                 },
               }],
             },
