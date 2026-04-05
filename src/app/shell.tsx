@@ -13,6 +13,7 @@ const NAV = [
   { href: "/intelligence", icon: "🎯", label: "Audience"       },
   { href: "/factory",      icon: "🏭", label: "Factory"        },
   { href: "/competitors",  icon: "📡", label: "Competitors"    },
+  { href: "/knowledge-base",icon: "🧠", label: "Knowledge Base" },
   { href: "/voice",        icon: "🎙️", label: "Brand Voice"   },
   { href: "/sources",      icon: "📡", label: "Sources"        },
   { href: "/analytics",    icon: "📈", label: "Analytics"      },
