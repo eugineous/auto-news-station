@@ -57,11 +57,12 @@ export async function POST(req: NextRequest) {
       publishedAt: new Date(),
     };
 
-    const ai = await generateAIContent(article, { isVideo: scraped.isVideo, videoType: scraped.type });
+    const geminiKey = req.headers.get("X-Gemini-Key") || process.env.GEMINI_API_KEY || undefined;
+    const ai = await generateAIContent(article, { isVideo: scraped.isVideo, videoType: scraped.type, apiKey: geminiKey });
     const articleWithAITitle = { ...article, title: ai.clickbaitTitle };
     const imageBuffer = await generateImage(articleWithAITitle, { isBreaking: false });
 
-    const usingLiveKB = !!(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_KEY);
+    const usingLiveKB = !!(process.env.SUPABASE_URL && (process.env.SUPABASE_SERVICE_KEY || geminiKey));
 
     return NextResponse.json({
       scraped: {

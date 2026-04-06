@@ -352,9 +352,9 @@ export async function buildExcerptCaption(article: Article): Promise<{ headline:
 // ── Main export ───────────────────────────────────────────────────────────────
 export async function generateAIContent(
   article: Article,
-  _options?: { isVideo?: boolean; videoType?: string; tone?: "formal" | "casual" | "hype" | "sheng"; language?: "en" | "sw" }
+  _options?: { isVideo?: boolean; videoType?: string; tone?: "formal" | "casual" | "hype" | "sheng"; language?: "en" | "sw"; apiKey?: string }
 ): Promise<AIContent> {
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = _options?.apiKey || process.env.GEMINI_API_KEY;
   const hashtags = getHashtags(article.category);
   const cta = getEngagementCTA();
   const rawTitle = article.title.replace(/#\w+/g, "").replace(/\s{2,}/g, " ").trim();

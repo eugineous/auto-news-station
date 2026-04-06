@@ -271,7 +271,7 @@ async function getTrendingTopics(): Promise<string[]> {
   } catch { return []; }
 }
 
-async function postOneArticle(article: Article, isBreaking: boolean): Promise<{ success: boolean; error?: string }> {
+async function postOneArticle(article: Article, isBreaking: boolean, geminiKey?: string): Promise<{ success: boolean; error?: string }> {
   // ── Story verification — block fake/unverified stories ───────────────────
   const verification = await verifyStory(article.title, article.url);
   if (!verification.verified) {
@@ -290,7 +290,7 @@ async function postOneArticle(article: Article, isBreaking: boolean): Promise<{ 
   let firstComment = "";
 
   try {
-    const ai = await generateAIContent(article);
+    const ai = await generateAIContent(article, { apiKey: geminiKey });
     clickbaitTitle = ai.clickbaitTitle || article.title;
     caption = ai.caption || "";
     firstComment = ai.firstComment || "";
@@ -461,6 +461,21 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  // Accept Gemini key passed from Cloudflare Worker (fallback when env var not set)
+  const geminiKey = req.headers.get("X-Gemini-Key") || process.env.GEMINI_API_KEY || undefined;
+
+  // Accept social credentials passed from Cloudflare Worker
+  const igToken = req.headers.get("X-IG-Token") || process.env.INSTAGRAM_ACCESS_TOKEN || undefined;
+  const igAccount = req.headers.get("X-IG-Account") || process.env.INSTAGRAM_ACCOUNT_ID || undefined;
+  const fbToken = req.headers.get("X-FB-Token") || process.env.FACEBOOK_ACCESS_TOKEN || undefined;
+  const fbPage = req.headers.get("X-FB-Page") || process.env.FACEBOOK_PAGE_ID || undefined;
+
+  // Inject into process.env so publisher.ts picks them up (only if not already set)
+  if (igToken && !process.env.INSTAGRAM_ACCESS_TOKEN) process.env.INSTAGRAM_ACCESS_TOKEN = igToken;
+  if (igAccount && !process.env.INSTAGRAM_ACCOUNT_ID) process.env.INSTAGRAM_ACCOUNT_ID = igAccount;
+  if (fbToken && !process.env.FACEBOOK_ACCESS_TOKEN) process.env.FACEBOOK_ACCESS_TOKEN = fbToken;
+  if (fbPage && !process.env.FACEBOOK_PAGE_ID) process.env.FACEBOOK_PAGE_ID = fbPage;
+
   const response: SchedulerResponse = { posted: 0, skipped: 0, errors: [] };
 
   // ── Peak hour check ───────────────────────────────────────────────────────
@@ -606,7 +621,7 @@ export async function POST(req: NextRequest) {
       try {
         const ageHours = (Date.now() - new Date(article.publishedAt).getTime()) / 3600000;
         const isBreaking = ageHours < 2;
-        const result = await postOneArticle(article, isBreaking);
+        const result = await postOneArticle(article, isBreaking, geminiKey);
         if (result.success) {
           response.posted++;
           // Respect IG rate limits — wait 8s between posts

@@ -1387,7 +1387,16 @@ async function triggerAutomate(env) {
     // Image pipeline
     const imagePromise = fetch(`${appUrl}/api/automate`, {
       method: "POST",
-      headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json", "X-AB-Variant": abVariant },
+      headers: {
+        Authorization: `Bearer ${secret}`,
+        "Content-Type": "application/json",
+        "X-AB-Variant": abVariant,
+        ...(env.GEMINI_API_KEY ? { "X-Gemini-Key": env.GEMINI_API_KEY } : {}),
+        ...(env.INSTAGRAM_ACCESS_TOKEN ? { "X-IG-Token": env.INSTAGRAM_ACCESS_TOKEN } : {}),
+        ...(env.INSTAGRAM_ACCOUNT_ID ? { "X-IG-Account": env.INSTAGRAM_ACCOUNT_ID } : {}),
+        ...(env.FACEBOOK_ACCESS_TOKEN ? { "X-FB-Token": env.FACEBOOK_ACCESS_TOKEN } : {}),
+        ...(env.FACEBOOK_PAGE_ID ? { "X-FB-Page": env.FACEBOOK_PAGE_ID } : {}),
+      },
       body: "{}",
       signal: AbortSignal.timeout(280000),
     }).then(async res => {
@@ -1420,7 +1429,16 @@ async function triggerAutomate(env) {
     const videoPromise = fireVideo
       ? fetch(`${appUrl}/api/automate-video`, {
           method: "POST",
-          headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json", "X-AB-Variant": abVariant },
+          headers: {
+            Authorization: `Bearer ${secret}`,
+            "Content-Type": "application/json",
+            "X-AB-Variant": abVariant,
+            ...(env.GEMINI_API_KEY ? { "X-Gemini-Key": env.GEMINI_API_KEY } : {}),
+            ...(env.INSTAGRAM_ACCESS_TOKEN ? { "X-IG-Token": env.INSTAGRAM_ACCESS_TOKEN } : {}),
+            ...(env.INSTAGRAM_ACCOUNT_ID ? { "X-IG-Account": env.INSTAGRAM_ACCOUNT_ID } : {}),
+            ...(env.FACEBOOK_ACCESS_TOKEN ? { "X-FB-Token": env.FACEBOOK_ACCESS_TOKEN } : {}),
+            ...(env.FACEBOOK_PAGE_ID ? { "X-FB-Page": env.FACEBOOK_PAGE_ID } : {}),
+          },
           body: "{}",
           signal: AbortSignal.timeout(280000),
         }).then(r => r.json()).then(async d => {

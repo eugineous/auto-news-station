@@ -196,15 +196,30 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const igToken = process.env.INSTAGRAM_ACCESS_TOKEN;
+    // Accept Gemini key passed from Cloudflare Worker
+    const geminiKey = req.headers.get("X-Gemini-Key") || process.env.GEMINI_API_KEY || undefined;
+
+    // Accept social credentials passed from Cloudflare Worker
+    const igToken = req.headers.get("X-IG-Token") || process.env.INSTAGRAM_ACCESS_TOKEN || undefined;
+    const igAccount = req.headers.get("X-IG-Account") || process.env.INSTAGRAM_ACCOUNT_ID || undefined;
+    const fbToken = req.headers.get("X-FB-Token") || process.env.FACEBOOK_ACCESS_TOKEN || undefined;
+    const fbPage = req.headers.get("X-FB-Page") || process.env.FACEBOOK_PAGE_ID || undefined;
+
+    // Inject into process.env so publisher.ts picks them up
+    if (igToken && !process.env.INSTAGRAM_ACCESS_TOKEN) process.env.INSTAGRAM_ACCESS_TOKEN = igToken;
+    if (igAccount && !process.env.INSTAGRAM_ACCOUNT_ID) process.env.INSTAGRAM_ACCOUNT_ID = igAccount;
+    if (fbToken && !process.env.FACEBOOK_ACCESS_TOKEN) process.env.FACEBOOK_ACCESS_TOKEN = fbToken;
+    if (fbPage && !process.env.FACEBOOK_PAGE_ID) process.env.FACEBOOK_PAGE_ID = fbPage;
+
+    const igTokenFinal = process.env.INSTAGRAM_ACCESS_TOKEN;
     const igAccountId = process.env.INSTAGRAM_ACCOUNT_ID;
-    const fbToken = process.env.FACEBOOK_ACCESS_TOKEN;
+    const fbTokenFinal = process.env.FACEBOOK_ACCESS_TOKEN;
     const fbPageId = process.env.FACEBOOK_PAGE_ID;
 
     // Dry-run: return video candidates without posting (used by Sources tab preview)
     const isDryRun = req.headers.get("X-Dry-Run") === "true";
 
-    if (!isDryRun && (!igToken || !igAccountId || !fbToken || !fbPageId)) {
+    if (!isDryRun && (!igTokenFinal || !igAccountId || !fbTokenFinal || !fbPageId)) {
       return NextResponse.json({ error: "Social credentials not configured" }, { status: 500 });
     }
 
@@ -503,7 +518,7 @@ export async function POST(req: NextRequest) {
       videoUrl: target.url,
     };
 
-    const ai = await generateAIContent(article).catch(() => ({
+    const ai = await generateAIContent(article, { apiKey: geminiKey }).catch(() => ({
       clickbaitTitle: (target as VideoItem).title.toUpperCase(),
       caption: `${(target as VideoItem).title}\n\nTag someone who needs to see this.`,
       firstComment: "#KenyaEntertainment #PPPTVKenya",
@@ -542,8 +557,8 @@ export async function POST(req: NextRequest) {
     } catch { /* cover is optional */ }
 
     const [igResult, fbResult] = await Promise.all([
-      postReelToIG(staged.url, caption, coverUrl ?? undefined, igToken!, igAccountId!),
-      postVideoToFB(staged.url, caption, fbToken!, fbPageId!),
+      postReelToIG(staged.url, caption, coverUrl ?? undefined, igTokenFinal!, igAccountId!),
+      postVideoToFB(staged.url, caption, fbTokenFinal!, fbPageId!),
     ]);
 
     // R2 cleanup with retry

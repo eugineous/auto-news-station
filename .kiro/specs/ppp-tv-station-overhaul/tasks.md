@@ -226,7 +226,7 @@ Fix six critical production failures and raise content quality across the autono
   - [ ] 16.5 Implement property tests P22–P26 (KB cache, RSS) in `src/lib/gemini.test.ts` and `src/lib/scraper.test.ts`
     - _Requirements: 11.5, 11.6, 12.1–12.6_
 
-- [ ] 17. Final checkpoint — Ensure all tests pass
+- [x] 17. Final checkpoint — Ensure all tests pass
   - Run `npx vitest --run` and confirm all property-based and unit tests pass. Ask the user if any questions arise before proceeding to deployment.
 
 ## Notes
