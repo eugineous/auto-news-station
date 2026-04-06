@@ -1,8 +1,23 @@
 import { createHash } from "crypto";
 import { Article } from "./types";
 
-// PPP TV site — primary source (correct final URL)
-const PPPTV_SITE_URL = process.env.PPPTV_SITE_URL || "https://ppp-tv-site-final.vercel.app";
+// ── RSS parsing utilities ─────────────────────────────────────────────────────
+export function unwrapCDATA(raw: string): string {
+  return raw.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1").trim();
+}
+
+export function decodeEntities(str: string): string {
+  return str
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'");
+}
+
+// PPP TV site — primary source
+const PPPTV_SITE_URL = process.env.PPPTV_SITE_URL || "https://ppp-tv-site.vercel.app";
 const PPPTV_RSS_BASE = PPPTV_SITE_URL + "/api/rss";
 
 // Worker feed fallback — external RSS feeds (Tuko, Mpasho, etc.)
@@ -89,8 +104,8 @@ function parseWorkerFeed(data: WorkerFeedResponse): Article[] {
 
 // ── Parse PPP TV site RSS feed directly ──────────────────────────────────────
 async function fetchFromPPPTVSite(limit: number): Promise<Article[]> {
-  // Use `since` param to only fetch articles newer than last 2 hours — efficient polling
-  const since = new Date(Date.now() - 2 * 3600000).toISOString();
+  // Use `since` param to only fetch articles newer than last 24 hours — catch up after downtime
+  const since = new Date(Date.now() - 24 * 3600000).toISOString();
   const url = `${PPPTV_RSS_BASE}?since=${encodeURIComponent(since)}&limit=${limit}`;
   const res = await fetch(url, {
     headers: { "User-Agent": "PPPTVAutoPoster/5.0", "Accept": "application/rss+xml, application/xml, text/xml, */*" },
@@ -108,8 +123,8 @@ async function fetchFromPPPTVSite(limit: number): Promise<Article[]> {
 
   while ((match = itemRegex.exec(xml)) !== null) {
     const e = match[1];
-    const rawTitle = (e.match(/<title><!\[CDATA\[([\s\S]*?)\]\]><\/title>/) || e.match(/<title>([\s\S]*?)<\/title>/) || [])[1] || "";
-    const title = rawTitle.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/<[^>]+>/g, "").trim();
+    const rawTitle = (e.match(/<title>([\s\S]*?)<\/title>/) || [])[1] || "";
+    const title = decodeEntities(unwrapCDATA(rawTitle)).replace(/<[^>]+>/g, "").trim();
     if (!title || title.length < 5) continue;
 
     const fp = titleFingerprint(title);
@@ -118,8 +133,8 @@ async function fetchFromPPPTVSite(limit: number): Promise<Article[]> {
 
     const link = (e.match(/<link>(.*?)<\/link>/) || e.match(/<guid[^>]*isPermaLink="true"[^>]*>(.*?)<\/guid>/) || e.match(/<guid[^>]*>(.*?)<\/guid>/) || [])[1]?.trim() || "";
     const pubDate = (e.match(/<pubDate>(.*?)<\/pubDate>/) || [])[1] || "";
-    const desc = (e.match(/<description><!\[CDATA\[([\s\S]*?)\]\]><\/description>/) || e.match(/<description>([\s\S]*?)<\/description>/) || [])[1] || "";
-    const excerpt = desc.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/\s+/g, " ").trim().slice(0, 500);
+    const rawDesc = (e.match(/<description>([\s\S]*?)<\/description>/) || [])[1] || "";
+    const excerpt = decodeEntities(unwrapCDATA(rawDesc)).replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim().slice(0, 500);
     const category = (e.match(/<category><!\[CDATA\[([\s\S]*?)\]\]><\/category>/) || e.match(/<category>([\s\S]*?)<\/category>/) || [])[1]?.trim().toUpperCase() || "ENTERTAINMENT";
     const imgMatch = e.match(/<media:content[^>]+url="([^"]+)"/) || e.match(/<media:thumbnail[^>]+url="([^"]+)"/) || e.match(/https?:\/\/[^\s"'<>]+\.(?:jpg|jpeg|png|webp)[^"'<>\s]*/);
     const imageUrl = imgMatch ? (imgMatch[1] || imgMatch[0]) : "";

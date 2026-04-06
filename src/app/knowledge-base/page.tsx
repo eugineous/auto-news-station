@@ -178,7 +178,13 @@ export default function KnowledgeBasePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [testUrl, setTestUrl] = useState("");
-  const [testResult, setTestResult] = useState<{ headline?: string; caption?: string } | null>(null);
+  const [testResult, setTestResult] = useState<{
+    headline?: string;
+    caption?: string;
+    wordCount?: number;
+    charCount?: number;
+    usingLiveKB?: boolean;
+  } | null>(null);
   const [testing, setTesting] = useState(false);
   const [activeTab, setActiveTab] = useState<"sections" | "workflows" | "test">("sections");
 
@@ -248,9 +254,13 @@ export default function KnowledgeBasePage() {
         body: JSON.stringify({ url: testUrl }),
       });
       const d = await r.json();
+      const caption = d.ai?.caption;
       setTestResult({
         headline: d.ai?.clickbaitTitle || d.scraped?.title,
-        caption: d.ai?.caption,
+        caption,
+        wordCount: caption ? caption.split(/\s+/).filter(Boolean).length : undefined,
+        charCount: caption ? caption.length : undefined,
+        usingLiveKB: d.usingLiveKB,
       });
     } catch (e: any) {
       setTestResult({ headline: "Error: " + e.message });
@@ -292,6 +302,10 @@ export default function KnowledgeBasePage() {
           </div>
           <div style={{ fontSize: 12, color: "#666" }}>
             <span style={{ color: "#f97316", fontWeight: 700 }}>●</span> Changes take effect on next post
+          </div>
+          <div style={{ fontSize: 12, color: "#666" }}>
+            <span style={{ color: testResult?.usingLiveKB ? GREEN : "#f97316", fontWeight: 700 }}>●</span>{" "}
+            {testResult ? (testResult.usingLiveKB ? "Using live KB" : "Using defaults") : "KB status unknown"}
           </div>
         </div>
 
@@ -455,6 +469,12 @@ export default function KnowledgeBasePage() {
                       <pre style={{ margin: 0, fontSize: 13, color: "#ccc", lineHeight: 1.7, whiteSpace: "pre-wrap", fontFamily: "inherit" }}>
                         {testResult.caption}
                       </pre>
+                      {testResult.wordCount !== undefined && (
+                        <div style={{ fontSize: 11, color: "#555", marginTop: 8 }}>
+                          {testResult.wordCount} words · {testResult.charCount} chars
+                          {testResult.wordCount > 180 && <span style={{ color: "#f87171", marginLeft: 8 }}>⚠ Over 180 words</span>}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

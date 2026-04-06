@@ -3,15 +3,12 @@ import sharp from "sharp";
 import { Article } from "./types";
 import { PPP_LOGO_B64 } from "./ppp-logo-b64";
 
-const W = 1080, H = 1350;
-
 // Supported output ratios — width × height at 1080px base
-export const IMAGE_RATIOS: Record<string, { w: number; h: number; label: string }> = {
-  "4:5":  { w: 1080, h: 1350, label: "4:5 (IG Feed)" },
-  "1:1":  { w: 1080, h: 1080, label: "1:1 (Square)" },
-  "9:16": { w: 1080, h: 1920, label: "9:16 (Story/Reel)" },
-  "16:9": { w: 1920, h: 1080, label: "16:9 (Landscape)" },
-  "4:3":  { w: 1080, h: 810,  label: "4:3 (Classic)" },
+export const IMAGE_RATIOS: Record<string, { w: number; h: number }> = {
+  "4:5":  { w: 1080, h: 1350 },
+  "9:16": { w: 1080, h: 1920 },
+  "1:1":  { w: 1080, h: 1080 },
+  "16:9": { w: 1920, h: 1080 },
 };
 
 // ── PPP TV Brand Guidelines ───────────────────────────────────────────────────
@@ -143,26 +140,25 @@ async function fetchImageBuffer(url: string): Promise<Buffer | null> {
 }
 
 // Auto-size headline based on character count — big and bold
-function getHeadlineFontSize(title: string): number {
+export function getHeadlineFontSize(title: string): number {
   const chars = title.length;
   if (chars <= 20) return 160;
   if (chars <= 30) return 140;
-  if (chars <= 40) return 122;
-  if (chars <= 55) return 108;
-  if (chars <= 70) return 94;
-  if (chars <= 90) return 80;
-  if (chars <= 110) return 68;
+  if (chars <= 40) return 120;
+  if (chars <= 55) return 100;
+  if (chars <= 75) return 80;
+  if (chars <= 110) return 65;
   return 58;
 }
 
 export interface ImageOptions {
   isBreaking?: boolean;
-  storyFormat?: boolean;
-  ratio?: string; // e.g. "4:5", "1:1", "16:9", "9:16", "4:3"
+  ratio?: string; // e.g. "4:5", "1:1", "16:9", "9:16"
 }
 
-export async function generateImage(article: Article, opts: ImageOptions = {}): Promise<Buffer> {
-  const dims = (opts.ratio && IMAGE_RATIOS[opts.ratio]) ? IMAGE_RATIOS[opts.ratio] : { w: W, h: H };
+export async function generateImage(article: Article, opts: { isBreaking?: boolean; ratio?: string } = {}): Promise<Buffer> {
+  const ratio = opts.ratio ?? "4:5";
+  const dims = IMAGE_RATIOS[ratio] ?? IMAGE_RATIOS["4:5"];
   const iW = dims.w, iH = dims.h;
   const [fontData, rawBg] = await Promise.all([
     loadFont(),
@@ -231,7 +227,7 @@ export async function generateImage(article: Article, opts: ImageOptions = {}): 
               style: {
                 display: "flex",
                 position: "absolute", left: 0, right: 0, top: 0, height: iH,
-                background: "linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 30%, rgba(0,0,0,0.55) 50%, rgba(0,0,0,0.88) 65%, rgba(0,0,0,1) 78%)",
+                background: "linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,1) 78%)",
               },
               children: [],
             },

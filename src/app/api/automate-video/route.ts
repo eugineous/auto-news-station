@@ -267,11 +267,23 @@ export async function POST(req: NextRequest) {
       });
     });
 
+    // ── In-batch dedup by URL and title fingerprint ───────────────────────────
+    const seenUrls = new Set<string>();
+    const seenTitleFingerprints = new Set<string>();
+    const batchDeduped = filteredVideos.filter(v => {
+      const urlKey = v.url.toLowerCase().replace(/[?#].*$/, ""); // strip query/hash
+      const titleFp = v.title.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 40);
+      if (seenUrls.has(urlKey) || seenTitleFingerprints.has(titleFp)) return false;
+      seenUrls.add(urlKey);
+      seenTitleFingerprints.add(titleFp);
+      return true;
+    });
+
     // ── Duplicate title detection (Supabase) ─────────────────────────────────
     const recentPosts = await getPostLog(50, 1);
     const recentTitles = recentPosts.map((p: any) => (p.title || "").toLowerCase());
 
-    const dedupedVideos = filteredVideos
+    const dedupedVideos = batchDeduped
       .filter(v => {
         const tl = v.title.toLowerCase();
         return !recentTitles.some(rt => levenshtein(tl.slice(0, 60), rt.slice(0, 60)) < 4);

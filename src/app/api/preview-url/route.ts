@@ -61,6 +61,8 @@ export async function POST(req: NextRequest) {
     const articleWithAITitle = { ...article, title: ai.clickbaitTitle };
     const imageBuffer = await generateImage(articleWithAITitle, { isBreaking: false });
 
+    const usingLiveKB = !!(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_KEY);
+
     return NextResponse.json({
       scraped: {
         type: scraped.type,
@@ -75,6 +77,7 @@ export async function POST(req: NextRequest) {
       ai,
       category: article.category,
       imageBase64: "data:image/jpeg;base64," + imageBuffer.toString("base64"),
+      usingLiveKB,
     });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });

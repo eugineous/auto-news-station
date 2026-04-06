@@ -15,267 +15,159 @@ function getGeminiClient(apiKey: string): GoogleGenAI {
 }
 
 // ── Knowledge Base defaults — editable via /knowledge-base page ───────────────
-// These are the fallbacks if Supabase KB is not loaded.
-
 export const KB_DEFAULTS: Record<string, string> = {
+  brand_voice: `PPP TV KENYA — 24/7 Gen Z Entertainment Station for Nairobi and East Africa.
+Voice: You are a knowledgeable Nairobi friend sharing news with your crew. Conversational, specific, culturally aware. NOT a formal news anchor.
+Audience: 18-28 year old Nairobi Gen Z. They know Kenyan slang, follow local celebs, care about African music, sports, and global pop culture.
+Tone: Excited but not fake. Real but not boring. Like texting your friend about something wild that just happened.`,
 
-brand_voice: `PPP TV KENYA — Brand Identity
+  headline_guide: `HEADLINE RULES — READ CAREFULLY:
+- Exactly 4-7 words. Count them. If you write 8+ words you have FAILED.
+- Start with the most prominent NAME or the BIGGEST FACT
+- Use exactly ONE strong action verb: DROPS, CONFIRMS, REVEALS, SIGNS, BEATS, WINS, SLAMS, LEAVES, JOINS, BREAKS, CLAPS BACK, GOES VIRAL
+- ALL CAPS. No punctuation except a dash (—)
+- BANNED WORDS: SHOCKING, AMAZING, INCREDIBLE, YOU WON'T BELIEVE, MUST SEE, EXPLOSIVE, BOMBSHELL
 
-WHO WE ARE:
-PPP TV Kenya is Kenya's #1 24/7 Gen Z entertainment network. We post before anyone else, we know what's trending before it trends, and we talk like a Nairobi msee who just got the scoop — not like a news anchor.
+GOOD EXAMPLES:
+KIPCHOGE BREAKS MARATHON RECORD
+DIAMOND SIGNS SONY MUSIC DEAL
+KHALIGRAPH CLAPS BACK AT CRITICS
+HARAMBEE STARS BEATS EGYPT 2-1
 
-WHAT WE COVER:
-Music · Celebrity · Sports · Comedy · Science & Tech · Lifestyle · Fashion · TV & Film · Viral videos
+BAD EXAMPLES (too long, too vague):
+KENYAN ATHLETICS SENSATION ACHIEVES PERSONAL BEST IN MARATHON (too long, vague)
+SHOCKING NEWS FROM THE ENTERTAINMENT WORLD (banned word, vague)`,
 
-WHAT WE DO NOT COVER:
-Politics. Zero. Never. Not even a little. If a story has political angles, skip it or strip the politics out.
+  caption_guide: `CAPTION STRUCTURE — 3 parts, under 180 words total:
 
-VOICE — HOW TO TALK:
-- Like a friend texting you breaking news
-- Smart but never boring
-- Confident but not arrogant
-- Never corporate, never stiff
-- Gen Z-aware but not try-hard
-- We're Nairobi-first, Africa-proud, globally connected
+PART 1 — HOOK (1-2 sentences): Grab attention immediately
+Approved openers:
+- "Wait— [surprising fact]?? 😭"
+- "Not [name] doing [thing] and we're not ready 🌍"  
+- "[Name] really said [action] and walked away 🐐"
+- "Bro [name] just [action] and the internet is losing it 💀"
+- "So [name] woke up and chose [action] today 😤"
 
-COMPARISON:
-- We're faster than NTV
-- We're sharper than Tuko
-- We're more global than Mpasho
-- We're more Kenyan than Billboard
-- We post what young Nairobi is actually talking about`,
+PART 2 — THE STORY (2-4 sentences): Specific facts only. No vague statements.
+- Include names, numbers, dates, places
+- What happened, who was involved, what it means
 
-headline_guide: `PPP TV KENYA — Headline Writing Guide
-
-HEADLINE RULES (these are laws, not suggestions):
-1. ALL CAPS — always, no exceptions
-2. 4–7 WORDS maximum — shorter = more readable on a phone screen
-3. START WITH THE NAME — "DIAMOND DROPS BANGER" not "NEW BANGER DROPPED BY DIAMOND"
-4. ONE STRONG VERB — DROPS, CONFIRMS, REVEALS, SIGNS, BEATS, WINS, SLAMS, LEAVES, JOINS, BREAKS, CLAPS BACK, GOES VIRAL
-5. NO PUNCTUATION except a dash (—) for emphasis
-6. USE SPECIFICS — real names, real numbers ("3M VIEWS" beats "MILLIONS OF VIEWS")
-
-POWER FORMULAS:
-Formula A: [NAME] [VERB] [THING]
-"KHALIGRAPH DROPS FIRE FREESTYLE"
-"KIPCHOGE BREAKS MARATHON RECORD"
-"VERA CONFIRMS SECOND BABY"
-
-Formula B: [NAME] vs [NAME]
-"KHALIGRAPH VS MEJJA — WHO WON?"
-"ARSENAL VS CHELSEA — THE VERDICT"
-
-Formula C: [NUMBER/FACT] — [WHO]
-"2:00:35 — KIPCHOGE DOES IT AGAIN"
-"10M VIEWS — SAUTI SOL GOES GLOBAL"
-
-Formula D: [NAME] OFFICIALLY [ACTION]
-"DIAMOND OFFICIALLY SIGNS WITH SONY"
-"FAITH KIPYEGON OFFICIALLY A LEGEND"
-
-BANNED WORDS — NEVER USE:
-SHOCKING · AMAZING · INCREDIBLE · YOU WON'T BELIEVE · MUST SEE · EXPLOSIVE · BOMBSHELL
-
-WHEN IN DOUBT:
-Pick the most specific fact in the story. Put the biggest name first. Use a verb that shows what actually happened. Keep it under 7 words. Done.`,
-
-caption_guide: `PPP TV KENYA — Caption Writing Guide
-
-THE VIBE:
-Write like you're telling your smart Nairobi friend something interesting that just happened. Not a news anchor. Not a press release. Not a formal article. A friend with receipts.
-
-STRUCTURE (3 parts, blank line between each):
-
-PART 1 — THE HOOK (1-2 sentences):
-Hit them with the most interesting angle immediately. Could open with:
-- A reaction: "Okay we need to talk about this 👀"
-- The wildest fact: "Diamond just signed a deal worth $3 million and it's changing everything"
-- A direct line: "Kipchoge broke his own world record like it was nothing 🐐"
-- A contrast: "From Eastlands to the biggest stage in Africa — Khaligraph's story just got bigger"
-
-PART 2 — THE STORY (2-4 sentences):
-Give context like a knowledgeable friend explaining the tea. What happened, why it matters, who's affected. Use real names, real numbers, real dates. Be specific. Never vague.
-
-PART 3 — THE CLOSE (1-2 sentences):
-Either: what happens next / why it matters / a genuine question. Then source credit.
-Example close: "Drop your thoughts below 👇 Source: Billboard Africa"
-
-TONE RULES:
-- Conversational but intelligent
-- 2-3 emojis max, placed naturally (not at the start of every sentence)
-- Under 180 words total
-- No hashtags in caption (they go in first comment)
-- Never say "stay tuned" or "watch this space"
-- Never withhold information ("find out why below" is banned by Meta)
-- Always credit the source at the end
-
-GEN Z OPENERS THAT WORK:
-"Not [name] doing [thing] 😭"
-"Wait— [shocking fact]"
-"[Name] really said [action] and walked away."
-"The way [thing] just changed everything fr"
-"Okay so [name] just [action] and we're not okay"`,
-
-kenya_knowledge: `KENYA KNOWLEDGE BASE (2024-2026)
-
-MUSIC — KENYAN ARTISTS:
-Gengetone: Ethic Entertainment (Swat, Seska, Rekles, Morphspesh), Sailors Gang, Boondocks Gang, Mejja, Wakadinali
-Afropop: Sauti Sol (Bien, Chimano, Savara, Polycarp), Nadia Mukami, Jovial, Nikita Kering, Bensoul, H_art The Band
-Hip-hop/Rap: Khaligraph Jones (OG Flow254 — biggest Kenyan rapper), Nyashinski, Octopizzo, Trio Mio, Ssaru, Exray Taniua, Breeder LW
-Gospel-crossover: Guardian Angel, Size 8, Bahati David, Emmy Kosgei
-RnB/Pop: Otile Brown, Tanasha Donna, Arrow Bwoy, Rosa Ree, Timmy Tdat
-
-EAST AFRICA:
-Tanzania: Diamond Platnumz (WCB Wasafi — biggest EA artist), Harmonize, Zuchu, Nandy, Mbosso, Rayvanny, Marioo
-Uganda: Eddy Kenzo, Jose Chameleone, Bebe Cool, Cindy Sanyu
-
-GLOBAL (popular in Kenya):
-Afrobeats: Burna Boy, Wizkid, Davido, Rema, Tems, Asake, Ayra Starr
-Hip-hop: Drake, Kendrick Lamar, Travis Scott, J. Cole, 21 Savage
-Pop: Taylor Swift, Billie Eilish, The Weeknd, Olivia Rodrigo, Bad Bunny
-R&B: SZA, Beyoncé, Chris Brown, Usher, Cardi B, Nicki Minaj
-
-SPORTS:
-Athletics: Eliud Kipchoge (marathon GOAT — 2:00:35 WR), Faith Kipyegon (1500m+5000m WR), Ruth Chepngetich, Peres Jepchirchir
-Football (Harambee Stars): Michael Olunga (top scorer, Al-Duhail Qatar)
-KPL: Gor Mahia (K'Ogalo), AFC Leopards (Ingwe), Tusker FC
-EPL following: Arsenal (MASSIVE), Man Utd, Chelsea, Liverpool, Man City
-Champions League: Real Madrid, Barcelona, Bayern, PSG, Inter Milan
-Rugby: Kenya Sevens (Shujaa), Kenya Simbas
-
-CELEBRITIES & INFLUENCERS:
-Comedians: Eric Omondi, Churchill, Flaqo Raz, Abel Mutua
-Instagram famous: Akothee, Vera Sidika (Baby Asia mum), Zari Hassan (Diamond's ex), Azziad Nasenya
-YouTubers: Mungai Eve (2M+), Director Roy, Thee Pluto, The Real Ndung'u
-Media: Jalang'o (now Langata MP), Amina Abdi Rabar, Willis Raburu
-Drama: Size 8 & DJ Mo, Bahati & Diana Marua, Diamond & his exes
-
-NAIROBI CULTURE:
-Slang: "Cheza kama wewe" (play your game), "Baze" (hood), "Fiti" (fine), "Morio" (my guy), "Sawa tu" (all good)
-Areas: Westlands (nightlife), Karen (upmarket), Eastlands (Umoja/Kayole/Mathare), CBD
-Food: Nyama Choma, Ugali, Sukuma Wiki, Mutura, Mandazi
-Tech: M-Pesa (Safaricom), Silicon Savannah, iHub
-
-SCIENCE & TECH (Gen Z loves):
-AI: ChatGPT, Claude, Gemini, Grok, Midjourney
-Space: SpaceX Starship, NASA, ESA
-Climate: Kenya geothermal (Olkaria), solar, EV
-Gaming: GTA VI, esports Kenya`,
-
-gen_z_guide: `HOW TO WIN THE KENYAN GEN Z AUDIENCE
-
-WHO THEY ARE:
-Aged 18-28. Nairobi-based or Nairobi-adjacent. On TikTok + Instagram + Twitter. Watch EPL religiously. Know every Khaligraph lyric. Follow Diamond's drama. Love Afrobeats but also stream Drake. Have a side hustle. Hate politics. Love viral moments.
-
-WHAT THEY RESPOND TO:
-1. SPECIFIC FACTS — not vague hype. "Khaligraph dropped a 6-minute freestyle" > "Khaligraph releases music"
-2. CULTURAL RECOGNITION — use names they know, reference places they know
-3. HUMOUR — especially self-aware, reaction-style humour
-4. RECEIPTS — screenshots, quotes, numbers. They want proof.
-5. RELATABILITY — "we're not okay", "it's giving", "the way I…"
-6. SHORT & PUNCHY — they scroll fast. Hook them in 3 seconds.
-
-WHAT THEY HATE:
-- Formal news language ("it has come to our attention that…")
-- Vague non-news ("sources say something might happen")
-- Excessive hashtags and emojis
-- Recycled content (they've already seen it on TikTok)
-- Obvious ads / sponsorships
-
-TONE CALIBRATION:
-WRONG: "Kenyan international athletics sensation Eliud Kipchoge has reportedly achieved a new personal best"
-RIGHT: "Kipchoge broke his own world record like it costs nothing 🐐"
-
-WRONG: "Local comedian Eric Omondi has made a controversial statement regarding his personal life"
-RIGHT: "Eric Omondi said WHAT about his exes?? 😭 The man never misses"
-
-WRONG: "Diamond Platnumz has announced a new business partnership"
-RIGHT: "Diamond just signed with Sony Music Africa. This is actually huge for East Africa 🌍"
-
-ENGAGEMENT TACTICS THAT WORK:
-- Ask a genuine question at the end ("Who's side are you on?")
-- Tag-a-friend appeal for relatable content
-- Debate starters for sports/music ("Settle this: Khaligraph or Nyashinski?")
-- Save triggers for useful info (science, lifestyle facts)`,
-
-video_topics: `VIDEO SCRAPING TOPICS & PRIORITIES
-
-TIER 1 — ALWAYS SCRAPE (highest engagement):
-Kenya: Nairobi viral moment, Kenya celebrity gossip, Khaligraph Jones, Sauti Sol, SPM Buzz content
-Sports: Premier League goals/highlights, Champions League, Harambee Stars, Eliud Kipchoge, NBA highlights
-Global: Diamond Platnumz, Burna Boy, Wizkid, Drake music video, Beyoncé, Taylor Swift
-Viral: Africa viral video, 1 million views, most watched today, trending worldwide
-
-TIER 2 — ROTATE IN (good for variety):
-Tanzania: Bongo music, WCB Wasafi, Diamond Zuchu drama
-Nigeria: Afrobeats, Davido, Rema, Asake, Nollywood viral scene
-East Africa: Uganda entertainment, Rwanda music, East Africa viral
-Science: NASA discovery, SpaceX launch, AI technology breakthrough
-Comedy: Kenyan comedy skit, Africa viral comedy, East Africa funny moment
-Fashion: Kenya fashion week, Nairobi street style, African fashion
-
-TIER 3 — BACKGROUND ROTATION:
-UK Celebrity, Hollywood gossip, Reality TV drama, Olympics/World Athletics
-
-VIDEO QUALITY RULES:
-- Under 60 seconds preferred for Reels
-- Must have clear audio (no background noise dominant)
-- Must be recent (under 48 hours preferred, max 72 hours)
-- No promotional/sponsored content
-- No watermarks from competing Kenyan media
-
-TIKTOK ACCOUNTS TO PRIORITIZE:
-Kenya: @mutembeitv, @spmbuzz, @tukokenya, @ghafla_kenya, @nairobiwire
-Global sports: @433, @espn, @bleacherreport, @premierleague, @fabrizioromano
-Global celebrity: @tmz, @theshaderoom, @enews
-Music: @billboard, @complex, @worldstarhiphop`,
-
-hashtag_strategy: `HASHTAG STRATEGY
+PART 3 — CLOSE (1 sentence): CTA + source credit
+- End with: "Source: [source name]"
+- CTA options: "Drop your thoughts 👇", "Tag someone who needs to see this", "Save this 📌"
 
 RULES:
-- Hashtags go in the FIRST COMMENT, never in the caption
-- 8-15 hashtags per post (sweet spot for Instagram reach)
-- Mix: 3 niche + 3 mid-size + 2 broad
-- Always include #PPPTVKenya
+- Under 180 words. Count them.
+- 2-3 emojis MAX. Place naturally, not at end of every sentence.
+- NO hashtags in caption body (first comment only)
+- NEVER say: "stay tuned", "watch this space", "find out why below"`,
 
-BY CATEGORY:
-MUSIC: #KenyaMusic #AfrobeatKenya #NairobiMusic #EastAfricaMusic #PPPTVKenya #MusicKE #NewMusic #Afrobeats #Bongo #WCBWasafi
-CELEBRITY: #KenyaCelebrity #NairobiCelebs #PPPTVKenya #KenyaEntertainment #CelebNews #Nairobi #EastAfrica #AfricaCelebs
-SPORTS: #KenyaSports #HarambeeStars #KenyaAthletics #PPPTVKenya #KenyaFootball #PremierLeague #ChampionsLeague #AFCON
-SCIENCE: #ScienceAfrica #PPPTVKenya #Technology #Innovation #SpaceNews #AI #Research #TechKenya
-LIFESTYLE: #KenyaLifestyle #NairobiLife #PPPTVKenya #Fitness #Fashion #EastAfrica
-COMEDY: #KenyaComedy #PPPTVKenya #Funny #Viral #EastAfrica #NairobiComedy
-GENERAL: #Kenya #Nairobi #PPPTVKenya #EastAfrica #NairobiLife #KenyaNews #Trending`,
+  gen_z_guide: `GEN Z NAIROBI VOICE GUIDE:
+- Write like you're texting your Nairobi friend, not filing a news report
+- Use specific facts (names, numbers, places) — vague = boring
+- Kenyan references land harder: mention Nairobi, specific areas, local context when relevant
+- Global stories: connect to what Kenyans care about (African artists, diaspora, sports)
+- Energy: excited but not cringe. Real but not dry.
+- Short sentences hit harder than long ones
+- Don't explain the joke. Trust your audience.`,
 
+  kenya_knowledge: `KENYA CONTEXT:
+Key artists: Khaligraph Jones, Sauti Sol, Bien, Nviiri, Bensoul, Jovial, Nikita Kering, Fena Gitu, Otile Brown, Bahati, Guardian Angel, Willy Paul, Harmonize, Diamond Platnumz, Burna Boy, Wizkid, Davido
+Key sports: Harambee Stars (football), Eliud Kipchoge (marathon), Faith Kipyegon (athletics), Kenyan rugby sevens
+Key media: NTV Kenya, Citizen TV, KTN, K24, Tuko, Mpasho, SPM Buzz, Ghafla
+Nairobi areas: CBD, Westlands, Kilimani, Karen, Eastlands, Kasarani, Ngong Road
+Kenyan slang (use sparingly): "sawa", "poa", "si unajua", "bana", "uko sure"`,
+
+  video_topics: `VIDEO SEARCH KEYWORDS — TIERED:
+
+TIER 1 (Always search — Kenya/Africa priority):
+Kenya entertainment viral, Nairobi celebrity news, Khaligraph Jones, Sauti Sol, Diamond Platnumz, Eliud Kipchoge, Harambee Stars, SPM Buzz Kenya, Kenya music 2025, East Africa viral video, Kenyan celebrity drama, Nairobi trending
+
+TIER 2 (Rotate — Global sports/music):
+Premier League goals, Champions League highlights, Burna Boy, Wizkid, Davido, Rema Afrobeats, NBA highlights, LeBron James, viral celebrity 2025, Afrobeats new music
+
+TIER 3 (Occasional — Background variety):
+viral video today, trending worldwide, celebrity gossip, music video 2025`,
+
+  hashtag_strategy: `HASHTAG STRATEGY (first comment only, never in caption body):
+
+Entertainment posts: #KenyanEntertainment #NairobiLife #PPPTVKenya #KenyanCelebrity #EastAfrica
+Sports posts: #HarambeeStars #KenyanSports #PremierLeague #AfricanFootball #PPPTVKenya  
+Music posts: #AfroBeats #KenyanMusic #EastAfricanMusic #NewMusic #PPPTVKenya
+Celebrity posts: #Celebrity #KenyanCelebrity #Nairobi #PPPTVKenya #Trending
+
+Always include: #PPPTVKenya
+Max 5 hashtags per post`,
 };
 
-// ── Runtime KB loader — reads from Supabase if available ─────────────────────
+// ── KB cache (module-level) ───────────────────────────────────────────────────
 let _kbCache: Record<string, string> = {};
-let _kbLoaded = false;
 let _kbLoadTime = 0;
 const KB_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
-async function loadKBFromSupabase(): Promise<Record<string, string>> {
-  try {
-    const { supabaseAdmin } = await import("./supabase");
-    const { data } = await supabaseAdmin
-      .from("knowledge_base")
-      .select("id, content");
-    if (!data?.length) return {};
-    const map: Record<string, string> = {};
-    for (const row of data) map[row.id] = row.content;
-    return map;
-  } catch { return {}; }
+export function invalidateKBCache(): void {
+  _kbLoadTime = 0;
 }
 
 async function getKB(): Promise<Record<string, string>> {
   const now = Date.now();
-  if (_kbLoaded && now - _kbLoadTime < KB_CACHE_TTL) return _kbCache;
-  const fromDB = await loadKBFromSupabase();
-  _kbCache = { ...KB_DEFAULTS, ...fromDB };
-  _kbLoaded = true;
-  _kbLoadTime = now;
-  return _kbCache;
+  if (_kbLoadTime > 0 && now - _kbLoadTime < KB_CACHE_TTL) return _kbCache;
+  try {
+    const { supabaseAdmin } = await import("./supabase");
+    const { data, error } = await supabaseAdmin
+      .from("knowledge_base")
+      .select("id, content");
+    if (error) throw error;
+    const fromDB: Record<string, string> = {};
+    for (const row of (data || [])) fromDB[row.id] = row.content;
+    _kbCache = { ...KB_DEFAULTS, ...fromDB };
+    _kbLoadTime = now;
+    return _kbCache;
+  } catch {
+    console.warn("[kb] Supabase unreachable, using defaults");
+    _kbCache = { ...KB_DEFAULTS };
+    _kbLoadTime = now;
+    return _kbCache;
+  }
+}
+
+// ── Retry wrapper ─────────────────────────────────────────────────────────────
+async function generateWithRetry(
+  fn: () => Promise<string>,
+  validate: (s: string) => boolean,
+  fallback: string,
+  maxRetries = 2
+): Promise<string> {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const result = await fn();
+      if (validate(result)) return result;
+    } catch (err: any) {
+      console.warn(`[gemini] attempt ${attempt + 1} failed:`, err.message);
+    }
+  }
+  console.warn(`[gemini] AI fallback used: all ${maxRetries} attempts failed`);
+  return fallback;
+}
+
+// ── Headline post-processing ──────────────────────────────────────────────────
+const BANNED_WORDS = [
+  "SHOCKING", "AMAZING", "INCREDIBLE",
+  "YOU WON'T BELIEVE", "MUST SEE", "EXPLOSIVE", "BOMBSHELL",
+];
+
+function enforceHeadlineRules(headline: string): string {
+  let h = headline.toUpperCase();
+  // Strip banned words
+  for (const bw of BANNED_WORDS) {
+    h = h.replace(new RegExp("\\b" + bw + "\\b", "g"), "").trim();
+  }
+  // Strip disallowed punctuation (keep letters, digits, spaces, dash)
+  h = h.replace(/[^A-Z0-9 —\-]/g, "").replace(/\s{2,}/g, " ").trim();
+  // Truncate to 7 words
+  const words = h.split(" ").filter(Boolean);
+  if (words.length > 7) h = words.slice(0, 7).join(" ");
+  return h;
 }
 
 // ── Hashtag bank ──────────────────────────────────────────────────────────────
@@ -336,15 +228,7 @@ async function generateHeadline(article: Article, client: GoogleGenAI, kb: Recor
   const rawTitle = article.title.replace(/#\w+/g, "").replace(/\s{2,}/g, " ").trim();
   const body = article.fullBody?.trim() || article.summary?.trim() || "";
 
-  const system = `You are the creative director at PPP TV Kenya — a 24/7 Gen Z entertainment TV station in Nairobi.
-
-${kb.headline_guide || KB_DEFAULTS.headline_guide}
-
-${kb.kenya_knowledge || KB_DEFAULTS.kenya_knowledge}
-
-YOUR ONLY JOB: Write ONE thumbnail headline. ALL CAPS. 4-7 words MAX. Start with a NAME or the biggest fact. Use one strong verb. No punctuation except a dash.
-
-RESPOND WITH ONLY THE HEADLINE. Nothing else.`;
+  const systemInstruction = kb.headline_guide || KB_DEFAULTS.headline_guide;
 
   const prompt = `ARTICLE: ${rawTitle}
 CATEGORY: ${article.category}
@@ -353,19 +237,31 @@ SOURCE: ${article.sourceName || ""}
 
 Write ONE 4-7 word ALL CAPS headline:`;
 
-  try {
-    const response = await client.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: [{ role: "user", parts: [{ text: system + "\n\n" + prompt }] }],
-      config: { temperature: 0.65, maxOutputTokens: 50 },
-    });
-    const text = response.text?.trim().replace(/^["'*`]|["'*`.$]$/g, "").toUpperCase() ?? "";
-    if (text && text.length >= 6 && text.length <= 100) return text;
-  } catch (err: any) {
-    console.warn("[gemini] headline failed:", err.message);
-  }
+  const fallback = enforceHeadlineRules(rawTitle.slice(0, 80));
 
-  return rawTitle.toUpperCase().slice(0, 80);
+  return generateWithRetry(
+    async () => {
+      const response = await client.models.generateContent({
+        model: "gemini-2.0-flash",
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        config: { systemInstruction, temperature: 0.65, maxOutputTokens: 80 },
+      });
+      const text = response.text?.trim().replace(/^["'*`]|["'*`.$]$/g, "").toUpperCase() ?? "";
+      return enforceHeadlineRules(text);
+    },
+    (s) => s.length >= 6 && s.length <= 100,
+    fallback,
+  );
+}
+
+// ── Caption post-processing ───────────────────────────────────────────────────
+function truncateCaptionToWordLimit(caption: string, limit = 180): string {
+  const words = caption.split(/\s+/);
+  if (words.length <= limit) return caption;
+  // Find last complete sentence before word limit
+  const truncated = words.slice(0, limit).join(" ");
+  const lastPeriod = Math.max(truncated.lastIndexOf("."), truncated.lastIndexOf("!"), truncated.lastIndexOf("?"));
+  return lastPeriod > 0 ? truncated.slice(0, lastPeriod + 1) : truncated;
 }
 
 // ── Caption generator ─────────────────────────────────────────────────────────
@@ -375,15 +271,12 @@ async function generateCaption(article: Article, client: GoogleGenAI, kb: Record
   const source = article.sourceName || "PPP TV Kenya";
   const cta = getEngagementCTA();
 
-  const system = `You are the head writer at PPP TV Kenya — Kenya's #1 Gen Z entertainment network.
-
-${kb.brand_voice || KB_DEFAULTS.brand_voice}
-
-${kb.caption_guide || KB_DEFAULTS.caption_guide}
-
-${kb.gen_z_guide || KB_DEFAULTS.gen_z_guide}
-
-${kb.kenya_knowledge || KB_DEFAULTS.kenya_knowledge}`;
+  const systemInstruction = [
+    kb.brand_voice || KB_DEFAULTS.brand_voice,
+    kb.caption_guide || KB_DEFAULTS.caption_guide,
+    kb.gen_z_guide || KB_DEFAULTS.gen_z_guide,
+    kb.kenya_knowledge || KB_DEFAULTS.kenya_knowledge,
+  ].join("\n\n---\n\n");
 
   const prompt = `Write a Gen Z caption for this story. Be conversational, specific, and engaging. Talk like a knowledgeable Nairobi friend, not a news anchor.
 
@@ -404,20 +297,33 @@ RULES: Under 180 words. 2-3 emojis max. No hashtags. No "stay tuned". No withhol
 
 Reply with ONLY the caption:`;
 
-  try {
+  const fallback = `${body.slice(0, 400)}\n\n${cta.cta}\n\nSource: ${source}${article.url ? `\n${article.url}` : ""}`;
+
+  const generateOnce = async (extraConstraint = "") => {
+    const finalPrompt = extraConstraint ? `${prompt}\n\n${extraConstraint}` : prompt;
     const response = await client.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: [{ role: "user", parts: [{ text: system + "\n\n" + prompt }] }],
-      config: { temperature: 0.75, maxOutputTokens: 450 },
+      model: "gemini-2.0-flash",
+      contents: [{ role: "user", parts: [{ text: finalPrompt }] }],
+      config: { systemInstruction, temperature: 0.75, maxOutputTokens: 600 },
     });
-    const text = response.text?.trim() ?? "";
-    if (text && text.length > 50) return text;
-  } catch (err: any) {
-    console.warn("[gemini] caption failed:", err.message);
+    return response.text?.trim() ?? "";
+  };
+
+  let caption = await generateWithRetry(
+    () => generateOnce(),
+    (s) => s.length >= 50,
+    fallback,
+  );
+
+  // Word count enforcement (Requirement 8.8)
+  if (caption.split(/\s+/).length > 180) {
+    caption = await generateOnce("IMPORTANT: Your response must be under 180 words. Count carefully.").catch(() => caption);
+    if (caption.split(/\s+/).length > 180) {
+      caption = truncateCaptionToWordLimit(caption);
+    }
   }
 
-  const cta2 = getEngagementCTA();
-  return `${rawTitle}\n\n${cta2.cta}\n\nSource: ${source}${article.url ? `\n${article.url}` : ""}`;
+  return caption;
 }
 
 // ── Excerpt + caption for preview (Link Studio) ────────────────────────────────

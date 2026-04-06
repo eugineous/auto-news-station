@@ -13,6 +13,41 @@ export const maxDuration = 300;
 const WORKER_URL = process.env.CLOUDFLARE_WORKER_URL || "https://auto-ppp-tv.euginemicah.workers.dev";
 const WORKER_SECRET = process.env.WORKER_SECRET || "ppptvWorker2024";
 
+// ── Startup warning ───────────────────────────────────────────────────────────
+if (!process.env.SUPABASE_SERVICE_KEY) {
+  console.warn("[dedup] SUPABASE_SERVICE_KEY not set — falling back to KV dedup");
+}
+
+// ── Category rotation cycle ───────────────────────────────────────────────────
+const CATEGORY_CYCLE = [
+  "ENTERTAINMENT", "SPORTS", "MUSIC", "CELEBRITY",
+  "TV & FILM", "MOVIES", "LIFESTYLE", "GENERAL",
+];
+
+function selectNextCategory(lastCategory: string, availableCategories: string[]): string | null {
+  if (!lastCategory || availableCategories.length === 0) return null;
+  const lastUpper = lastCategory.toUpperCase();
+  const lastIdx = CATEGORY_CYCLE.findIndex(c => c === lastUpper);
+  // Try each category in cycle order starting from next position
+  for (let i = 1; i <= CATEGORY_CYCLE.length; i++) {
+    const nextCat = CATEGORY_CYCLE[(lastIdx + i) % CATEGORY_CYCLE.length];
+    if (availableCategories.includes(nextCat)) return nextCat;
+  }
+  // Fall back to any category different from last
+  return availableCategories.find(c => c !== lastUpper) ?? null;
+}
+
+// ── In-memory title fingerprint dedup ────────────────────────────────────────
+function deduplicateByTitleFingerprint(articles: Article[]): Article[] {
+  const seen = new Set<string>();
+  return articles.filter(a => {
+    const fp = a.title.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 60);
+    if (seen.has(fp)) return false;
+    seen.add(fp);
+    return true;
+  });
+}
+
 // ── Kenya relevance filter ────────────────────────────────────────────────────
 const KENYA_TERMS = [
   // Geography
@@ -164,7 +199,10 @@ function scoreArticle(a: Article, trendingTopics: string[]): number {
 async function filterUnseen(articles: Article[]): Promise<Article[]> {
   if (articles.length === 0) return articles;
   try {
-    const results = await Promise.all(articles.map(a => isArticleSeen(a.id)));
+    const results = await Promise.all(articles.map(a => {
+      const titleFp = a.title.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 60);
+      return isArticleSeen(a.id, titleFp);
+    }));
     return articles.filter((_, i) => !results[i]);
   } catch { return articles; }
 }
@@ -271,7 +309,13 @@ async function postOneArticle(article: Article, isBreaking: boolean): Promise<{ 
 
   // Generate thumbnail using AI clickbait title
   const articleWithAITitle = { ...article, title: clickbaitTitle };
-  const imageBuffer = await generateImage(articleWithAITitle, { isBreaking });
+  let imageBuffer: Buffer | null = null;
+  try {
+    imageBuffer = await generateImage(articleWithAITitle, { isBreaking });
+  } catch (err: any) {
+    console.error("[automate] generateImage failed, skipping post:", err.message);
+    return { success: false, error: `Image generation failed: ${err.message}` };
+  }
 
   // If article has a video URL, stage it and post as Reel
   if (article.isVideo && article.videoUrl) {
@@ -507,62 +551,42 @@ export async function POST(req: NextRequest) {
       return true;
     });
 
-    // 4. Blacklist + Dedup via KV
+    // 4. Blacklist + Dedup via Supabase (with title_fp) + in-memory batch dedup
     const notBlacklisted = await filterBlacklisted(nonPolitical);
-    const unseen = await filterUnseen(notBlacklisted);
+
+    // In-memory title fingerprint dedup pass BEFORE Supabase check
+    const batchDeduped = deduplicateByTitleFingerprint(notBlacklisted);
+
+    const unseen = await filterUnseen(batchDeduped);
     response.skipped = quality.length - unseen.length;
 
-    // Extra in-memory title dedup — catches same article with different URL variants
-    const seenTitles = new Set<string>();
-    const dedupedUnseen = unseen.filter(a => {
-      const fp = a.title.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 50);
-      if (seenTitles.has(fp)) return false;
-      seenTitles.add(fp);
-      return true;
-    });
+    // Final in-memory dedup pass on unseen results
+    const dedupedUnseen = deduplicateByTitleFingerprint(unseen);
 
     if (dedupedUnseen.length === 0) {
       return NextResponse.json({ ...response, message: "No new Kenya articles to post" });
     }
 
-    // 4. Category rotation — strict round-robin through all available categories
-    const CATEGORY_CYCLE = [
-      "ENTERTAINMENT", "SPORTS", "MUSIC", "CELEBRITY", "TV & FILM",
-      "MOVIES", "LIFESTYLE", "GENERAL", "COMEDY", "FASHION",
-      "AWARDS", "INFLUENCERS", "EAST AFRICA", "TECHNOLOGY", "HEALTH",
-    ];
+    // 5. Category rotation — hard-exclude last category, pick next in CATEGORY_CYCLE
+    const availableCats = Array.from(new Set(dedupedUnseen.map(a => a.category?.toUpperCase()).filter(Boolean) as string[]));
 
-    // Get all categories available in current unseen articles
-    const availableCats = Array.from(new Set(dedupedUnseen.map(a => a.category?.toUpperCase()).filter(Boolean)));
-
-    // Find next category in cycle after lastCategory
-    let targetCategory: string | null = null;
-    if (lastCategory && availableCats.length > 1) {
-      const lastUpper = lastCategory.toUpperCase();
-      const lastIdx = CATEGORY_CYCLE.findIndex(c => c === lastUpper);
-      // Try each category in cycle order starting from next position
-      for (let i = 1; i <= CATEGORY_CYCLE.length; i++) {
-        const nextCat = CATEGORY_CYCLE[(lastIdx + i) % CATEGORY_CYCLE.length];
-        if (availableCats.includes(nextCat)) {
-          targetCategory = nextCat;
-          break;
-        }
-      }
-      // If nothing found in cycle, pick any category different from last
-      if (!targetCategory) {
-        targetCategory = availableCats.find(c => c !== lastUpper) || null;
-      }
-    }
-
-    // Filter to target category, fall back to all if no match
+    // Hard-exclude last category if alternatives exist
     let candidates = dedupedUnseen;
-    if (targetCategory) {
-      const catFiltered = dedupedUnseen.filter(a => a.category?.toUpperCase() === targetCategory);
-      if (catFiltered.length > 0) candidates = catFiltered;
-    } else if (lastCategory) {
-      const different = dedupedUnseen.filter(a => a.category?.toUpperCase() !== lastCategory.toUpperCase());
-      if (different.length > 0) candidates = different;
+    if (lastCategory) {
+      const notLast = dedupedUnseen.filter(a => a.category?.toUpperCase() !== lastCategory.toUpperCase());
+      if (notLast.length > 0) candidates = notLast;
     }
+
+    // Find next category in cycle among remaining candidates
+    const candidateCats = Array.from(new Set(candidates.map(a => a.category?.toUpperCase()).filter(Boolean) as string[]));
+    const targetCategory = selectNextCategory(lastCategory, candidateCats);
+    if (targetCategory) {
+      const catFiltered = candidates.filter(a => a.category?.toUpperCase() === targetCategory);
+      if (catFiltered.length > 0) candidates = catFiltered;
+    }
+
+    // Suppress unused variable warning
+    void availableCats;
 
     // 5. Score and sort — freshest first within the target category
     const scored = candidates

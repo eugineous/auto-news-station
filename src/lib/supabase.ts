@@ -8,7 +8,8 @@ const SUPABASE_URL = process.env.SUPABASE_URL || "https://xptxfqxononfdjndjalx.s
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || "";
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhwdHhmcXhvbm9uZmRqbmRqYWx4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUwNTUyMjgsImV4cCI6MjA5MDYzMTIyOH0.IJXZ00sJMaHe8iNOfd7TnG3Fsvcu_8WrfG7vNHppq-I";
 
-// Server-side client (full access via service role)
+// Server-side client (full access via service role — bypasses RLS)
+// MUST use SUPABASE_SERVICE_KEY for writes to seen_articles and posts
 export const supabaseAdmin = createClient(
   SUPABASE_URL,
   SUPABASE_SERVICE_KEY || SUPABASE_ANON_KEY,
@@ -96,25 +97,72 @@ export async function getTodayPostCount(): Promise<number> {
 }
 
 // ── Dedup ─────────────────────────────────────────────────────────────────────
-export async function isArticleSeen(id: string): Promise<boolean> {
+export async function isArticleSeen(id: string, titleFp?: string): Promise<boolean> {
   try {
     const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString();
-    const { data } = await supabaseAdmin
+    // Check by id
+    const { data: byId } = await supabaseAdmin
       .from("seen_articles")
       .select("id")
       .eq("id", id)
       .gte("seen_at", thirtyDaysAgo)
       .maybeSingle();
-    return !!data;
-  } catch { return false; }
+    if (byId) return true;
+
+    // Check by title fingerprint if provided
+    if (titleFp) {
+      const { data: byFp } = await supabaseAdmin
+        .from("seen_articles")
+        .select("id")
+        .eq("title_fp", titleFp)
+        .gte("seen_at", thirtyDaysAgo)
+        .maybeSingle();
+      if (byFp) return true;
+    }
+    return false;
+  } catch {
+    // Fall back to KV /seen/check endpoint if Supabase unavailable
+    try {
+      const workerUrl = process.env.CLOUDFLARE_WORKER_URL || "https://auto-ppp-tv.euginemicah.workers.dev";
+      const workerSecret = process.env.WORKER_SECRET || "ppptvWorker2024";
+      const res = await fetch(`${workerUrl}/seen/check?id=${encodeURIComponent(id)}`, {
+        headers: { "Authorization": "Bearer " + workerSecret },
+        signal: AbortSignal.timeout(5000),
+      });
+      if (res.ok) {
+        const d = await res.json() as { seen: boolean };
+        return d.seen === true;
+      }
+    } catch { /* non-fatal */ }
+    return false;
+  }
 }
 
 export async function markArticleSeen(id: string, title?: string): Promise<void> {
+  const titleFp = title
+    ? title.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 60)
+    : undefined;
   try {
     await supabaseAdmin
       .from("seen_articles")
-      .upsert({ id, title, seen_at: new Date().toISOString() }, { onConflict: "id" });
-  } catch { /* non-fatal */ }
+      .upsert(
+        { id, title, title_fp: titleFp, seen_at: new Date().toISOString() },
+        { onConflict: "id" }
+      );
+  } catch (err) {
+    console.warn("[dedup] markSeen failed:", err);
+    // Fall back to KV /seen endpoint
+    try {
+      const workerUrl = process.env.CLOUDFLARE_WORKER_URL || "https://auto-ppp-tv.euginemicah.workers.dev";
+      const workerSecret = process.env.WORKER_SECRET || "ppptvWorker2024";
+      await fetch(`${workerUrl}/seen`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + workerSecret },
+        body: JSON.stringify({ id, titleFp }),
+        signal: AbortSignal.timeout(5000),
+      });
+    } catch { /* non-fatal */ }
+  }
 }
 
 // ── Agent state ───────────────────────────────────────────────────────────────

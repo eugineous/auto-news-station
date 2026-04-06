@@ -32,6 +32,37 @@ function getCatColor(cat) {
   return CAT_COLORS[cat?.toUpperCase()] ?? { bg: "#E50914", text: "#FFFFFF" };
 }
 
+// Dead zone: 1:00am–5:44am EAT (UTC+3 = UTC 22:00–02:44)
+function isDeadZone(nowUTC) {
+  const h = nowUTC.getUTCHours();
+  const m = nowUTC.getUTCMinutes();
+  // EAT = UTC+3, so 1am EAT = 22:00 UTC, 5:45am EAT = 2:45 UTC
+  if (h === 22 || h === 23 || h === 0 || h === 1) return true;
+  if (h === 2 && m < 45) return true;
+  return false;
+}
+
+async function canPost(env) {
+  const lastPostTs = await env.SEEN_ARTICLES.get("last-post-ts");
+  if (!lastPostTs) return true;
+  return Date.now() - Number(lastPostTs) >= 10 * 60 * 1000; // 10 min
+}
+
+async function getDailyCount(env) {
+  const date = new Date().toISOString().slice(0, 10);
+  const val = await env.SEEN_ARTICLES.get(`daily:${date}`);
+  return val ? parseInt(val) : 0;
+}
+
+async function incrementDailyCount(env) {
+  const date = new Date().toISOString().slice(0, 10);
+  const key = `daily:${date}`;
+  const current = await env.SEEN_ARTICLES.get(key);
+  const next = (current ? parseInt(current) : 0) + 1;
+  await env.SEEN_ARTICLES.put(key, String(next), { expirationTtl: 48 * 3600 });
+  return next;
+}
+
 export default {
   async scheduled(event, env, ctx) {
     if (event.cron === "0 3 * * *") {
@@ -892,6 +923,7 @@ export default {
           { u: "billboard",        cat: "MUSIC"         },
           { u: "RollingStone",     cat: "MUSIC"         },
           { u: "Variety",          cat: "TV & FILM"     },
+          { u: "DEADLINE",         cat: "TV & FILM"     },
         ];
 
         // Pick a random Nitter instance + 6 random accounts
@@ -933,13 +965,11 @@ export default {
                   id: `twitter:${u}:${link.split("/").pop()}`,
                   title: cleanTitle.slice(0, 200),
                   url: link.replace(instance, "https://twitter.com").replace("nitter.", "twitter.").replace(/https:\/\/[^/]+\/([^/]+\/status\/)/, "https://twitter.com/$1"),
-                  directVideoUrl: null,
-                  thumbnail,
+                  imageUrl: thumbnail,
                   publishedAt: pubDate ? new Date(pubDate).toISOString() : new Date().toISOString(),
                   sourceName: `@${u} on X`,
-                  sourceType: "twitter",
+                  platform: "twitter",
                   category: cat,
-                  playCount: 0,
                 });
                 found++;
               }
@@ -1229,6 +1259,26 @@ async function triggerAutomateWithLock(env) {
   }
   await env.SEEN_ARTICLES.put(LOCK_KEY, String(Date.now()), { expirationTtl: LOCK_TTL });
   try {
+    // Dead zone check
+    const nowUTC = new Date();
+    if (isDeadZone(nowUTC)) {
+      console.log(JSON.stringify({ ts: nowUTC.toISOString(), step: "schedule", status: "skip", reason: "dead zone" }));
+      return;
+    }
+
+    // Minimum gap check
+    if (!(await canPost(env))) {
+      console.log(JSON.stringify({ ts: nowUTC.toISOString(), step: "schedule", status: "skip", reason: "min gap not met" }));
+      return;
+    }
+
+    // Daily cap check
+    const dailyCount = await getDailyCount(env);
+    if (dailyCount >= 48) {
+      console.log(JSON.stringify({ ts: new Date().toISOString(), step: "schedule", status: "skip", reason: "Daily cap reached" }));
+      return;
+    }
+
     await triggerAutomate(env);
   } finally {
     await env.SEEN_ARTICLES.delete(LOCK_KEY).catch(() => {});
@@ -1340,19 +1390,28 @@ async function triggerAutomate(env) {
       headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json", "X-AB-Variant": abVariant },
       body: "{}",
       signal: AbortSignal.timeout(280000),
-    }).then(r => r.json()).then(async d => {
-      console.log(`[burst] image: posted=${d.posted} errors=${d.errors?.length || 0}`);
+    }).then(async res => {
+      const responseText = await res.text();
+      if (!res.ok) {
+        console.log(JSON.stringify({ ts: new Date().toISOString(), step: "automate", status: "error", reason: `HTTP ${res.status}`, body: responseText.slice(0, 500) }));
+        return;
+      }
+      let result;
+      try { result = JSON.parse(responseText); } catch { result = {}; }
+      console.log(JSON.stringify({ ts: new Date().toISOString(), step: "automate", status: "ok", posted: result.posted || 0 }));
       // Track performance for A/B learning
-      if (d.posted > 0) {
+      if (result.posted > 0) {
         // Record successful post time — used for 3h force-post check
         await env.SEEN_ARTICLES.put("last:post:time", String(Date.now()), { expirationTtl: 24 * 3600 });
+        await env.SEEN_ARTICLES.put("last-post-ts", String(Date.now()), { expirationTtl: 24 * 3600 });
+        await incrementDailyCount(env);
         const total = parseInt(await env.SEEN_ARTICLES.get("agent:total_posts") || "0") + 1;
         await env.SEEN_ARTICLES.put("agent:total_posts", String(total), { expirationTtl: 365 * 24 * 3600 });
         // Log agent activity
         const logKey = `agent:log:${Date.now()}`;
         await env.SEEN_ARTICLES.put(logKey, JSON.stringify({
-          ts: new Date().toISOString(), type: "image", posted: d.posted,
-          abVariant, errors: d.errors?.length || 0,
+          ts: new Date().toISOString(), type: "image", posted: result.posted,
+          abVariant, errors: result.errors?.length || 0,
         }), { expirationTtl: 7 * 24 * 3600 });
       }
     }).catch(e => console.error("[burst] image failed:", e.message));

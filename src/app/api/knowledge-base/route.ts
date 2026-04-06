@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
-import { KB_DEFAULTS } from "@/lib/gemini";
+import { KB_DEFAULTS, invalidateKBCache } from "@/lib/gemini";
 
 // Ensure the knowledge_base table exists (idempotent)
 async function ensureTable() {
@@ -81,6 +81,7 @@ export async function POST(req: NextRequest) {
       .upsert({ id, title: title || id, content, updated_at: new Date().toISOString() }, { onConflict: "id" });
 
     if (error) throw error;
+    invalidateKBCache();
     return NextResponse.json({ ok: true });
   } catch (err: any) {
     console.error("[knowledge-base POST]", err);
@@ -94,6 +95,7 @@ export async function DELETE(req: NextRequest) {
     if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 
     await supabaseAdmin.from("knowledge_base").delete().eq("id", id);
+    invalidateKBCache();
     return NextResponse.json({ ok: true });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });

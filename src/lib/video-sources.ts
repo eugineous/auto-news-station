@@ -785,6 +785,68 @@ async function fetchTikWMTrending(): Promise<VideoItem[]> {
   return items;
 }
 
+// ── 11.1 TikWM keyword search — direct API call ──────────────────────────────
+async function searchTikWMByKeyword(
+  keyword: string,
+  count = 10,
+  sortBy: "play_count" | "latest" = "play_count"
+): Promise<VideoItem[]> {
+  try {
+    const res = await fetch("https://www.tikwm.com/api/feed/search", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        keywords: keyword,
+        count: String(count),
+        sort_type: sortBy === "play_count" ? "1" : "0",
+      }),
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) return [];
+    const data = await res.json() as any;
+    const videos = data?.data?.videos || [];
+    if (!videos.length) {
+      console.log(`[video-sources] keyword "${keyword}" returned 0 results`);
+      return [];
+    }
+    return videos.map((v: any) => ({
+      id: `tikwm-search:${v.id || v.video_id}`,
+      title: v.title || v.desc || keyword,
+      url: `https://www.tiktok.com/@${v.author?.unique_id}/video/${v.id || v.video_id}`,
+      thumbnail: v.cover || v.origin_cover || "",
+      publishedAt: new Date((v.create_time || Date.now() / 1000) * 1000),
+      sourceName: `TikTok @${v.author?.unique_id || "unknown"}`,
+      sourceType: "twitter" as const, // reuse twitter type for TikTok search
+      category: "ENTERTAINMENT",
+      _playCount: v.play_count || 0,
+    } as VideoItem & { _playCount: number }));
+  } catch (err: any) {
+    console.warn(`[video-sources] TikWM keyword search failed for "${keyword}":`, err.message);
+    return [];
+  }
+}
+
+// ── 11.2 Tiered keyword list ──────────────────────────────────────────────────
+export const VIDEO_KEYWORDS = {
+  tier1: [
+    "Kenya entertainment viral", "Nairobi celebrity news",
+    "Khaligraph Jones", "Sauti Sol", "Diamond Platnumz",
+    "Eliud Kipchoge", "Harambee Stars", "SPM Buzz Kenya",
+    "Kenya music 2025", "East Africa viral video",
+    "Kenyan celebrity drama", "Nairobi trending",
+  ],
+  tier2: [
+    "Premier League goals", "Champions League highlights",
+    "Burna Boy", "Wizkid", "Davido", "Rema Afrobeats",
+    "NBA highlights", "LeBron James", "viral celebrity 2025",
+    "Afrobeats new music",
+  ],
+  tier3: [
+    "viral video today", "trending worldwide",
+    "celebrity gossip", "music video 2025",
+  ],
+};
+
 // ── Worker-proxied video fetch — bypasses Vercel IP blocks ───────────────────
 async function fetchVideosViaWorker(): Promise<VideoItem[]> {
   try {
@@ -868,6 +930,17 @@ export async function fetchAllVideoSources(): Promise<VideoItem[]> {
     catch { bloom = null; }
   }
 
+  // ── 11.2 Keyword search: tier1 all, tier2 random 3, tier3 1-in-4 ────────────
+  const tier2Sample = [...VIDEO_KEYWORDS.tier2].sort(() => Math.random() - 0.5).slice(0, 3);
+  const tier3Sample = Math.random() < 0.25
+    ? [VIDEO_KEYWORDS.tier3[Math.floor(Math.random() * VIDEO_KEYWORDS.tier3.length)]]
+    : [];
+  const keywordSearches = [
+    ...VIDEO_KEYWORDS.tier1.map(kw => searchTikWMByKeyword(kw)),
+    ...tier2Sample.map(kw => searchTikWMByKeyword(kw)),
+    ...tier3Sample.map(kw => searchTikWMByKeyword(kw)),
+  ];
+
   const allResults = await Promise.allSettled([
     // Mutembei TV — priority Kenyan source (prepended so it scores first)
     fetchMutembeiTVVideos(),
@@ -875,6 +948,8 @@ export async function fetchAllVideoSources(): Promise<VideoItem[]> {
     fetchVideosViaWorker(),
     // TikWM search via worker proxy
     fetchTikWMTrending(),
+    // Keyword-based TikWM searches (tier1 + sampled tier2/tier3)
+    ...keywordSearches,
     // Priority TikTok accounts — always scraped every run
     ...["complex", "raptvusa", "worldstarhiphop", "hotnewhiphop", "theshaderoom", "tmz", "spmbuzz", "tukokenya", "433", "bleacherreport", "goal", "skysportsnews", "espn", "nba", "fabrizioromano", "footballdaily", "footballhighlights", "premierleague", "championsleague", "fifaworldcup"]
       .map(username => {
