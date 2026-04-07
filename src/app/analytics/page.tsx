@@ -27,7 +27,7 @@ export default function AnalyticsPage() {
 
   const fetchLog = useCallback(async () => {
     try {
-      const r = await fetch("/api/post-log");
+      const r = await fetch("/api/post-log?days=30");
       if (r.ok) { const d = await r.json(); setLog(d.log || []); }
     } catch {}
     finally { setLoading(false); }

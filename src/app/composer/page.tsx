@@ -384,7 +384,7 @@ function CockpitTab({onCompose}:{onCompose:(url:string)=>void}){
   const [toast,setToast]=useState<{msg:string;type:"ok"|"err"}|null>(null);
 
   const load=useCallback(async()=>{
-    try{const r=await fetch("/api/post-log?limit=60",{credentials:"include"});const d=await r.json() as any;setPosts((d.log||[]).sort((a:any,b:any)=>new Date(b.posted_at??b.postedAt??0).getTime()-new Date(a.posted_at??a.postedAt??0).getTime()));setLastRefresh(new Date());}catch{}
+    try{const r=await fetch("/api/post-log?limit=60&days=30",{credentials:"include"});const d=await r.json() as any;setPosts((d.log||[]).sort((a:any,b:any)=>new Date(b.posted_at??b.postedAt??0).getTime()-new Date(a.posted_at??a.postedAt??0).getTime()));setLastRefresh(new Date());}catch{}
     setLoading(false);
   },[]);
 

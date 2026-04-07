@@ -43,7 +43,7 @@ export default function IntelligencePage() {
 
   useEffect(() => {
     const load = () => {
-      fetch("/api/post-log", { credentials: "include" })
+      fetch("/api/post-log?days=30", { credentials: "include" })
         .then(r => r.json())
         .then((d: any) => setPosts(d.log || []))
         .catch(() => {})

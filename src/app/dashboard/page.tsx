@@ -260,11 +260,11 @@ export default function Dashboard() {
   const [confirmTrigger, setConfirmTrigger] = useState(false);
 
   const fetchPosts = useCallback(async () => {
-    try { const r = await fetch("/api/post-log"); if (r.ok) { const d = await r.json(); setPosts(d.log||[]); } }
+    try { const r = await fetch("/api/post-log?limit=50&days=30"); if (r.ok) { const d = await r.json(); setPosts(d.log||[]); } }
     catch {} finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { fetchPosts(); const t = setInterval(fetchPosts, 20000); return () => clearInterval(t); }, [fetchPosts]);
+  useEffect(() => { fetchPosts(); const t = setInterval(fetchPosts, 15000); return () => clearInterval(t); }, [fetchPosts]);
 
   useEffect(() => {
     const tick = () => {

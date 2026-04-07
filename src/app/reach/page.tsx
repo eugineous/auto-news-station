@@ -45,7 +45,7 @@ export default function ReachPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch("/api/post-log")
+    fetch("/api/post-log?days=30")
       .then(r => r.json())
       .then((d: any) => {
         const log = (d.log || [])

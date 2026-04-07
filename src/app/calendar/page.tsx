@@ -40,7 +40,7 @@ export default function CalendarPage() {
   const [selected, setSelected] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch("/api/post-log", { credentials: "include" })
+    fetch("/api/post-log?days=30", { credentials: "include" })
       .then(r => r.json())
       .then((d: any) => setPosts(d.log || []))
       .catch(() => {})

@@ -146,19 +146,6 @@ async function postReelToIG(
     const published = await publishRes.json() as any;
     if (!publishRes.ok || published.error) throw new Error(published?.error?.message ?? "IG publish failed");
 
-    if (published.id) {
-      await sleep(2000);
-      await fetch(`${GRAPH_API}/${published.id}/comments`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: "#KenyaEntertainment #PPPTVKenya #KenyaNews #NairobiLife #EastAfrica #KenyaMusic #NairobiEntertainment #Viral #Trending",
-          access_token: token,
-        }),
-        signal: AbortSignal.timeout(10000),
-      }).catch(() => {});
-    }
-
     return { success: true, postId: published.id };
   } catch (err: any) {
     return { success: false, error: err.message };
@@ -521,7 +508,7 @@ export async function POST(req: NextRequest) {
     const ai = await generateAIContent(article, { apiKey: geminiKey }).catch(() => ({
       clickbaitTitle: (target as VideoItem).title.toUpperCase(),
       caption: `${(target as VideoItem).title}\n\nTag someone who needs to see this.`,
-      firstComment: "#KenyaEntertainment #PPPTVKenya",
+      firstComment: "",
       engagementType: "tag" as const,
     }));
 

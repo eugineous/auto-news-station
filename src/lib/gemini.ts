@@ -364,7 +364,7 @@ export async function generateAIContent(
     return {
       clickbaitTitle: rawTitle.toUpperCase().slice(0, 80),
       caption: `${body.slice(0, 300)}\n\n${cta.cta}\n\nSource: ${article.sourceName || "PPP TV Kenya"}`,
-      firstComment: hashtags,
+      firstComment: "",
       engagementType: cta.type,
     };
   }
@@ -377,7 +377,7 @@ export async function generateAIContent(
     generateCaption(article, client, kb),
   ]);
 
-  return { clickbaitTitle: headline, caption, firstComment: hashtags, engagementType: cta.type };
+  return { clickbaitTitle: headline, caption, firstComment: "", engagementType: cta.type };
 }
 
 // ── Legacy NVIDIA fallback ────────────────────────────────────────────────────

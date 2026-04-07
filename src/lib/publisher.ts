@@ -125,11 +125,6 @@ async function publishToInstagram(
     const published = await publishRes.json() as any;
     if (!publishRes.ok || published.error) throw new Error(published?.error?.message ?? "IG publish failed");
 
-    // Post hashtags as first comment
-    if (post.firstComment && published.id) {
-      setTimeout(() => postFirstComment(published.id, post.firstComment!, token), 3000);
-    }
-
     return { success: true, postId: published.id };
   } catch (err: any) {
     console.error("[ig] error:", err?.message);
