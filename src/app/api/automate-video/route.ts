@@ -518,14 +518,7 @@ export async function POST(req: NextRequest) {
       ? `${ai.caption}\n\n(Originally from Mutembei TV — translated and rewritten by PPP TV Kenya)`
       : ai.caption;
 
-    const caption = `${captionBody}\n\n${
-      target.sourceType === "direct-mp4" && target.url.includes("tiktok.com")
-        ? (() => {
-            const acct = TIKTOK_ACCOUNTS.find(a => (target as VideoItem).url.includes(a.username));
-            return acct ? buildAttribution(acct, target.url) : `Credit: ${(target as VideoItem).sourceName} | ${(target as VideoItem).url}`;
-          })()
-        : `Credit: ${target.sourceName} | ${target.url}`
-    }`;
+    const caption = captionBody;
 
     // Generate branded PPP TV cover image and stage it to R2
     let coverUrl: string | undefined;
